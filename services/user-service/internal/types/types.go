@@ -3,10 +3,40 @@
 
 package types
 
+type ApiResponse struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,optional"`
+}
+
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type LoginResponse struct {
+	Token    string            `json:"token"`
+	UserInfo *UserInfoResponse `json:"user_info"`
+}
+
+type RegisterRequest struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Nickname string `json:"nickname,optional"`
+}
+
 type Request struct {
 	Name string `path:"name,options=you|me"`
 }
 
 type Response struct {
 	Message string `json:"message"`
+}
+
+type UserInfoResponse struct {
+	Id       int64  `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Nickname string `json:"nickname"`
 }

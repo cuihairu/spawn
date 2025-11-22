@@ -1,5 +1,6 @@
 syntax = "v1"
 
+// 基础请求类型
 type Request {
 	Name string `path:"name,options=you|me"`
 }
@@ -8,8 +9,54 @@ type Response {
 	Message string `json:"message"`
 }
 
+// 用户相关类型
+type RegisterRequest {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Nickname string `json:"nickname,optional"`
+}
+
+type LoginRequest {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type UserInfoResponse {
+	Id       int64  `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Nickname string `json:"nickname"`
+}
+
+type LoginResponse {
+	Token    string            `json:"token"`
+	UserInfo *UserInfoResponse `json:"user_info"`
+}
+
+type ApiResponse {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,optional"`
+}
+
 service user-api {
+	// 原有测试接口
 	@handler UserHandler
 	get /from/:name (Request) returns (Response)
+
+	// 用户认证接口
+	@handler RegisterHandler
+	post /auth/register (RegisterRequest) returns (ApiResponse)
+
+	@handler LoginHandler
+	post /auth/login (LoginRequest) returns (LoginResponse)
+
+	// 用户信息接口
+	@handler GetUserInfoHandler
+	get /users/:id (UserInfoResponse) returns (ApiResponse)
+
+	@handler UpdateUserInfoHandler
+	put /users/:id (UserInfoResponse) returns (ApiResponse)
 }
 

@@ -15,9 +15,29 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 	server.AddRoutes(
 		[]rest.Route{
 			{
+				Method:  http.MethodPost,
+				Path:    "/auth/login",
+				Handler: LoginHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodPost,
+				Path:    "/auth/register",
+				Handler: RegisterHandler(serverCtx),
+			},
+			{
 				Method:  http.MethodGet,
 				Path:    "/from/:name",
 				Handler: UserHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/users/:id",
+				Handler: GetUserInfoHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodPut,
+				Path:    "/users/:id",
+				Handler: UpdateUserInfoHandler(serverCtx),
 			},
 		},
 	)

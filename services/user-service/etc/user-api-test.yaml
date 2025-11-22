@@ -1,0 +1,12 @@
+Name: user-api
+Host: 0.0.0.0
+Port: 8888
+
+# SQLite 数据库配置 (测试环境)
+MySQL:
+  DataSource: "file:./test.db?cache=shared&mode=rwc"
+
+# JWT 配置
+Auth:
+  JWTSecret: "tappi-user-service-jwt-secret-key-2024"
+  TokenExpire: 7
