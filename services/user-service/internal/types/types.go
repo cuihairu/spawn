@@ -9,6 +9,10 @@ type ApiResponse struct {
 	Data    interface{} `json:"data,optional"`
 }
 
+type GetUserInfoRequest struct {
+	Id int64 `path:"id"`
+}
+
 type LoginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -32,6 +36,12 @@ type Request struct {
 
 type Response struct {
 	Message string `json:"message"`
+}
+
+type UpdateUserInfoRequest struct {
+	Id       int64  `path:"id"`
+	Email    string `json:"email"`
+	Nickname string `json:"nickname"`
 }
 
 type UserInfoResponse struct {

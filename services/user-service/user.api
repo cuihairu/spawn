@@ -29,6 +29,16 @@ type UserInfoResponse {
 	Nickname string `json:"nickname"`
 }
 
+type GetUserInfoRequest {
+	Id int64 `path:"id"`
+}
+
+type UpdateUserInfoRequest {
+	Id       int64  `path:"id"`
+	Email    string `json:"email"`
+	Nickname string `json:"nickname"`
+}
+
 type LoginResponse {
 	Token    string            `json:"token"`
 	UserInfo *UserInfoResponse `json:"user_info"`
@@ -54,9 +64,9 @@ service user-api {
 
 	// 用户信息接口
 	@handler GetUserInfoHandler
-	get /users/:id (UserInfoResponse) returns (ApiResponse)
+	get /users/:id (GetUserInfoRequest) returns (ApiResponse)
 
 	@handler UpdateUserInfoHandler
-	put /users/:id (UserInfoResponse) returns (ApiResponse)
+	put /users/:id (UpdateUserInfoRequest) returns (ApiResponse)
 }
 
