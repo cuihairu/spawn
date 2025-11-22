@@ -27,7 +27,9 @@ func NewUserLogic(ctx context.Context, svcCtx *svc.ServiceContext) *UserLogic {
 }
 
 func (l *UserLogic) User(req *types.Request) (resp *types.Response, err error) {
-	// todo: add your logic here and delete this line
+	resp = &types.Response{
+		Message: "Hello, " + req.Name + "!",
+	}
 
-	return
+	return resp, nil
 }
