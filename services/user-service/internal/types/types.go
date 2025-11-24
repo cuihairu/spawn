@@ -50,3 +50,19 @@ type UserInfoResponse struct {
 	Email    string `json:"email"`
 	Nickname string `json:"nickname"`
 }
+
+type GameRecommendation struct {
+	Id         string   `json:"id"`
+	Title      string   `json:"title"`
+	CoverImage string   `json:"cover_image"`
+	Genres     []string `json:"genres"`
+	Platforms  []string `json:"platforms"`
+	Score      float64  `json:"score"`
+	Tags       []string `json:"tags"`
+}
+
+type GetUserRecommendationsRequest struct {
+	Id     int64  `path:"id"`
+	Genres string `form:"genres,optional"`
+	Limit  int64  `form:"limit,default=5"`
+}

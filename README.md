@@ -57,3 +57,27 @@
 - Workspace：根目录维护 `go.work`，把各个服务模块 (`services/user-service`, `services/user-service-rpc`...) 纳入，避免相互引用时走远程依赖。
 - 代码生成：使用 `goctl api new <service>`/`goctl rpc new <service>` 搭建骨架，服务内的 API/RPC 定义通过 `*.api`、`*.proto` 维护，执行 `goctl api go`/`goctl rpc protoc` 生成功能代码。
 - 配置共享：`packages/config` 下提供 `.env.example`、`golangci-lint` 模板、公共 `make` 目标等，服务中可直接引用或通过 `Makefile` include。
+
+## 新增功能概览
+
+- **Game Catalog Service**（`services/game-catalog`）：使用 go-zero 构建，内置游戏数据仓库、列表筛选、创建接口以及推荐/精选能力。服务启动后可通过 `GET /games`, `GET /games/:id`, `GET /games/featured`, `GET /games/recommendations` 获取数据。
+- **Service-to-Service 调用**：`user-service` 通过 `GameCatalogClient` 拉取 `/games/recommendations`，新增 `GET /users/:id/recommendations` 供前端/其他服务复用。
+- **Web Client**（`apps/web-client`）：React + Vite 实现的基础界面，支持账号登录、跨服务推荐展示、游戏榜单渲染。API 地址可通过 `VITE_USER_SERVICE_URL`、`VITE_GAME_SERVICE_URL` 注入。
+- **API Gateway**（`services/api-gateway`）：统一聚合认证、推荐、榜单接口，对外只暴露 `POST /auth/login`、`GET /games/featured`、`GET /users/:id/recommendations`，方便前端与未来其他客户端统一接入。
+- **测试补全**：为游戏仓库与用户推荐逻辑新增单元测试，覆盖过滤、推荐稳定性与跨服务失败兜底。
+- **Docker 支持**：`docker-compose.yaml` 一键拉起 `game-catalog`、`user-service`、`web-client`，各服务目录下提供独立 `Dockerfile`。
+
+快速体验：
+
+```bash
+# 启动全部服务（需 Docker）
+docker compose up --build
+
+# 单独运行服务
+go run services/game-catalog/game.go -f services/game-catalog/etc/game-api.yaml
+go run services/user-service/user.go -f services/user-service/etc/user-api.yaml
+go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
+
+# 前端
+cd apps/web-client && npm install && npm run dev
+```

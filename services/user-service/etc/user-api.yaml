@@ -10,3 +10,8 @@ MySQL:
 Auth:
   JWTSecret: "tappi-user-service-jwt-secret-key-2024"
   TokenExpire: 7
+
+Services:
+  GameCatalog:
+    BaseURL: "http://localhost:8890"
+    Timeout: 5000

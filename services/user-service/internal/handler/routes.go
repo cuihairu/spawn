@@ -39,6 +39,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 				Path:    "/users/:id",
 				Handler: UpdateUserInfoHandler(serverCtx),
 			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/users/:id/recommendations",
+				Handler: GetUserRecommendationsHandler(serverCtx),
+			},
 		},
 	)
 }

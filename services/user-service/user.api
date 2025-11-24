@@ -39,6 +39,22 @@ type UpdateUserInfoRequest {
 	Nickname string `json:"nickname"`
 }
 
+type GameRecommendation {
+	Id         string   `json:"id"`
+	Title      string   `json:"title"`
+	CoverImage string   `json:"cover_image"`
+	Genres     []string `json:"genres"`
+	Platforms  []string `json:"platforms"`
+	Score      float64  `json:"score"`
+	Tags       []string `json:"tags"`
+}
+
+type GetUserRecommendationsRequest {
+	Id     int64  `path:"id"`
+	Genres string `form:"genres,optional"`
+	Limit  int64  `form:"limit,default=5"`
+}
+
 type LoginResponse {
 	Token    string            `json:"token"`
 	UserInfo *UserInfoResponse `json:"user_info"`
@@ -68,5 +84,8 @@ service user-api {
 
 	@handler UpdateUserInfoHandler
 	put /users/:id (UpdateUserInfoRequest) returns (ApiResponse)
-}
 
+	// 游戏推荐接口
+	@handler GetUserRecommendationsHandler
+	get /users/:id/recommendations (GetUserRecommendationsRequest) returns (ApiResponse)
+}

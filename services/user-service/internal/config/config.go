@@ -15,7 +15,14 @@ type Config struct {
 
 	// JWT 配置
 	Auth struct {
-		JWTSecret string `json:",env=JWT_SECRET"`
-		TokenExpire int64 `json:",default=7"` // 令牌过期时间（天）
+		JWTSecret   string `json:",env=JWT_SECRET"`
+		TokenExpire int64  `json:",default=7"` // 令牌过期时间（天）
+	}
+
+	Services struct {
+		GameCatalog struct {
+			BaseURL string `json:",default=http://localhost:8890,env=GAMECATALOG_BASE_URL"`
+			Timeout int64  `json:",default=5000,env=GAMECATALOG_TIMEOUT"` // 毫秒
+		}
 	}
 }

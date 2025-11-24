@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/tappi/tappi/services/user-service/internal/config"
+	"github.com/tappi/tappi/services/user-service/internal/integration"
 	"github.com/tappi/tappi/services/user-service/model"
 	"github.com/tappi/tappi/services/user-service/utils"
 
@@ -18,10 +19,11 @@ import (
 )
 
 type ServiceContext struct {
-	Config     config.Config
-	DB         *sql.DB
-	UserModel  *model.UserModel
-	Auth       *utils.Auth
+	Config            config.Config
+	DB                *sql.DB
+	UserModel         *model.UserModel
+	Auth              *utils.Auth
+	GameCatalogClient *integration.GameCatalogClient
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -53,15 +55,19 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	// 创建认证工具
 	auth := utils.NewAuth(c.Auth.JWTSecret, time.Duration(c.Auth.TokenExpire)*24*time.Hour)
 
+	timeout := time.Duration(c.Services.GameCatalog.Timeout) * time.Millisecond
+	gameClient := integration.NewGameCatalogClient(c.Services.GameCatalog.BaseURL, timeout)
+
 	// 创建用户表（开发环境）
 	if err := userModel.CreateUsersTable(); err != nil {
 		panic(fmt.Sprintf("创建用户表失败: %v", err))
 	}
 
 	return &ServiceContext{
-		Config:    c,
-		DB:        db,
-		UserModel: userModel,
-		Auth:      auth,
+		Config:            c,
+		DB:                db,
+		UserModel:         userModel,
+		Auth:              auth,
+		GameCatalogClient: gameClient,
 	}
 }

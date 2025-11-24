@@ -1,0 +1,11 @@
+Name: api-gateway
+Host: 0.0.0.0
+Port: 8800
+
+Upstreams:
+  UserService:
+    BaseURL: "http://localhost:8888"
+    Timeout: 5000
+  GameCatalog:
+    BaseURL: "http://localhost:8890"
+    Timeout: 5000

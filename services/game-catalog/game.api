@@ -1,0 +1,90 @@
+syntax = "v1"
+
+info(
+	title: "Game Catalog API"
+	desc: "游戏库、榜单、推荐服务"
+)
+
+type Game {
+	Id string `json:"id"`
+	Title string `json:"title"`
+	Description string `json:"description"`
+	Genres []string `json:"genres"`
+	Platforms []string `json:"platforms"`
+	ReleaseDate string `json:"release_date"`
+	Developer string `json:"developer"`
+	Publisher string `json:"publisher"`
+	Tags []string `json:"tags"`
+	Score float64 `json:"score"`
+	TrendingScore int `json:"trending_score"`
+	CoverImage string `json:"cover_image"`
+}
+
+type ListGamesRequest {
+	Keyword string `form:"keyword,optional"`
+	Genre string `form:"genre,optional"`
+	Platform string `form:"platform,optional"`
+	Tag string `form:"tag,optional"`
+	Limit int64 `form:"limit,default=20"`
+	Offset int64 `form:"offset,default=0"`
+	Sort string `form:"sort,default=popularity"`
+}
+
+type ListGamesResponse {
+	Games []Game `json:"games"`
+	Total int `json:"total"`
+	Limit int64 `json:"limit"`
+	Offset int64 `json:"offset"`
+}
+
+type FeaturedRequest {
+	Limit int64 `form:"limit,default=6"`
+}
+
+type FeaturedResponse {
+	Games []Game `json:"games"`
+}
+
+type GetGameRequest {
+	Id string `path:"id"`
+}
+
+type CreateGameRequest {
+	Title string `json:"title"`
+	Description string `json:"description"`
+	Genres []string `json:"genres"`
+	Platforms []string `json:"platforms"`
+	ReleaseDate string `json:"release_date"`
+	Developer string `json:"developer"`
+	Publisher string `json:"publisher"`
+	Tags []string `json:"tags"`
+	Score float64 `json:"score"`
+	CoverImage string `json:"cover_image"`
+}
+
+type RecommendationsRequest {
+	UserId string `form:"userId,optional"`
+	Genres string `form:"genres,optional"`
+	Limit int64 `form:"limit,default=5"`
+}
+
+type RecommendationsResponse {
+	Games []Game `json:"games"`
+}
+
+service game-catalog {
+	@handler ListGamesHandler
+	get /games (ListGamesRequest) returns (ListGamesResponse)
+
+	@handler GetGameDetailHandler
+	get /games/:id (GetGameRequest) returns (Game)
+
+	@handler CreateGameHandler
+	post /games (CreateGameRequest)
+
+	@handler GetFeaturedGamesHandler
+	get /games/featured (FeaturedRequest) returns (FeaturedResponse)
+
+	@handler GetRecommendationsHandler
+	get /games/recommendations (RecommendationsRequest) returns (RecommendationsResponse)
+}

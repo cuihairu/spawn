@@ -1,0 +1,42 @@
+syntax = "v1"
+
+type LoginRequest {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type LoginResponse {
+	Token    string `json:"token"`
+	UserInfo any    `json:"user_info"`
+}
+
+type FeaturedRequest {
+	Limit int64 `form:"limit,default=6"`
+}
+
+type FeaturedResponse {
+	Games []any `json:"games"`
+}
+
+type RecommendationResponse {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data"`
+}
+
+type RecommendationRequest {
+	Id    int64  `path:"id"`
+	Limit int64  `form:"limit,optional"`
+	Genres string `form:"genres,optional"`
+}
+
+service api-gateway {
+	@handler LoginHandler
+	post /auth/login (LoginRequest) returns (LoginResponse)
+
+	@handler FeaturedGamesHandler
+	get /games/featured (FeaturedRequest) returns (FeaturedResponse)
+
+	@handler UserRecommendationsHandler
+	get /users/:id/recommendations (RecommendationRequest) returns (RecommendationResponse)
+}

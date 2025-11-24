@@ -1,0 +1,6 @@
+Name: game-catalog-api
+Host: 0.0.0.0
+Port: 8890
+
+DataSource:
+  File: "data/games.json"
