@@ -1,0 +1,58 @@
+package logic
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/tappi/tappi/services/content-service/internal/svc"
+	"github.com/tappi/tappi/services/content-service/internal/types"
+	"github.com/tappi/tappi/services/content-service/model"
+
+	"github.com/zeromicro/go-zero/core/logx"
+)
+
+type CreateCommentLogic struct {
+	logx.Logger
+	ctx    context.Context
+	svcCtx *svc.ServiceContext
+}
+
+func NewCreateCommentLogic(ctx context.Context, svcCtx *svc.ServiceContext) *CreateCommentLogic {
+	return &CreateCommentLogic{
+		Logger: logx.WithContext(ctx),
+		ctx:    ctx,
+		svcCtx: svcCtx,
+	}
+}
+
+func (l *CreateCommentLogic) CreateComment(req *types.CreateCommentRequest) (resp *types.CreateCommentResponse, err error) {
+	// TODO: 从上下文中获取当前用户ID和名称
+	// 这里暂时硬编码，实际应该从JWT或session中获取
+	userId := int64(2001)
+	userName := "测试用户"
+
+	comment := &model.Comment{
+		TargetType: req.TargetType,
+		TargetId:   req.TargetId,
+		UserId:     userId,
+		UserName:   userName,
+		Content:    req.Content,
+		ParentId:   req.ParentId,
+		ReplyToId:  req.ReplyToId,
+	}
+
+	created, err := l.svcCtx.CommentRepository.Create(comment)
+	if err != nil {
+		l.Logger.Errorf("create comment failed: %v", err)
+		return &types.CreateCommentResponse{
+			Code:    http.StatusInternalServerError,
+			Message: "创建评论失败",
+		}, nil
+	}
+
+	return &types.CreateCommentResponse{
+		Code:    http.StatusOK,
+		Message: "评论成功",
+		Data:    modelCommentToType(created),
+	}, nil
+}

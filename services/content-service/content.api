@@ -1,0 +1,202 @@
+syntax = "v1"
+
+info(
+	title: "Content Service API"
+	desc: "攻略、资讯、评论管理服务"
+)
+
+// ==================== 攻略相关 ====================
+
+type Guide {
+	Id          int64    `json:"id"`
+	GameId      string   `json:"game_id"`
+	GameTitle   string   `json:"game_title"`
+	Title       string   `json:"title"`
+	Content     string   `json:"content"`
+	Summary     string   `json:"summary"`
+	CoverImage  string   `json:"cover_image"`
+	AuthorId    int64    `json:"author_id"`
+	AuthorName  string   `json:"author_name"`
+	Tags        []string `json:"tags"`
+	Views       int      `json:"views"`
+	Likes       int      `json:"likes"`
+	IsPublished bool     `json:"is_published"`
+	CreatedAt   string   `json:"created_at"`
+	UpdatedAt   string   `json:"updated_at"`
+}
+
+type CreateGuideRequest {
+	GameId     string   `json:"game_id"`
+	Title      string   `json:"title"`
+	Content    string   `json:"content"`
+	Summary    string   `json:"summary,optional"`
+	CoverImage string   `json:"cover_image,optional"`
+	Tags       []string `json:"tags,optional"`
+}
+
+type CreateGuideResponse {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    Guide  `json:"data"`
+}
+
+type UpdateGuideRequest {
+	Id         int64    `path:"id"`
+	Title      string   `json:"title,optional"`
+	Content    string   `json:"content,optional"`
+	Summary    string   `json:"summary,optional"`
+	CoverImage string   `json:"cover_image,optional"`
+	Tags       []string `json:"tags,optional"`
+}
+
+type UpdateGuideResponse {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    Guide  `json:"data"`
+}
+
+type ListGuidesRequest {
+	GameId   string `form:"game_id,optional"`
+	AuthorId int64  `form:"author_id,optional"`
+	Tag      string `form:"tag,optional"`
+	Page     int    `form:"page,default=1"`
+	PageSize int    `form:"page_size,default=20"`
+}
+
+type ListGuidesResponse {
+	Code    int     `json:"code"`
+	Message string  `json:"message"`
+	Data    []Guide `json:"data"`
+	Total   int     `json:"total"`
+	Page    int     `json:"page"`
+}
+
+type GetGuideRequest {
+	Id int64 `path:"id"`
+}
+
+type GetGuideResponse {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    Guide  `json:"data"`
+}
+
+type PublishGuideRequest {
+	Id int64 `path:"id"`
+}
+
+type PublishGuideResponse {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type LikeGuideRequest {
+	Id int64 `path:"id"`
+}
+
+type LikeGuideResponse {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Likes   int    `json:"likes"`
+}
+
+// ==================== 评论相关 ====================
+
+type Comment {
+	Id         int64  `json:"id"`
+	TargetType string `json:"target_type"`
+	TargetId   int64  `json:"target_id"`
+	UserId     int64  `json:"user_id"`
+	UserName   string `json:"user_name"`
+	Content    string `json:"content"`
+	ParentId   int64  `json:"parent_id,omitempty"`
+	ReplyToId  int64  `json:"reply_to_id,omitempty"`
+	Likes      int    `json:"likes"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+type CreateCommentRequest {
+	TargetType string `json:"target_type"`
+	TargetId   int64  `json:"target_id"`
+	Content    string `json:"content"`
+	ParentId   int64  `json:"parent_id,optional"`
+	ReplyToId  int64  `json:"reply_to_id,optional"`
+}
+
+type CreateCommentResponse {
+	Code    int     `json:"code"`
+	Message string  `json:"message"`
+	Data    Comment `json:"data"`
+}
+
+type ListCommentsRequest {
+	TargetType string `form:"target_type"`
+	TargetId   int64  `form:"target_id"`
+	Page       int    `form:"page,default=1"`
+	PageSize   int    `form:"page_size,default=20"`
+}
+
+type ListCommentsResponse {
+	Code    int       `json:"code"`
+	Message string    `json:"message"`
+	Data    []Comment `json:"data"`
+	Total   int       `json:"total"`
+	Page    int       `json:"page"`
+}
+
+type DeleteCommentRequest {
+	Id int64 `path:"id"`
+}
+
+type DeleteCommentResponse {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type LikeCommentRequest {
+	Id int64 `path:"id"`
+}
+
+type LikeCommentResponse {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Likes   int    `json:"likes"`
+}
+
+// ==================== 服务定义 ====================
+
+@server(
+	prefix: /api/v1
+)
+service content-api {
+	@handler CreateGuideHandler
+	post /guides (CreateGuideRequest) returns (CreateGuideResponse)
+
+	@handler UpdateGuideHandler
+	put /guides/:id (UpdateGuideRequest) returns (UpdateGuideResponse)
+
+	@handler GetGuideHandler
+	get /guides/:id (GetGuideRequest) returns (GetGuideResponse)
+
+	@handler ListGuidesHandler
+	get /guides (ListGuidesRequest) returns (ListGuidesResponse)
+
+	@handler PublishGuideHandler
+	post /guides/:id/publish (PublishGuideRequest) returns (PublishGuideResponse)
+
+	@handler LikeGuideHandler
+	post /guides/:id/like (LikeGuideRequest) returns (LikeGuideResponse)
+
+	@handler CreateCommentHandler
+	post /comments (CreateCommentRequest) returns (CreateCommentResponse)
+
+	@handler ListCommentsHandler
+	get /comments (ListCommentsRequest) returns (ListCommentsResponse)
+
+	@handler DeleteCommentHandler
+	delete /comments/:id (DeleteCommentRequest) returns (DeleteCommentResponse)
+
+	@handler LikeCommentHandler
+	post /comments/:id/like (LikeCommentRequest) returns (LikeCommentResponse)
+}

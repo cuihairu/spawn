@@ -60,14 +60,60 @@
 
 ## 新增功能概览
 
-- **Game Catalog Service**（`services/game-catalog`）：使用 go-zero 构建，内置游戏数据仓库、列表筛选、创建接口以及推荐/精选能力。服务启动后可通过 `GET /games`, `GET /games/:id`, `GET /games/featured`, `GET /games/recommendations` 获取数据。
-- **Service-to-Service 调用**：`user-service` 通过 `GameCatalogClient` 拉取 `/games/recommendations`，新增 `GET /users/:id/recommendations` 供前端/其他服务复用。
-- **Web Client**（`apps/web-client`）：React + Vite 实现的基础界面，支持账号登录、跨服务推荐展示、游戏榜单渲染。API 地址可通过 `VITE_USER_SERVICE_URL`、`VITE_GAME_SERVICE_URL` 注入。
-- **API Gateway**（`services/api-gateway`）：统一聚合认证、推荐、榜单接口，对外只暴露 `POST /auth/login`、`GET /games/featured`、`GET /users/:id/recommendations`，方便前端与未来其他客户端统一接入。
-- **测试补全**：为游戏仓库与用户推荐逻辑新增单元测试，覆盖过滤、推荐稳定性与跨服务失败兜底。
-- **Docker 支持**：`docker-compose.yaml` 一键拉起 `game-catalog`、`user-service`、`web-client`，各服务目录下提供独立 `Dockerfile`。
+### 已完成的核心服务
 
-快速体验：
+#### 1. Game Catalog Service（`services/game-catalog`）
+使用 go-zero 构建，内置游戏数据仓库、列表筛选、创建接口以及推荐/精选能力。
+- `GET /api/v1/games` - 游戏列表（支持筛选和分页）
+- `GET /api/v1/games/:id` - 游戏详情
+- `GET /api/v1/games/featured` - 精选游戏
+- `GET /api/v1/games/recommendations` - 推荐游戏
+- 端口：8890
+
+#### 2. User Service（`services/user-service`）
+用户账号、权限、好友、成长体系管理服务。
+- `POST /api/v1/auth/login` - 用户登录
+- `POST /api/v1/auth/register` - 用户注册
+- `GET /users/:id` - 获取用户信息
+- `GET /users/:id/recommendations` - 用户游戏推荐（跨服务调用）
+- 集成JWT认证中间件
+- 端口：8888
+
+#### 3. Content Service（`services/content-service`）✨ 新增
+攻略、资讯、CMS、评论管理服务，支持完整的内容创作和社区互动。
+- **攻略管理**：
+  - `POST /api/v1/guides` - 创建攻略
+  - `PUT /api/v1/guides/:id` - 更新攻略
+  - `GET /api/v1/guides/:id` - 获取攻略详情
+  - `GET /api/v1/guides` - 攻略列表（支持筛选）
+  - `POST /api/v1/guides/:id/publish` - 发布攻略
+  - `POST /api/v1/guides/:id/like` - 点赞攻略
+- **评论系统**：
+  - `POST /api/v1/comments` - 发表评论
+  - `GET /api/v1/comments` - 评论列表
+  - `DELETE /api/v1/comments/:id` - 删除评论
+  - `POST /api/v1/comments/:id/like` - 点赞评论
+- 支持嵌套评论和回复功能
+- 端口：8891
+
+#### 4. API Gateway（`services/api-gateway`）
+统一聚合认证、推荐、榜单接口，对外只暴露统一的API。
+- `POST /auth/login` - 用户登录
+- `GET /games/featured` - 精选游戏
+- `GET /users/:id/recommendations` - 用户推荐
+- 端口：8889
+
+#### 5. Web Client（`apps/web-client`）
+React + Vite 实现的基础界面，支持账号登录、跨服务推荐展示、游戏榜单渲染。API 地址可通过 `VITE_USER_SERVICE_URL`、`VITE_GAME_SERVICE_URL` 注入。
+
+### 技术特性
+
+- **Service-to-Service 调用**：`user-service` 通过 `GameCatalogClient` 拉取游戏推荐，展示跨服务集成能力。
+- **测试补全**：为游戏仓库与用户推荐逻辑新增单元测试，覆盖过滤、推荐稳定性与跨服务失败兜底。
+- **Docker 支持**：`docker-compose.yaml` 一键拉起所有服务，各服务目录下提供独立 `Dockerfile`。
+- **线程安全**：所有服务的内存存储都实现了线程安全的并发控制。
+
+### 快速体验
 
 ```bash
 # 启动全部服务（需 Docker）
@@ -76,8 +122,19 @@ docker compose up --build
 # 单独运行服务
 go run services/game-catalog/game.go -f services/game-catalog/etc/game-api.yaml
 go run services/user-service/user.go -f services/user-service/etc/user-api.yaml
+go run services/content-service/content.go -f services/content-service/etc/content-api.yaml
 go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
 
 # 前端
 cd apps/web-client && npm install && npm run dev
 ```
+
+### 服务端口规划
+
+| 服务 | 端口 | 描述 |
+|------|------|------|
+| user-service | 8888 | 用户服务 |
+| api-gateway | 8889 | API网关 |
+| game-catalog | 8890 | 游戏目录服务 |
+| content-service | 8891 | 内容服务 |
+| web-client | 5173 | Web前端 |

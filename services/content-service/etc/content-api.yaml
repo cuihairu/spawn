@@ -1,0 +1,7 @@
+Name: content-api
+Host: 0.0.0.0
+Port: 8891
+
+DataSource:
+  GuidesFile: "data/guides.json"
+  CommentsFile: "data/comments.json"
