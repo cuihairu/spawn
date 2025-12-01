@@ -1,20 +1,22 @@
-// Code scaffolded by goctl. Safe to edit.
-// goctl 1.9.2
-
 package svc
 
 import (
 	"fmt"
 	"path/filepath"
+	"time"
 
+	"github.com/tappi/tappi/services/content-service/client"
 	"github.com/tappi/tappi/services/content-service/internal/config"
 	"github.com/tappi/tappi/services/content-service/model"
+	"github.com/tappi/tappi/services/content-service/utils"
 )
 
 type ServiceContext struct {
 	Config            config.Config
 	GuideRepository   *model.GuideRepository
 	CommentRepository *model.CommentRepository
+	Auth              *utils.Auth
+	GameCatalogClient *client.GameCatalogClient
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -38,9 +40,20 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		panic(fmt.Sprintf("load comment data: %v", err))
 	}
 
+	// 初始化认证工具
+	auth := utils.NewAuth(c.Auth.JWTSecret)
+
+	// 初始化游戏目录服务客户端
+	gameCatalogClient := client.NewGameCatalogClient(
+		c.Services.GameCatalog.BaseURL,
+		time.Duration(c.Services.GameCatalog.Timeout)*time.Millisecond,
+	)
+
 	return &ServiceContext{
 		Config:            c,
 		GuideRepository:   guideRepo,
 		CommentRepository: commentRepo,
+		Auth:              auth,
+		GameCatalogClient: gameCatalogClient,
 	}
 }

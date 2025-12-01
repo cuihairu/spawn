@@ -26,16 +26,26 @@ func NewCreateCommentLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Cre
 }
 
 func (l *CreateCommentLogic) CreateComment(req *types.CreateCommentRequest) (resp *types.CreateCommentResponse, err error) {
-	// TODO: 从上下文中获取当前用户ID和名称
-	// 这里暂时硬编码，实际应该从JWT或session中获取
-	userId := int64(2001)
-	userName := "测试用户"
+	// 从上下文中获取当前用户ID和名称
+	userId, ok := l.ctx.Value("user_id").(int64)
+	if !ok || userId == 0 {
+		l.Logger.Error("无法从上下文获取用户ID")
+		return &types.CreateCommentResponse{
+			Code:    http.StatusUnauthorized,
+			Message: "用户认证失败",
+		}, nil
+	}
+
+	username, ok := l.ctx.Value("username").(string)
+	if !ok || username == "" {
+		username = "未知用户"
+	}
 
 	comment := &model.Comment{
 		TargetType: req.TargetType,
 		TargetId:   req.TargetId,
 		UserId:     userId,
-		UserName:   userName,
+		UserName:   username,
 		Content:    req.Content,
 		ParentId:   req.ParentId,
 		ReplyToId:  req.ReplyToId,

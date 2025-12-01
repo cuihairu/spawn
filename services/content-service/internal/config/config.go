@@ -13,4 +13,17 @@ type Config struct {
 		GuidesFile   string `json:",default=data/guides.json"`
 		CommentsFile string `json:",default=data/comments.json"`
 	}
+
+	// JWT 配置
+	Auth struct {
+		JWTSecret string `json:",env=JWT_SECRET"`
+	}
+
+	// 外部服务配置
+	Services struct {
+		GameCatalog struct {
+			BaseURL string `json:",default=http://localhost:8890,env=GAMECATALOG_BASE_URL"`
+			Timeout int64  `json:",default=5000,env=GAMECATALOG_TIMEOUT"` // 毫秒
+		}
+	}
 }

@@ -5,3 +5,11 @@ Port: 8891
 DataSource:
   GuidesFile: "data/guides.json"
   CommentsFile: "data/comments.json"
+
+Auth:
+  JWTSecret: "your-secret-key-here-change-in-production"
+
+Services:
+  GameCatalog:
+    BaseURL: "http://localhost:8890"
+    Timeout: 5000

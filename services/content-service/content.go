@@ -6,10 +6,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/http"
 
 	"github.com/tappi/tappi/services/content-service/internal/config"
 	"github.com/tappi/tappi/services/content-service/internal/handler"
 	"github.com/tappi/tappi/services/content-service/internal/svc"
+	"github.com/tappi/tappi/services/content-service/middleware"
 
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/rest"
@@ -28,6 +30,13 @@ func main() {
 
 	ctx := svc.NewServiceContext(c)
 	handler.RegisterHandlers(server, ctx)
+
+	// 注册全局中间件
+	server.Use(func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			middleware.AuthMiddleware(ctx)(next).ServeHTTP(w, r)
+		}
+	})
 
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()
