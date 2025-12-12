@@ -2,6 +2,95 @@
   color-scheme: light dark;
 }
 
+/* 新增：整体布局 */
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(circle at top, rgba(98, 89, 255, 0.08), transparent 55%),
+    #06080f;
+}
+
+/* 新增：导航栏 */
+.main-nav {
+  background-color: rgba(11, 16, 30, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.nav-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.nav-brand {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #8b96ff;
+  text-decoration: none;
+  transition: transform 0.2s;
+}
+
+.nav-brand:hover {
+  transform: scale(1.05);
+}
+
+.nav-links {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+}
+
+.nav-link {
+  color: #f4f5fb;
+  text-decoration: none;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #8b96ff;
+}
+
+.nav-user {
+  padding: 0.5rem 1rem;
+  background-color: rgba(139, 150, 255, 0.2);
+  border-radius: 20px;
+  color: #8b96ff;
+  font-size: 0.9rem;
+}
+
+/* 新增：主内容区 */
+.main-content {
+  flex: 1;
+}
+
+/* 新增：页脚 */
+.main-footer {
+  background-color: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  padding: 2rem;
+  margin-top: 4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.main-footer p {
+  opacity: 0.8;
+}
+
+/* 原有样式 */
+
 .app-shell {
   min-height: 100vh;
   padding: 2.5rem clamp(1.5rem, 5vw, 4rem) 4rem;
