@@ -103,8 +103,21 @@
 - `GET /users/:id/recommendations` - 用户推荐
 - 端口：8889
 
-#### 5. Web Client（`apps/web-client`）
-React + Vite 实现的基础界面，支持账号登录、跨服务推荐展示、游戏榜单渲染。API 地址可通过 `VITE_USER_SERVICE_URL`、`VITE_GAME_SERVICE_URL` 注入。
+#### 5. Web Client（`apps/web-client`）✨ 大幅增强
+React + Vite + React Router 构建的完整前端应用，支持账号登录、跨服务推荐展示、游戏榜单渲染、**攻略浏览与创作、评论互动**。
+
+**新增核心功能**：
+- **多页面路由**：使用 React Router 实现单页应用多页面导航
+- **攻略列表页**：浏览所有已发布攻略，支持筛选"全部攻略"和"我的攻略"
+- **攻略详情页**：查看完整攻略内容、点赞、阅读统计、标签展示
+- **攻略创建/编辑**：富文本编辑器，支持草稿保存和一键发布
+- **评论系统**：
+  - 发表评论和嵌套回复
+  - 点赞评论
+  - 删除自己的评论
+  - 实时评论数统计
+- **权限控制**：未登录用户可浏览，登录后可创建攻略和评论
+- **响应式设计**：暗色主题，适配桌面和移动设备
 
 ### 技术特性
 
@@ -131,10 +144,11 @@ cd apps/web-client && npm install && npm run dev
 
 ### 服务端口规划
 
-| 服务 | 端口 | 描述 |
-|------|------|------|
-| user-service | 8888 | 用户服务 |
-| api-gateway | 8889 | API网关 |
-| game-catalog | 8890 | 游戏目录服务 |
-| content-service | 8891 | 内容服务 |
-| web-client | 5173 | Web前端 |
+| 服务 | 端口 | 描述 | 状态 |
+|------|------|------|------|
+| user-service | 8888 | 用户服务 | ✅ 完成 |
+| api-gateway | 8889 | API网关 | ✅ 完成 |
+| game-catalog | 8890 | 游戏目录服务 | ✅ 完成 |
+| content-service | 8891 | 内容服务（攻略+评论） | ✅ 完成 |
+| community | 8892 | 社区服务（帖子+话题） | 🚧 开发中 |
+| web-client | 5173 | Web前端 | ✅ 完成 |

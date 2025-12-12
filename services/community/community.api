@@ -1,0 +1,204 @@
+syntax = "v1"
+
+info (
+	title:   "Community Service API"
+	desc:    "社区服务 - 帖子、话题圈子、互动、通知"
+	author:  "Tappi Team"
+	version: "v1.0"
+)
+
+type (
+	// 帖子相关
+	Post {
+		Id           int64    `json:"id"`
+		TopicId      int64    `json:"topic_id"` // 所属话题ID
+		AuthorId     int64    `json:"author_id"`
+		AuthorName   string   `json:"author_name,omitempty"`
+		Title        string   `json:"title"`
+		Content      string   `json:"content"`
+		Images       []string `json:"images,omitempty"` // 图片URL列表
+		Type         string   `json:"type"` // 类型：discussion/question/share
+		Tags         []string `json:"tags,omitempty"`
+		ViewCount    int64    `json:"view_count"`
+		LikeCount    int64    `json:"like_count"`
+		CommentCount int64    `json:"comment_count"`
+		ShareCount   int64    `json:"share_count"`
+		IsPinned     bool     `json:"is_pinned"` // 是否置顶
+		IsHot        bool     `json:"is_hot"` // 是否热门
+		Status       string   `json:"status"` // draft/published/deleted
+		CreatedAt    string   `json:"created_at"`
+		UpdatedAt    string   `json:"updated_at"`
+	}
+	CreatePostReq {
+		TopicId int64    `json:"topic_id"`
+		Title   string   `json:"title"`
+		Content string   `json:"content"`
+		Images  []string `json:"images,omitempty"`
+		Type    string   `json:"type,omitempty"` // 默认 discussion
+		Tags    []string `json:"tags,omitempty"`
+	}
+	UpdatePostReq {
+		Title   string   `json:"title,omitempty"`
+		Content string   `json:"content,omitempty"`
+		Images  []string `json:"images,omitempty"`
+		Tags    []string `json:"tags,omitempty"`
+	}
+	GetPostReq {
+		Id int64 `path:"id"`
+	}
+	GetPostsReq {
+		TopicId  int64  `form:"topic_id,optional"`
+		AuthorId int64  `form:"author_id,optional"`
+		Type     string `form:"type,optional"`
+		Status   string `form:"status,optional"`
+		IsHot    bool   `form:"is_hot,optional"`
+		Limit    int64  `form:"limit,optional,default=20"`
+		Offset   int64  `form:"offset,optional,default=0"`
+	}
+	DeletePostReq {
+		Id int64 `path:"id"`
+	}
+	// 话题相关
+	Topic {
+		Id            int64  `json:"id"`
+		Name          string `json:"name"`
+		Description   string `json:"description"`
+		Icon          string `json:"icon,omitempty"`
+		CoverImage    string `json:"cover_image,omitempty"`
+		PostCount     int64  `json:"post_count"`
+		FollowerCount int64  `json:"follower_count"`
+		IsOfficial    bool   `json:"is_official"` // 是否官方话题
+		CreatedAt     string `json:"created_at"`
+		UpdatedAt     string `json:"updated_at"`
+	}
+	CreateTopicReq {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Icon        string `json:"icon,omitempty"`
+		CoverImage  string `json:"cover_image,omitempty"`
+	}
+	GetTopicReq {
+		Id int64 `path:"id"`
+	}
+	GetTopicsReq {
+		Keyword    string `form:"keyword,optional"`
+		IsOfficial bool   `form:"is_official,optional"`
+		Limit      int64  `form:"limit,optional,default=20"`
+		Offset     int64  `form:"offset,optional,default=0"`
+	}
+	// 互动相关
+	LikeReq {
+		TargetType string `json:"target_type"` // post/comment
+		TargetId   int64  `json:"target_id"`
+	}
+	FollowTopicReq {
+		TopicId int64 `path:"topic_id"`
+	}
+	FollowUserReq {
+		UserId int64 `path:"user_id"`
+	}
+	// 响应
+	PostResp {
+		Post Post `json:"post"`
+	}
+	PostsResp {
+		Posts []Post `json:"posts"`
+		Total int64  `json:"total"`
+	}
+	TopicResp {
+		Topic Topic `json:"topic"`
+	}
+	TopicsResp {
+		Topics []Topic `json:"topics"`
+		Total  int64   `json:"total"`
+	}
+	FollowingResp {
+		Topics []Topic `json:"topics"`
+	}
+	CommonResp {
+		Code    int64  `json:"code"`
+		Message string `json:"message"`
+	}
+)
+
+@server (
+	prefix:     /api/v1
+	group:      post
+	middleware: Auth
+)
+service community-api {
+	@handler CreatePost
+	post /posts (CreatePostReq) returns (PostResp)
+
+	@handler UpdatePost
+	put /posts/:id (UpdatePostReq) returns (PostResp)
+
+	@handler DeletePost
+	delete /posts/:id (DeletePostReq) returns (CommonResp)
+
+	@handler LikePost
+	post /posts/:id/like returns (CommonResp)
+
+	@handler SharePost
+	post /posts/:id/share returns (CommonResp)
+}
+
+@server (
+	prefix: /api/v1
+	group:  post
+)
+service community-api {
+	@handler GetPost
+	get /posts/:id (GetPostReq) returns (PostResp)
+
+	@handler GetPosts
+	get /posts (GetPostsReq) returns (PostsResp)
+
+	@handler GetHotPosts
+	get /posts/hot (GetPostsReq) returns (PostsResp)
+}
+
+@server (
+	prefix:     /api/v1
+	group:      topic
+	middleware: Auth
+)
+service community-api {
+	@handler CreateTopic
+	post /topics (CreateTopicReq) returns (TopicResp)
+
+	@handler FollowTopic
+	post /topics/:topic_id/follow (FollowTopicReq) returns (CommonResp)
+
+	@handler UnfollowTopic
+	delete /topics/:topic_id/follow (FollowTopicReq) returns (CommonResp)
+}
+
+@server (
+	prefix: /api/v1
+	group:  topic
+)
+service community-api {
+	@handler GetTopic
+	get /topics/:id (GetTopicReq) returns (TopicResp)
+
+	@handler GetTopics
+	get /topics (GetTopicsReq) returns (TopicsResp)
+
+	@handler GetFollowingTopics
+	get /topics/following returns (FollowingResp)
+}
+
+@server (
+	prefix:     /api/v1
+	group:      follow
+	middleware: Auth
+)
+service community-api {
+	@handler FollowUser
+	post /users/:user_id/follow (FollowUserReq) returns (CommonResp)
+
+	@handler UnfollowUser
+	delete /users/:user_id/follow (FollowUserReq) returns (CommonResp)
+}
+
