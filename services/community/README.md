@@ -159,6 +159,11 @@ Host: 0.0.0.0
 Port: 8892              # 社区服务端口
 Timeout: 30000
 
+DataSource:
+  TopicsFile: "data/topics.json"
+  PostsFile: "data/posts.json"
+  FollowsFile: "data/follows.json"
+
 Auth:
   JWTSecret: your-secret-key-change-in-production
 ```

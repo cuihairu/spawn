@@ -4,6 +4,9 @@
 package svc
 
 import (
+	"fmt"
+	"path/filepath"
+
 	"github.com/tappi/tappi/services/community/internal/config"
 	"github.com/tappi/tappi/services/community/internal/middleware"
 	"github.com/tappi/tappi/services/community/internal/model"
@@ -23,12 +26,39 @@ type ServiceContext struct {
 
 func NewServiceContext(c config.Config) *ServiceContext {
 	jwtTool := utils.NewAuth(c.Auth.JWTSecret)
+
+	topicsSource := c.DataSource.TopicsFile
+	if !filepath.IsAbs(topicsSource) {
+		topicsSource = filepath.Clean(topicsSource)
+	}
+	postsSource := c.DataSource.PostsFile
+	if !filepath.IsAbs(postsSource) {
+		postsSource = filepath.Clean(postsSource)
+	}
+	followsSource := c.DataSource.FollowsFile
+	if !filepath.IsAbs(followsSource) {
+		followsSource = filepath.Clean(followsSource)
+	}
+
+	topicRepo, err := model.NewTopicRepository(topicsSource)
+	if err != nil {
+		panic(fmt.Sprintf("load topics: %v", err))
+	}
+	postRepo, err := model.NewPostRepository(postsSource)
+	if err != nil {
+		panic(fmt.Sprintf("load posts: %v", err))
+	}
+	followRepo, err := model.NewFollowRepository(followsSource)
+	if err != nil {
+		panic(fmt.Sprintf("load follows: %v", err))
+	}
+
 	return &ServiceContext{
 		Config:     c,
 		Auth:       middleware.NewAuthMiddleware(jwtTool).Handle,
 		Jwt:        jwtTool,
-		PostRepo:   model.NewPostRepository(),
-		TopicRepo:  model.NewTopicRepository(),
-		FollowRepo: model.NewFollowRepository(),
+		PostRepo:   postRepo,
+		TopicRepo:  topicRepo,
+		FollowRepo: followRepo,
 	}
 }

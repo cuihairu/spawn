@@ -2,7 +2,9 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"math"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -13,23 +15,48 @@ import (
 
 type PostRepository struct {
 	mu     sync.RWMutex
+	source string
 	posts  []*types.Post
 	index  map[int64]*types.Post
 	nextId int64
 }
 
-func NewPostRepository() *PostRepository {
+func NewPostRepository(source string) (*PostRepository, error) {
 	repo := &PostRepository{
+		source: source,
 		index:  make(map[int64]*types.Post),
 		nextId: 1,
 	}
-	repo.seed()
-	return repo
+	if err := repo.load(); err != nil {
+		return nil, err
+	}
+	return repo, nil
 }
 
-func (r *PostRepository) seed() {
+func (r *PostRepository) load() error {
+	var posts []*types.Post
+	err := readJSONFile(r.source, &posts)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			posts = defaultSeedPosts()
+			r.posts = posts
+			r.buildIndexLocked()
+			_ = r.saveLocked()
+			return nil
+		}
+		return fmt.Errorf("read posts: %w", err)
+	}
+	if len(posts) == 0 {
+		posts = defaultSeedPosts()
+	}
+	r.posts = posts
+	r.buildIndexLocked()
+	return nil
+}
+
+func defaultSeedPosts() []*types.Post {
 	now := time.Now().UTC().Format(time.RFC3339)
-	r.posts = []*types.Post{
+	return []*types.Post{
 		{
 			Id:         1,
 			TopicId:    1,
@@ -63,7 +90,6 @@ func (r *PostRepository) seed() {
 			UpdatedAt:  now,
 		},
 	}
-	r.buildIndexLocked()
 }
 
 func (r *PostRepository) buildIndexLocked() {
@@ -79,6 +105,17 @@ func (r *PostRepository) buildIndexLocked() {
 		}
 	}
 	r.nextId = maxId + 1
+}
+
+func (r *PostRepository) saveLocked() error {
+	cp := make([]*types.Post, 0, len(r.posts))
+	for _, p := range r.posts {
+		if p != nil {
+			cp = append(cp, p)
+		}
+	}
+	sort.SliceStable(cp, func(i, j int) bool { return cp[i].Id < cp[j].Id })
+	return writeJSONAtomic(r.source, cp)
 }
 
 func (r *PostRepository) Create(topicId, authorId int64, authorName string, req *types.CreatePostReq) (*types.Post, error) {
@@ -114,6 +151,9 @@ func (r *PostRepository) Create(topicId, authorId int64, authorName string, req 
 	r.nextId++
 	r.posts = append(r.posts, p)
 	r.index[p.Id] = p
+	if err := r.saveLocked(); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 
@@ -135,7 +175,7 @@ func (r *PostRepository) IncrementViews(id int64) error {
 		return ErrPostNotFound
 	}
 	p.ViewCount++
-	return nil
+	return r.saveLocked()
 }
 
 func (r *PostRepository) Update(id, requesterId int64, req *types.UpdatePostReq) (*types.Post, error) {
@@ -161,6 +201,9 @@ func (r *PostRepository) Update(id, requesterId int64, req *types.UpdatePostReq)
 		p.Tags = req.Tags
 	}
 	p.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := r.saveLocked(); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 
@@ -176,7 +219,7 @@ func (r *PostRepository) Delete(id, requesterId int64) error {
 	}
 	p.Status = "deleted"
 	p.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	return nil
+	return r.saveLocked()
 }
 
 func (r *PostRepository) Like(id int64) (*types.Post, error) {
@@ -187,6 +230,9 @@ func (r *PostRepository) Like(id int64) (*types.Post, error) {
 		return nil, ErrPostNotFound
 	}
 	p.LikeCount++
+	if err := r.saveLocked(); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 
@@ -198,6 +244,9 @@ func (r *PostRepository) Share(id int64) (*types.Post, error) {
 		return nil, ErrPostNotFound
 	}
 	p.ShareCount++
+	if err := r.saveLocked(); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 
@@ -238,7 +287,6 @@ func (r *PostRepository) List(filter PostListFilter) ([]types.Post, int64) {
 			continue
 		}
 		if filter.IsHot {
-			// compute on fly
 			if hotScore(*p) <= 0 {
 				continue
 			}
@@ -307,7 +355,6 @@ func (r *PostRepository) Hot(limit int64) []types.Post {
 }
 
 func hotScore(p types.Post) float64 {
-	// 热度分 = (点赞数 * 3 + 评论数 * 5 + 分享数 * 7 + 浏览数) / 时间衰减因子
 	base := float64(p.LikeCount*3 + p.CommentCount*5 + p.ShareCount*7 + p.ViewCount)
 
 	createdAt, err := time.Parse(time.RFC3339, p.CreatedAt)
@@ -328,8 +375,6 @@ func hotScore(p types.Post) float64 {
 		decay = 8
 	}
 
-	// Additional smooth decay to avoid ties when everything is very recent.
 	decay *= math.Max(1, hours/24)
-
 	return base / decay
 }

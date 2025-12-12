@@ -1,6 +1,10 @@
 package model
 
 import (
+	"errors"
+	"fmt"
+	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -10,23 +14,49 @@ import (
 
 type TopicRepository struct {
 	mu     sync.RWMutex
+	source string
 	topics []*types.Topic
 	index  map[int64]*types.Topic
 	nextId int64
 }
 
-func NewTopicRepository() *TopicRepository {
+func NewTopicRepository(source string) (*TopicRepository, error) {
 	repo := &TopicRepository{
+		source: source,
 		index:  make(map[int64]*types.Topic),
 		nextId: 1,
 	}
-	repo.seed()
-	return repo
+	if err := repo.load(); err != nil {
+		return nil, err
+	}
+	return repo, nil
 }
 
-func (r *TopicRepository) seed() {
+func (r *TopicRepository) load() error {
+	var topics []*types.Topic
+	err := readJSONFile(r.source, &topics)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			topics = defaultSeedTopics()
+			r.topics = topics
+			r.buildIndexLocked()
+			// Best effort: create file so subsequent restarts are stable.
+			_ = r.saveLocked()
+			return nil
+		}
+		return fmt.Errorf("read topics: %w", err)
+	}
+	if len(topics) == 0 {
+		topics = defaultSeedTopics()
+	}
+	r.topics = topics
+	r.buildIndexLocked()
+	return nil
+}
+
+func defaultSeedTopics() []*types.Topic {
 	now := time.Now().UTC().Format(time.RFC3339)
-	r.topics = []*types.Topic{
+	return []*types.Topic{
 		{
 			Id:            1,
 			Name:          "《黑神话：悟空》",
@@ -48,7 +78,6 @@ func (r *TopicRepository) seed() {
 			UpdatedAt:     now,
 		},
 	}
-	r.buildIndexLocked()
 }
 
 func (r *TopicRepository) buildIndexLocked() {
@@ -64,6 +93,18 @@ func (r *TopicRepository) buildIndexLocked() {
 		}
 	}
 	r.nextId = maxId + 1
+}
+
+func (r *TopicRepository) saveLocked() error {
+	// Store a stable order for readability/diffs.
+	cp := make([]*types.Topic, 0, len(r.topics))
+	for _, t := range r.topics {
+		if t != nil {
+			cp = append(cp, t)
+		}
+	}
+	sort.SliceStable(cp, func(i, j int) bool { return cp[i].Id < cp[j].Id })
+	return writeJSONAtomic(r.source, cp)
 }
 
 func (r *TopicRepository) Get(id int64) (*types.Topic, error) {
@@ -96,6 +137,9 @@ func (r *TopicRepository) Create(req *types.CreateTopicReq) (*types.Topic, error
 	r.nextId++
 	r.topics = append(r.topics, t)
 	r.index[t.Id] = t
+	if err := r.saveLocked(); err != nil {
+		return nil, err
+	}
 	return t, nil
 }
 
@@ -157,7 +201,7 @@ func (r *TopicRepository) IncrementPostCount(topicId int64, delta int64) error {
 		t.PostCount = 0
 	}
 	t.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	return nil
+	return r.saveLocked()
 }
 
 func (r *TopicRepository) IncrementFollowerCount(topicId int64, delta int64) error {
@@ -172,5 +216,5 @@ func (r *TopicRepository) IncrementFollowerCount(topicId int64, delta int64) err
 		t.FollowerCount = 0
 	}
 	t.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	return nil
+	return r.saveLocked()
 }
