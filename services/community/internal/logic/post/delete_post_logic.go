@@ -5,9 +5,11 @@ package post
 
 import (
 	"context"
+	"errors"
 
-	"community/internal/svc"
-	"community/internal/types"
+	"github.com/tappi/tappi/services/community/internal/logic/common"
+	"github.com/tappi/tappi/services/community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -27,7 +29,16 @@ func NewDeletePostLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Delete
 }
 
 func (l *DeletePostLogic) DeletePost(req *types.DeletePostReq) (resp *types.CommonResp, err error) {
-	// todo: add your logic here and delete this line
+	userId, _, err := common.UserFromContext(l.ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil || req.Id <= 0 {
+		return nil, errors.New("id required")
+	}
+	if err := l.svcCtx.PostRepo.Delete(req.Id, userId); err != nil {
+		return nil, err
+	}
 
-	return
+	return &types.CommonResp{Code: 0, Message: "ok"}, nil
 }

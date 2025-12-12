@@ -4,5 +4,4 @@ Port: 8892
 Timeout: 30000
 
 Auth:
-  AccessSecret: your-secret-key-change-in-production
-  AccessExpire: 86400
+  JWTSecret: your-secret-key-change-in-production

@@ -6,15 +6,22 @@ package post
 import (
 	"net/http"
 
-	"community/internal/logic/post"
-	"community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/logic/post"
+	"github.com/tappi/tappi/services/community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/types"
 	"github.com/zeromicro/go-zero/rest/httpx"
 )
 
 func SharePostHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.SharePostReq
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+
 		l := post.NewSharePostLogic(r.Context(), svcCtx)
-		resp, err := l.SharePost()
+		resp, err := l.SharePost(&req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {

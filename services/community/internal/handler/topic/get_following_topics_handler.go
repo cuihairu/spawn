@@ -6,8 +6,8 @@ package topic
 import (
 	"net/http"
 
-	"community/internal/logic/topic"
-	"community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/logic/topic"
+	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/zeromicro/go-zero/rest/httpx"
 )
 

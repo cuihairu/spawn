@@ -6,8 +6,8 @@ package post
 import (
 	"context"
 
-	"community/internal/svc"
-	"community/internal/types"
+	"github.com/tappi/tappi/services/community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -27,7 +27,14 @@ func NewGetHotPostsLogic(ctx context.Context, svcCtx *svc.ServiceContext) *GetHo
 }
 
 func (l *GetHotPostsLogic) GetHotPosts(req *types.GetPostsReq) (resp *types.PostsResp, err error) {
-	// todo: add your logic here and delete this line
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
 
-	return
+	posts := l.svcCtx.PostRepo.Hot(limit)
+	return &types.PostsResp{Posts: posts, Total: int64(len(posts))}, nil
 }

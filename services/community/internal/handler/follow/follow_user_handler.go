@@ -6,9 +6,9 @@ package follow
 import (
 	"net/http"
 
-	"community/internal/logic/follow"
-	"community/internal/svc"
-	"community/internal/types"
+	"github.com/tappi/tappi/services/community/internal/logic/follow"
+	"github.com/tappi/tappi/services/community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/types"
 	"github.com/zeromicro/go-zero/rest/httpx"
 )
 

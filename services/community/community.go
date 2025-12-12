@@ -7,9 +7,9 @@ import (
 	"flag"
 	"fmt"
 
-	"community/internal/config"
-	"community/internal/handler"
-	"community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/config"
+	"github.com/tappi/tappi/services/community/internal/handler"
+	"github.com/tappi/tappi/services/community/internal/svc"
 
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/rest"

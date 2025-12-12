@@ -6,8 +6,8 @@ package topic
 import (
 	"context"
 
-	"community/internal/svc"
-	"community/internal/types"
+	"github.com/tappi/tappi/services/community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -27,7 +27,18 @@ func NewGetTopicsLogic(ctx context.Context, svcCtx *svc.ServiceContext) *GetTopi
 }
 
 func (l *GetTopicsLogic) GetTopics(req *types.GetTopicsReq) (resp *types.TopicsResp, err error) {
-	// todo: add your logic here and delete this line
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
 
-	return
+	topics, total := l.svcCtx.TopicRepo.List(req.Keyword, req.IsOfficial, limit, offset)
+	return &types.TopicsResp{Topics: topics, Total: total}, nil
 }

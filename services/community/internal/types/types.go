@@ -70,6 +70,14 @@ type LikeReq struct {
 	TargetId   int64  `json:"target_id"`
 }
 
+type LikePostReq struct {
+	Id int64 `path:"id"`
+}
+
+type SharePostReq struct {
+	Id int64 `path:"id"`
+}
+
 type Post struct {
 	Id           int64    `json:"id"`
 	TopicId      int64    `json:"topic_id"` // 所属话题ID
@@ -123,6 +131,7 @@ type TopicsResp struct {
 }
 
 type UpdatePostReq struct {
+	Id      int64    `path:"id"`
 	Title   string   `json:"title,omitempty"`
 	Content string   `json:"content,omitempty"`
 	Images  []string `json:"images,omitempty"`

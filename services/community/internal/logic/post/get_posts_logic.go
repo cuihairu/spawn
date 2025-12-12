@@ -6,8 +6,9 @@ package post
 import (
 	"context"
 
-	"community/internal/svc"
-	"community/internal/types"
+	"github.com/tappi/tappi/services/community/internal/model"
+	"github.com/tappi/tappi/services/community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -27,7 +28,28 @@ func NewGetPostsLogic(ctx context.Context, svcCtx *svc.ServiceContext) *GetPosts
 }
 
 func (l *GetPostsLogic) GetPosts(req *types.GetPostsReq) (resp *types.PostsResp, err error) {
-	// todo: add your logic here and delete this line
+	// defaults are already defined in api, but keep defensive guards here.
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
 
-	return
+	posts, total := l.svcCtx.PostRepo.List(model.PostListFilter{
+		TopicId:  req.TopicId,
+		AuthorId: req.AuthorId,
+		Type:     req.Type,
+		Status:   req.Status,
+		IsHot:    req.IsHot,
+		Limit:    limit,
+		Offset:   offset,
+	})
+
+	return &types.PostsResp{Posts: posts, Total: total}, nil
 }

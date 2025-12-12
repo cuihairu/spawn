@@ -6,9 +6,9 @@ package post
 import (
 	"net/http"
 
-	"community/internal/logic/post"
-	"community/internal/svc"
-	"community/internal/types"
+	"github.com/tappi/tappi/services/community/internal/logic/post"
+	"github.com/tappi/tappi/services/community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/types"
 	"github.com/zeromicro/go-zero/rest/httpx"
 )
 

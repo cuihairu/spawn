@@ -5,9 +5,12 @@ package post
 
 import (
 	"context"
+	"errors"
+	"strings"
 
-	"community/internal/svc"
-	"community/internal/types"
+	"github.com/tappi/tappi/services/community/internal/logic/common"
+	"github.com/tappi/tappi/services/community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -27,7 +30,32 @@ func NewCreatePostLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Create
 }
 
 func (l *CreatePostLogic) CreatePost(req *types.CreatePostReq) (resp *types.PostResp, err error) {
-	// todo: add your logic here and delete this line
+	userId, username, err := common.UserFromContext(l.ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, errors.New("request required")
+	}
+	if req.TopicId <= 0 {
+		return nil, errors.New("topic_id required")
+	}
+	if strings.TrimSpace(req.Title) == "" {
+		return nil, errors.New("title required")
+	}
+	if strings.TrimSpace(req.Content) == "" {
+		return nil, errors.New("content required")
+	}
 
-	return
+	if _, err := l.svcCtx.TopicRepo.Get(req.TopicId); err != nil {
+		return nil, err
+	}
+
+	p, err := l.svcCtx.PostRepo.Create(req.TopicId, userId, username, req)
+	if err != nil {
+		return nil, err
+	}
+	_ = l.svcCtx.TopicRepo.IncrementPostCount(req.TopicId, 1)
+
+	return &types.PostResp{Post: *p}, nil
 }

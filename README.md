@@ -150,5 +150,5 @@ cd apps/web-client && npm install && npm run dev
 | api-gateway | 8889 | API网关 | ✅ 完成 |
 | game-catalog | 8890 | 游戏目录服务 | ✅ 完成 |
 | content-service | 8891 | 内容服务（攻略+评论） | ✅ 完成 |
-| community | 8892 | 社区服务（帖子+话题） | 🚧 开发中 |
+| community | 8892 | 社区服务（帖子+话题） | ✅ MVP |
 | web-client | 5173 | Web前端 | ✅ 完成 |

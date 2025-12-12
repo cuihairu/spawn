@@ -5,9 +5,11 @@ package follow
 
 import (
 	"context"
+	"errors"
 
-	"community/internal/svc"
-	"community/internal/types"
+	"github.com/tappi/tappi/services/community/internal/logic/common"
+	"github.com/tappi/tappi/services/community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -27,7 +29,17 @@ func NewFollowUserLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Follow
 }
 
 func (l *FollowUserLogic) FollowUser(req *types.FollowUserReq) (resp *types.CommonResp, err error) {
-	// todo: add your logic here and delete this line
+	userId, _, err := common.UserFromContext(l.ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil || req.UserId <= 0 {
+		return nil, errors.New("user_id required")
+	}
+	if req.UserId == userId {
+		return nil, errors.New("cannot follow yourself")
+	}
 
-	return
+	_ = l.svcCtx.FollowRepo.FollowUser(userId, req.UserId)
+	return &types.CommonResp{Code: 0, Message: "ok"}, nil
 }

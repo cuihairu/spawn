@@ -38,6 +38,7 @@ type (
 		Tags    []string `json:"tags,omitempty"`
 	}
 	UpdatePostReq {
+		Id      int64    `path:"id"`
 		Title   string   `json:"title,omitempty"`
 		Content string   `json:"content,omitempty"`
 		Images  []string `json:"images,omitempty"`
@@ -56,6 +57,12 @@ type (
 		Offset   int64  `form:"offset,optional,default=0"`
 	}
 	DeletePostReq {
+		Id int64 `path:"id"`
+	}
+	LikePostReq {
+		Id int64 `path:"id"`
+	}
+	SharePostReq {
 		Id int64 `path:"id"`
 	}
 	// 话题相关
@@ -137,10 +144,10 @@ service community-api {
 	delete /posts/:id (DeletePostReq) returns (CommonResp)
 
 	@handler LikePost
-	post /posts/:id/like returns (CommonResp)
+	post /posts/:id/like (LikePostReq) returns (CommonResp)
 
 	@handler SharePost
-	post /posts/:id/share returns (CommonResp)
+	post /posts/:id/share (SharePostReq) returns (CommonResp)
 }
 
 @server (
@@ -172,6 +179,9 @@ service community-api {
 
 	@handler UnfollowTopic
 	delete /topics/:topic_id/follow (FollowTopicReq) returns (CommonResp)
+
+	@handler GetFollowingTopics
+	get /topics/following returns (FollowingResp)
 }
 
 @server (
@@ -184,9 +194,6 @@ service community-api {
 
 	@handler GetTopics
 	get /topics (GetTopicsReq) returns (TopicsResp)
-
-	@handler GetFollowingTopics
-	get /topics/following returns (FollowingResp)
 }
 
 @server (
@@ -201,4 +208,3 @@ service community-api {
 	@handler UnfollowUser
 	delete /users/:user_id/follow (FollowUserReq) returns (CommonResp)
 }
-

@@ -6,10 +6,10 @@ package handler
 import (
 	"net/http"
 
-	follow "community/internal/handler/follow"
-	post "community/internal/handler/post"
-	topic "community/internal/handler/topic"
-	"community/internal/svc"
+	follow "github.com/tappi/tappi/services/community/internal/handler/follow"
+	post "github.com/tappi/tappi/services/community/internal/handler/post"
+	topic "github.com/tappi/tappi/services/community/internal/handler/topic"
+	"github.com/tappi/tappi/services/community/internal/svc"
 
 	"github.com/zeromicro/go-zero/rest"
 )
@@ -108,6 +108,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/topics/:topic_id/follow",
 					Handler: topic.UnfollowTopicHandler(serverCtx),
 				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/topics/following",
+					Handler: topic.GetFollowingTopicsHandler(serverCtx),
+				},
 			}...,
 		),
 		rest.WithPrefix("/api/v1"),
@@ -124,11 +129,6 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 				Method:  http.MethodGet,
 				Path:    "/topics/:id",
 				Handler: topic.GetTopicHandler(serverCtx),
-			},
-			{
-				Method:  http.MethodGet,
-				Path:    "/topics/following",
-				Handler: topic.GetFollowingTopicsHandler(serverCtx),
 			},
 		},
 		rest.WithPrefix("/api/v1"),

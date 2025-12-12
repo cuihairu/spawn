@@ -5,9 +5,11 @@ package topic
 
 import (
 	"context"
+	"errors"
 
-	"community/internal/svc"
-	"community/internal/types"
+	"github.com/tappi/tappi/services/community/internal/logic/common"
+	"github.com/tappi/tappi/services/community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -27,7 +29,20 @@ func NewUnfollowTopicLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Unf
 }
 
 func (l *UnfollowTopicLogic) UnfollowTopic(req *types.FollowTopicReq) (resp *types.CommonResp, err error) {
-	// todo: add your logic here and delete this line
+	userId, _, err := common.UserFromContext(l.ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil || req.TopicId <= 0 {
+		return nil, errors.New("topic_id required")
+	}
+	if _, err := l.svcCtx.TopicRepo.Get(req.TopicId); err != nil {
+		return nil, err
+	}
 
-	return
+	if removed := l.svcCtx.FollowRepo.UnfollowTopic(userId, req.TopicId); removed {
+		_ = l.svcCtx.TopicRepo.IncrementFollowerCount(req.TopicId, -1)
+	}
+
+	return &types.CommonResp{Code: 0, Message: "ok"}, nil
 }

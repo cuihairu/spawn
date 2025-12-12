@@ -5,9 +5,10 @@ package topic
 
 import (
 	"context"
+	"errors"
 
-	"community/internal/svc"
-	"community/internal/types"
+	"github.com/tappi/tappi/services/community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -27,7 +28,12 @@ func NewGetTopicLogic(ctx context.Context, svcCtx *svc.ServiceContext) *GetTopic
 }
 
 func (l *GetTopicLogic) GetTopic(req *types.GetTopicReq) (resp *types.TopicResp, err error) {
-	// todo: add your logic here and delete this line
-
-	return
+	if req == nil || req.Id <= 0 {
+		return nil, errors.New("id required")
+	}
+	t, err := l.svcCtx.TopicRepo.Get(req.Id)
+	if err != nil {
+		return nil, err
+	}
+	return &types.TopicResp{Topic: *t}, nil
 }

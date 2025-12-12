@@ -5,9 +5,12 @@ package topic
 
 import (
 	"context"
+	"errors"
+	"strings"
 
-	"community/internal/svc"
-	"community/internal/types"
+	"github.com/tappi/tappi/services/community/internal/logic/common"
+	"github.com/tappi/tappi/services/community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -27,7 +30,19 @@ func NewCreateTopicLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Creat
 }
 
 func (l *CreateTopicLogic) CreateTopic(req *types.CreateTopicReq) (resp *types.TopicResp, err error) {
-	// todo: add your logic here and delete this line
+	if _, _, err := common.UserFromContext(l.ctx); err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, errors.New("request required")
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return nil, errors.New("name required")
+	}
 
-	return
+	t, err := l.svcCtx.TopicRepo.Create(req)
+	if err != nil {
+		return nil, err
+	}
+	return &types.TopicResp{Topic: *t}, nil
 }

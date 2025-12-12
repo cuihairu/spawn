@@ -11,12 +11,14 @@ Community Service 是 Tappi 社区平台的核心服务之一，提供帖子发�
 2. 项目结构生成
 3. 配置文件创建
 4. Handler 和 Routes 生成
+5. JWT 认证中间件（受保护接口需要 `Authorization: Bearer <token>`）
+6. 基于内存的仓储层（Post/Topic/Follow，带种子数据）
+7. 业务逻辑层（发帖/改帖/删帖/列表/热门、话题创建/关注/取关/关注列表、用户关注/取关）
 
 ⏳ **待实现**：
-1. 数据存储层（repository）
-2. 业务逻辑层（logic）
-3. 中间件完善
-4. 单元测试
+1. 持久化存储（当前为内存数据，重启即重置）
+2. 统一错误码与错误响应结构（当前使用 go-zero 默认 error 输出）
+3. 更完整的单元/集成测试
 
 ## API 端点
 
@@ -42,7 +44,7 @@ Community Service 是 Tappi 社区平台的核心服务之一，提供帖子发�
 - `POST /api/v1/users/:user_id/follow` - 关注用户 🔒
 - `DELETE /api/v1/users/:user_id/follow` - 取消关注用户 🔒
 
-🔒 = 需要认证
+🔒 = 需要认证（已实现）
 
 ## 数据模型
 
@@ -158,8 +160,7 @@ Port: 8892              # 社区服务端口
 Timeout: 30000
 
 Auth:
-  AccessSecret: your-secret-key-change-in-production
-  AccessExpire: 86400   # Token 过期时间(秒)
+  JWTSecret: your-secret-key-change-in-production
 ```
 
 ## 启动服务
@@ -276,5 +277,5 @@ CMD ["./community", "-f", "etc/community-api.yaml"]
 ---
 
 **当前版本**: v1.0 (基础框架)
-**最后更新**: 2024-12-02
-**维护状态**: 🚧 开发中
+**最后更新**: 2025-12-12
+**维护状态**: ✅ MVP 可用（内存存储）

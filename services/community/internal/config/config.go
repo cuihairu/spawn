@@ -7,4 +7,8 @@ import "github.com/zeromicro/go-zero/rest"
 
 type Config struct {
 	rest.RestConf
+
+	Auth struct {
+		JWTSecret string `json:",env=JWT_SECRET"`
+	}
 }

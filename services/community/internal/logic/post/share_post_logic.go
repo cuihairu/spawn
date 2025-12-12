@@ -5,9 +5,10 @@ package post
 
 import (
 	"context"
+	"errors"
 
-	"community/internal/svc"
-	"community/internal/types"
+	"github.com/tappi/tappi/services/community/internal/svc"
+	"github.com/tappi/tappi/services/community/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -26,8 +27,12 @@ func NewSharePostLogic(ctx context.Context, svcCtx *svc.ServiceContext) *SharePo
 	}
 }
 
-func (l *SharePostLogic) SharePost() (resp *types.CommonResp, err error) {
-	// todo: add your logic here and delete this line
-
-	return
+func (l *SharePostLogic) SharePost(req *types.SharePostReq) (resp *types.CommonResp, err error) {
+	if req == nil || req.Id <= 0 {
+		return nil, errors.New("id required")
+	}
+	if _, err := l.svcCtx.PostRepo.Share(req.Id); err != nil {
+		return nil, err
+	}
+	return &types.CommonResp{Code: 0, Message: "ok"}, nil
 }
