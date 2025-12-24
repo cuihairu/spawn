@@ -5,8 +5,8 @@ package topic
 
 import (
 	"context"
-	"errors"
 
+	"github.com/tappi/tappi/services/community/internal/httperr"
 	"github.com/tappi/tappi/services/community/internal/logic/common"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
@@ -34,7 +34,7 @@ func (l *FollowTopicLogic) FollowTopic(req *types.FollowTopicReq) (resp *types.C
 		return nil, err
 	}
 	if req == nil || req.TopicId <= 0 {
-		return nil, errors.New("topic_id required")
+		return nil, httperr.BadRequest("topic_id required")
 	}
 	if _, err := l.svcCtx.TopicRepo.Get(req.TopicId); err != nil {
 		return nil, err

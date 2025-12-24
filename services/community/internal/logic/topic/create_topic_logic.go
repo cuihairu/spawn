@@ -5,9 +5,9 @@ package topic
 
 import (
 	"context"
-	"errors"
 	"strings"
 
+	"github.com/tappi/tappi/services/community/internal/httperr"
 	"github.com/tappi/tappi/services/community/internal/logic/common"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
@@ -34,10 +34,10 @@ func (l *CreateTopicLogic) CreateTopic(req *types.CreateTopicReq) (resp *types.T
 		return nil, err
 	}
 	if req == nil {
-		return nil, errors.New("request required")
+		return nil, httperr.BadRequest("request required")
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		return nil, errors.New("name required")
+		return nil, httperr.BadRequest("name required")
 	}
 
 	t, err := l.svcCtx.TopicRepo.Create(req)

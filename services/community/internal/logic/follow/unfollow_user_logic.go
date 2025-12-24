@@ -5,8 +5,8 @@ package follow
 
 import (
 	"context"
-	"errors"
 
+	"github.com/tappi/tappi/services/community/internal/httperr"
 	"github.com/tappi/tappi/services/community/internal/logic/common"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
@@ -34,10 +34,10 @@ func (l *UnfollowUserLogic) UnfollowUser(req *types.FollowUserReq) (resp *types.
 		return nil, err
 	}
 	if req == nil || req.UserId <= 0 {
-		return nil, errors.New("user_id required")
+		return nil, httperr.BadRequest("user_id required")
 	}
 	if req.UserId == userId {
-		return nil, errors.New("cannot unfollow yourself")
+		return nil, httperr.BadRequest("cannot unfollow yourself")
 	}
 
 	_ = l.svcCtx.FollowRepo.UnfollowUser(userId, req.UserId)

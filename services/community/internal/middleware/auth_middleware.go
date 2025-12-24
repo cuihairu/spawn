@@ -5,11 +5,12 @@ package middleware
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/tappi/tappi/services/community/internal/httperr"
 	"github.com/tappi/tappi/services/community/utils"
+	"github.com/zeromicro/go-zero/rest/httpx"
 )
 
 type AuthMiddleware struct {
@@ -30,29 +31,28 @@ func (m *AuthMiddleware) Handle(next http.HandlerFunc) http.HandlerFunc {
 
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, "missing authorization token", http.StatusUnauthorized)
+			httpx.ErrorCtx(r.Context(), w, httperr.Unauthorized("missing authorization token"))
 			return
 		}
 		if !strings.HasPrefix(authHeader, "Bearer ") {
-			http.Error(w, "invalid token format", http.StatusUnauthorized)
+			httpx.ErrorCtx(r.Context(), w, httperr.Unauthorized("invalid token format"))
 			return
 		}
 
 		token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
 		if token == "" {
-			http.Error(w, "empty token", http.StatusUnauthorized)
+			httpx.ErrorCtx(r.Context(), w, httperr.Unauthorized("empty token"))
 			return
 		}
 
 		if m.auth == nil {
-			http.Error(w, "auth not configured", http.StatusInternalServerError)
+			httpx.ErrorCtx(r.Context(), w, httperr.Internal("auth not configured"))
 			return
 		}
 
 		claims, err := m.auth.ParseToken(token)
 		if err != nil {
-			// Keep the surface area small; callers only need to know it failed.
-			http.Error(w, errors.New("invalid token").Error(), http.StatusUnauthorized)
+			httpx.ErrorCtx(r.Context(), w, httperr.Unauthorized("invalid token"))
 			return
 		}
 

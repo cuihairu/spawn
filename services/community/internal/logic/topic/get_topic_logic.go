@@ -5,8 +5,8 @@ package topic
 
 import (
 	"context"
-	"errors"
 
+	"github.com/tappi/tappi/services/community/internal/httperr"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
 
@@ -29,7 +29,7 @@ func NewGetTopicLogic(ctx context.Context, svcCtx *svc.ServiceContext) *GetTopic
 
 func (l *GetTopicLogic) GetTopic(req *types.GetTopicReq) (resp *types.TopicResp, err error) {
 	if req == nil || req.Id <= 0 {
-		return nil, errors.New("id required")
+		return nil, httperr.BadRequest("id required")
 	}
 	t, err := l.svcCtx.TopicRepo.Get(req.Id)
 	if err != nil {

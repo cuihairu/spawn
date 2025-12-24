@@ -85,6 +85,9 @@ interface ApiResponse<T> {
 }
 
 const apiGatewayUrl = import.meta.env.VITE_API_GATEWAY_URL as string | undefined
+const communityServiceUrl =
+  (import.meta.env.VITE_COMMUNITY_SERVICE_URL as string | undefined) ??
+  'http://localhost:8892'
 const userServiceUrl =
   (import.meta.env.VITE_USER_SERVICE_URL as string | undefined) ??
   'http://localhost:8888'
@@ -182,6 +185,61 @@ function mapGameSummary(raw: GameDto): GameSummary {
 
 // ========== 攻略相关 API ==========
 
+type ContentGuideDto = {
+  id: number
+  game_id: string
+  game_title?: string
+  title: string
+  content: string
+  summary?: string
+  cover_image?: string
+  author_id: number
+  author_name?: string
+  tags?: string[]
+  views?: number
+  likes?: number
+  is_published?: boolean
+  created_at: string
+  updated_at: string
+}
+
+type ListGuidesResponseDto = {
+  code: number
+  message: string
+  data: ContentGuideDto[]
+  total: number
+  page: number
+}
+
+type GuideResponseDto = {
+  code: number
+  message: string
+  data: ContentGuideDto
+}
+
+type PublishGuideResponseDto = { code: number; message: string }
+type LikeGuideResponseDto = { code: number; message: string; likes: number }
+
+function mapContentGuide(dto: ContentGuideDto): Guide {
+  const isPublished = Boolean(dto.is_published)
+  return {
+    id: dto.id,
+    gameId: dto.game_id,
+    title: dto.title,
+    content: dto.content,
+    authorId: dto.author_id,
+    authorName: dto.author_name,
+    status: isPublished ? 'published' : 'draft',
+    tags: dto.tags ?? [],
+    viewCount: dto.views ?? 0,
+    likeCount: dto.likes ?? 0,
+    commentCount: 0,
+    createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
+    publishedAt: isPublished ? dto.updated_at : undefined,
+  }
+}
+
 export async function fetchGuides(params?: {
   gameId?: string
   status?: 'draft' | 'published'
@@ -190,48 +248,52 @@ export async function fetchGuides(params?: {
   offset?: number
   token?: string
 }): Promise<Guide[]> {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
   const searchParams = new URLSearchParams()
   if (params?.gameId) searchParams.set('game_id', params.gameId)
-  if (params?.status) searchParams.set('status', params.status)
   if (params?.authorId) searchParams.set('author_id', String(params.authorId))
-  if (params?.limit) searchParams.set('limit', String(params.limit))
-  if (params?.offset) searchParams.set('offset', String(params.offset))
+  const pageSize = params?.limit && params.limit > 0 ? params.limit : 20
+  const offset = params?.offset && params.offset > 0 ? params.offset : 0
+  const page = Math.floor(offset / pageSize) + 1
+  searchParams.set('page', String(page))
+  searchParams.set('page_size', String(pageSize))
 
   const headers: Record<string, string> = {}
   if (params?.token) {
     headers.Authorization = `Bearer ${params.token}`
   }
 
-  const response = await request<ApiResponse<{ guides: Guide[] }>>(
-    contentServiceUrl,
-    `/api/v1/guides?${searchParams.toString()}`,
-    { headers },
-  )
-  return response.data?.guides ?? []
+  const response = await request<ListGuidesResponseDto>(baseUrl, `/api/v1/guides?${searchParams.toString()}`, {
+    headers,
+  })
+
+  let guides = (response.data ?? []).map(mapContentGuide)
+  if (params?.status) {
+    guides = guides.filter((g) => g.status === params.status)
+  }
+  return guides
 }
 
 export async function fetchGuideById(id: number, token?: string): Promise<Guide> {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
   const headers: Record<string, string> = {}
   if (token) {
     headers.Authorization = `Bearer ${token}`
   }
 
-  const response = await request<ApiResponse<Guide>>(
-    contentServiceUrl,
-    `/api/v1/guides/${id}`,
-    { headers },
-  )
+  const response = await request<GuideResponseDto>(baseUrl, `/api/v1/guides/${id}`, { headers })
   if (!response.data) {
     throw new Error('攻略不存在')
   }
-  return response.data
+  return mapContentGuide(response.data)
 }
 
 export async function createGuide(
   params: CreateGuideParams,
   token: string,
 ): Promise<Guide> {
-  const response = await request<ApiResponse<Guide>>(contentServiceUrl, '/api/v1/guides', {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
+  const response = await request<GuideResponseDto>(baseUrl, '/api/v1/guides', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -246,7 +308,7 @@ export async function createGuide(
   if (!response.data) {
     throw new Error('创建攻略失败')
   }
-  return response.data
+  return mapContentGuide(response.data)
 }
 
 export async function updateGuide(
@@ -254,31 +316,28 @@ export async function updateGuide(
   params: Partial<CreateGuideParams>,
   token: string,
 ): Promise<Guide> {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
   const body: Record<string, unknown> = {}
-  if (params.gameId) body.game_id = params.gameId
   if (params.title) body.title = params.title
   if (params.content) body.content = params.content
   if (params.tags) body.tags = params.tags
 
-  const response = await request<ApiResponse<Guide>>(
-    contentServiceUrl,
-    `/api/v1/guides/${id}`,
-    {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
+  const response = await request<GuideResponseDto>(baseUrl, `/api/v1/guides/${id}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
     },
-  )
+    body: JSON.stringify(body),
+  })
   if (!response.data) {
     throw new Error('更新攻略失败')
   }
-  return response.data
+  return mapContentGuide(response.data)
 }
 
 export async function publishGuide(id: number, token: string): Promise<void> {
-  await request<ApiResponse<unknown>>(contentServiceUrl, `/api/v1/guides/${id}/publish`, {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
+  await request<PublishGuideResponseDto>(baseUrl, `/api/v1/guides/${id}/publish`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -287,7 +346,8 @@ export async function publishGuide(id: number, token: string): Promise<void> {
 }
 
 export async function likeGuide(id: number, token: string): Promise<void> {
-  await request<ApiResponse<unknown>>(contentServiceUrl, `/api/v1/guides/${id}/like`, {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
+  await request<LikeGuideResponseDto>(baseUrl, `/api/v1/guides/${id}/like`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -297,31 +357,106 @@ export async function likeGuide(id: number, token: string): Promise<void> {
 
 // ========== 评论相关 API ==========
 
+type ContentCommentDto = {
+  id: number
+  target_type: 'guide' | 'game' | 'comment' | string
+  target_id: number
+  user_id: number
+  user_name?: string
+  content: string
+  parent_id?: number
+  reply_to_id?: number
+  likes?: number
+  created_at: string
+  updated_at: string
+}
+
+type ListCommentsResponseDto = {
+  code: number
+  message: string
+  data: ContentCommentDto[]
+  total: number
+  page: number
+}
+
+type CommentResponseDto = {
+  code: number
+  message: string
+  data: ContentCommentDto
+}
+
+type DeleteCommentResponseDto = { code: number; message: string }
+type LikeCommentResponseDto = { code: number; message: string; likes: number }
+
+function mapContentComment(dto: ContentCommentDto): Comment {
+  return {
+    id: dto.id,
+    targetType: dto.target_type as Comment['targetType'],
+    targetId: dto.target_id,
+    content: dto.content,
+    authorId: dto.user_id,
+    authorName: dto.user_name,
+    parentId: dto.parent_id && dto.parent_id > 0 ? dto.parent_id : undefined,
+    likeCount: dto.likes ?? 0,
+    createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
+  }
+}
+
+function buildCommentTree(flat: Comment[]): Comment[] {
+  const byId = new Map<number, Comment>()
+  for (const c of flat) {
+    byId.set(c.id, { ...c, replies: [] })
+  }
+
+  const roots: Comment[] = []
+  for (const c of byId.values()) {
+    const parentId = c.parentId
+    if (parentId && byId.has(parentId)) {
+      byId.get(parentId)!.replies!.push(c)
+      continue
+    }
+    roots.push(c)
+  }
+
+  for (const c of byId.values()) {
+    if (c.replies && c.replies.length === 0) {
+      delete c.replies
+    }
+  }
+
+  return roots
+}
+
 export async function fetchComments(params: {
   targetType: 'guide' | 'game' | 'comment'
   targetId: number
   limit?: number
   offset?: number
 }): Promise<Comment[]> {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
+  const pageSize = params.limit && params.limit > 0 ? params.limit : 20
+  const offset = params.offset && params.offset > 0 ? params.offset : 0
+  const page = Math.floor(offset / pageSize) + 1
+
   const searchParams = new URLSearchParams({
     target_type: params.targetType,
     target_id: String(params.targetId),
+    page: String(page),
+    page_size: String(pageSize),
   })
-  if (params.limit) searchParams.set('limit', String(params.limit))
-  if (params.offset) searchParams.set('offset', String(params.offset))
 
-  const response = await request<ApiResponse<{ comments: Comment[] }>>(
-    contentServiceUrl,
-    `/api/v1/comments?${searchParams.toString()}`,
-  )
-  return response.data?.comments ?? []
+  const response = await request<ListCommentsResponseDto>(baseUrl, `/api/v1/comments?${searchParams.toString()}`)
+  const flat = (response.data ?? []).map(mapContentComment)
+  return buildCommentTree(flat)
 }
 
 export async function createComment(
   params: CreateCommentParams,
   token: string,
 ): Promise<Comment> {
-  const response = await request<ApiResponse<Comment>>(contentServiceUrl, '/api/v1/comments', {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
+  const response = await request<CommentResponseDto>(baseUrl, '/api/v1/comments', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -336,11 +471,12 @@ export async function createComment(
   if (!response.data) {
     throw new Error('发表评论失败')
   }
-  return response.data
+  return mapContentComment(response.data)
 }
 
 export async function deleteComment(id: number, token: string): Promise<void> {
-  await request<ApiResponse<unknown>>(contentServiceUrl, `/api/v1/comments/${id}`, {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
+  await request<DeleteCommentResponseDto>(baseUrl, `/api/v1/comments/${id}`, {
     method: 'DELETE',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -349,10 +485,252 @@ export async function deleteComment(id: number, token: string): Promise<void> {
 }
 
 export async function likeComment(id: number, token: string): Promise<void> {
-  await request<ApiResponse<unknown>>(contentServiceUrl, `/api/v1/comments/${id}/like`, {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
+  await request<LikeCommentResponseDto>(baseUrl, `/api/v1/comments/${id}/like`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
     },
+  })
+}
+
+// ========== 社区相关 API ==========
+
+export interface Topic {
+  id: number
+  name: string
+  description: string
+  icon?: string
+  coverImage?: string
+  postCount: number
+  followerCount: number
+  isOfficial: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Post {
+  id: number
+  topicId: number
+  authorId: number
+  authorName?: string
+  title: string
+  content: string
+  images?: string[]
+  type: string
+  tags?: string[]
+  viewCount: number
+  likeCount: number
+  commentCount: number
+  shareCount: number
+  isPinned: boolean
+  isHot: boolean
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
+type TopicsResp = { topics: Topic[]; total: number }
+type TopicResp = { topic: Topic }
+type PostsResp = { posts: Post[]; total: number }
+type PostResp = { post: Post }
+type CommonResp = { code: number; message: string }
+type FollowingResp = { topics: Topic[] }
+
+function mapTopic(raw: Topic): Topic {
+  return {
+    ...raw,
+    coverImage: raw.coverImage ?? (raw as { cover_image?: string }).cover_image,
+    postCount: raw.postCount ?? (raw as { post_count?: number }).post_count ?? 0,
+    followerCount: raw.followerCount ?? (raw as { follower_count?: number }).follower_count ?? 0,
+    isOfficial: raw.isOfficial ?? (raw as { is_official?: boolean }).is_official ?? false,
+    createdAt: raw.createdAt ?? (raw as { created_at?: string }).created_at ?? '',
+    updatedAt: raw.updatedAt ?? (raw as { updated_at?: string }).updated_at ?? '',
+  }
+}
+
+function mapPost(raw: Post): Post {
+  return {
+    ...raw,
+    topicId: raw.topicId ?? (raw as { topic_id?: number }).topic_id ?? 0,
+    authorId: raw.authorId ?? (raw as { author_id?: number }).author_id ?? 0,
+    authorName: raw.authorName ?? (raw as { author_name?: string }).author_name,
+    viewCount: raw.viewCount ?? (raw as { view_count?: number }).view_count ?? 0,
+    likeCount: raw.likeCount ?? (raw as { like_count?: number }).like_count ?? 0,
+    commentCount: raw.commentCount ?? (raw as { comment_count?: number }).comment_count ?? 0,
+    shareCount: raw.shareCount ?? (raw as { share_count?: number }).share_count ?? 0,
+    isPinned: raw.isPinned ?? (raw as { is_pinned?: boolean }).is_pinned ?? false,
+    isHot: raw.isHot ?? (raw as { is_hot?: boolean }).is_hot ?? false,
+    createdAt: raw.createdAt ?? (raw as { created_at?: string }).created_at ?? '',
+    updatedAt: raw.updatedAt ?? (raw as { updated_at?: string }).updated_at ?? '',
+  }
+}
+
+export async function fetchTopics(params?: {
+  keyword?: string
+  isOfficial?: boolean
+  limit?: number
+  offset?: number
+}): Promise<{ topics: Topic[]; total: number }> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const searchParams = new URLSearchParams()
+  if (params?.keyword) searchParams.set('keyword', params.keyword)
+  if (typeof params?.isOfficial === 'boolean') {
+    searchParams.set('is_official', params.isOfficial ? 'true' : 'false')
+  }
+  if (params?.limit) searchParams.set('limit', String(params.limit))
+  if (params?.offset) searchParams.set('offset', String(params.offset))
+
+  const payload = await request<TopicsResp>(baseUrl, `/api/v1/topics?${searchParams.toString()}`)
+  return {
+    topics: (payload.topics ?? []).map(mapTopic),
+    total: payload.total ?? 0,
+  }
+}
+
+export async function fetchTopicById(id: number): Promise<Topic> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const payload = await request<TopicResp>(baseUrl, `/api/v1/topics/${id}`)
+  return mapTopic(payload.topic)
+}
+
+export async function fetchFollowingTopics(token: string): Promise<Topic[]> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const payload = await request<FollowingResp>(baseUrl, `/api/v1/topics/following`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return (payload.topics ?? []).map(mapTopic)
+}
+
+export async function createTopic(
+  params: { name: string; description?: string; icon?: string; coverImage?: string },
+  token: string,
+): Promise<Topic> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const payload = await request<TopicResp>(baseUrl, '/api/v1/topics', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      name: params.name,
+      description: params.description ?? '',
+      icon: params.icon,
+      cover_image: params.coverImage,
+    }),
+  })
+  return mapTopic(payload.topic)
+}
+
+export async function followTopic(topicId: number, token: string): Promise<void> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  await request<CommonResp>(baseUrl, `/api/v1/topics/${topicId}/follow`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
+export async function unfollowTopic(topicId: number, token: string): Promise<void> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  await request<CommonResp>(baseUrl, `/api/v1/topics/${topicId}/follow`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
+export async function fetchPosts(params?: {
+  topicId?: number
+  authorId?: number
+  type?: string
+  status?: string
+  isHot?: boolean
+  limit?: number
+  offset?: number
+}): Promise<{ posts: Post[]; total: number }> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const searchParams = new URLSearchParams()
+  if (params?.topicId) searchParams.set('topic_id', String(params.topicId))
+  if (params?.authorId) searchParams.set('author_id', String(params.authorId))
+  if (params?.type) searchParams.set('type', params.type)
+  if (params?.status) searchParams.set('status', params.status)
+  if (typeof params?.isHot === 'boolean') searchParams.set('is_hot', params.isHot ? 'true' : 'false')
+  if (params?.limit) searchParams.set('limit', String(params.limit))
+  if (params?.offset) searchParams.set('offset', String(params.offset))
+
+  const payload = await request<PostsResp>(baseUrl, `/api/v1/posts?${searchParams.toString()}`)
+  return {
+    posts: (payload.posts ?? []).map(mapPost),
+    total: payload.total ?? 0,
+  }
+}
+
+export async function fetchHotPosts(limit = 20): Promise<Post[]> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const payload = await request<PostsResp>(baseUrl, `/api/v1/posts/hot?limit=${limit}`)
+  return (payload.posts ?? []).map(mapPost)
+}
+
+export async function fetchPostById(id: number): Promise<Post> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const payload = await request<PostResp>(baseUrl, `/api/v1/posts/${id}`)
+  return mapPost(payload.post)
+}
+
+export async function createPost(
+  params: { topicId: number; title: string; content: string; tags?: string[]; type?: string },
+  token: string,
+): Promise<Post> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const payload = await request<PostResp>(baseUrl, '/api/v1/posts', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      topic_id: params.topicId,
+      title: params.title,
+      content: params.content,
+      type: params.type ?? 'discussion',
+      tags: params.tags ?? [],
+    }),
+  })
+  return mapPost(payload.post)
+}
+
+export async function updatePost(
+  id: number,
+  params: { title?: string; content?: string; tags?: string[] },
+  token: string,
+): Promise<Post> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const payload = await request<PostResp>(baseUrl, `/api/v1/posts/${id}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      title: params.title,
+      content: params.content,
+      tags: params.tags,
+    }),
+  })
+  return mapPost(payload.post)
+}
+
+export async function deletePost(id: number, token: string): Promise<void> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  await request<CommonResp>(baseUrl, `/api/v1/posts/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
+export async function likePost(id: number, token: string): Promise<void> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  await request<CommonResp>(baseUrl, `/api/v1/posts/${id}/like`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
+export async function sharePost(id: number, token: string): Promise<void> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  await request<CommonResp>(baseUrl, `/api/v1/posts/${id}/share`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
   })
 }

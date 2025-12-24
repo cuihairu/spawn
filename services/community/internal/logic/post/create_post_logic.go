@@ -5,9 +5,9 @@ package post
 
 import (
 	"context"
-	"errors"
 	"strings"
 
+	"github.com/tappi/tappi/services/community/internal/httperr"
 	"github.com/tappi/tappi/services/community/internal/logic/common"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
@@ -35,16 +35,16 @@ func (l *CreatePostLogic) CreatePost(req *types.CreatePostReq) (resp *types.Post
 		return nil, err
 	}
 	if req == nil {
-		return nil, errors.New("request required")
+		return nil, httperr.BadRequest("request required")
 	}
 	if req.TopicId <= 0 {
-		return nil, errors.New("topic_id required")
+		return nil, httperr.BadRequest("topic_id required")
 	}
 	if strings.TrimSpace(req.Title) == "" {
-		return nil, errors.New("title required")
+		return nil, httperr.BadRequest("title required")
 	}
 	if strings.TrimSpace(req.Content) == "" {
-		return nil, errors.New("content required")
+		return nil, httperr.BadRequest("content required")
 	}
 
 	if _, err := l.svcCtx.TopicRepo.Get(req.TopicId); err != nil {

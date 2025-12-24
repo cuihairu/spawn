@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
 import type { UserInfo } from './api/client'
 import HomePage from './pages/HomePage'
+import CommunityPage from './pages/CommunityPage'
 import GuidesPage from './pages/GuidesPage'
 import GuideDetailPage from './pages/GuideDetailPage'
 import GuideEditorPage from './pages/GuideEditorPage'
+import PostDetailPage from './pages/PostDetailPage'
 import './App.css'
 
 function App() {
@@ -22,6 +24,9 @@ function App() {
               <Link to="/" className="nav-link">
                 首页
               </Link>
+              <Link to="/community" className="nav-link">
+                社区
+              </Link>
               <Link to="/guides" className="nav-link">
                 攻略
               </Link>
@@ -37,6 +42,8 @@ function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<HomePage onAuthChange={setAuth} />} />
+            <Route path="/community" element={<CommunityPage token={auth?.token} />} />
+            <Route path="/community/posts/:id" element={<PostDetailPage token={auth?.token} />} />
             <Route
               path="/guides"
               element={<GuidesPage token={auth?.token} userId={auth?.user.id} />}

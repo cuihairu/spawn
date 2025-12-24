@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.9
 
-FROM golang:1.22 AS builder
+FROM golang:1.25.4-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -13,5 +13,7 @@ COPY --from=builder /bin/api-gateway /usr/local/bin/api-gateway
 COPY etc ./etc
 ENV USER_SERVICE_URL=http://user-service:8888
 ENV GAME_SERVICE_URL=http://game-catalog:8890
+ENV CONTENT_SERVICE_URL=http://content-service:8891
+ENV COMMUNITY_SERVICE_URL=http://community:8892
 EXPOSE 8800
 ENTRYPOINT ["/usr/local/bin/api-gateway","-f","etc/gateway-api.yaml"]

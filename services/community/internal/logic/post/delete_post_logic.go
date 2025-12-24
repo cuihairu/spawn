@@ -5,8 +5,8 @@ package post
 
 import (
 	"context"
-	"errors"
 
+	"github.com/tappi/tappi/services/community/internal/httperr"
 	"github.com/tappi/tappi/services/community/internal/logic/common"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
@@ -34,7 +34,7 @@ func (l *DeletePostLogic) DeletePost(req *types.DeletePostReq) (resp *types.Comm
 		return nil, err
 	}
 	if req == nil || req.Id <= 0 {
-		return nil, errors.New("id required")
+		return nil, httperr.BadRequest("id required")
 	}
 	if err := l.svcCtx.PostRepo.Delete(req.Id, userId); err != nil {
 		return nil, err

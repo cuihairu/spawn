@@ -5,8 +5,8 @@ package post
 
 import (
 	"context"
-	"errors"
 
+	"github.com/tappi/tappi/services/community/internal/httperr"
 	"github.com/tappi/tappi/services/community/internal/logic/common"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
@@ -34,7 +34,7 @@ func (l *UpdatePostLogic) UpdatePost(req *types.UpdatePostReq) (resp *types.Post
 		return nil, err
 	}
 	if req == nil || req.Id <= 0 {
-		return nil, errors.New("id required")
+		return nil, httperr.BadRequest("id required")
 	}
 
 	p, err := l.svcCtx.PostRepo.Update(req.Id, userId, req)

@@ -5,8 +5,8 @@ package post
 
 import (
 	"context"
-	"errors"
 
+	"github.com/tappi/tappi/services/community/internal/httperr"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
 
@@ -29,7 +29,7 @@ func NewGetPostLogic(ctx context.Context, svcCtx *svc.ServiceContext) *GetPostLo
 
 func (l *GetPostLogic) GetPost(req *types.GetPostReq) (resp *types.PostResp, err error) {
 	if req == nil || req.Id <= 0 {
-		return nil, errors.New("id required")
+		return nil, httperr.BadRequest("id required")
 	}
 
 	_ = l.svcCtx.PostRepo.IncrementViews(req.Id)

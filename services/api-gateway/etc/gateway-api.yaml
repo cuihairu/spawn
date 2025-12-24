@@ -9,3 +9,9 @@ Upstreams:
   GameCatalog:
     BaseURL: "http://localhost:8890"
     Timeout: 5000
+  Content:
+    BaseURL: "http://localhost:8891"
+    Timeout: 5000
+  Community:
+    BaseURL: "http://localhost:8892"
+    Timeout: 5000

@@ -14,7 +14,7 @@ func AuthMiddleware(svcCtx *svc.ServiceContext) func(http.Handler) http.Handler 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// 跳过不需要认证的路径
-			if skipAuth(r.URL.Path) {
+			if skipAuth(r.Method, r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -62,22 +62,16 @@ func AuthMiddleware(svcCtx *svc.ServiceContext) func(http.Handler) http.Handler 
 }
 
 // skipAuth 检查是否跳过认证
-func skipAuth(path string) bool {
-	// 不需要认证的路径列表（只读接口可公开访问）
-	skipPaths := []string{
-		"/api/v1/guides/",  // GET 攻略详情和列表可公开访问
-		"/api/v1/comments", // GET 评论列表可公开访问
-		"/ping",
-		"/health",
+func skipAuth(method, path string) bool {
+	// 基础健康检查接口始终放行
+	if path == "/ping" || path == "/health" {
+		return true
 	}
 
-	// 仅 GET 请求允许访问公开路径
-	for _, skipPath := range skipPaths {
-		if strings.HasPrefix(path, skipPath) {
-			// 注意：这里简化处理，实际应该在 handler 层区分读写操作
-			return true
-		}
+	// 只读接口允许匿名访问
+	if method != http.MethodGet {
+		return false
 	}
 
-	return false
+	return strings.HasPrefix(path, "/api/v1/guides") || strings.HasPrefix(path, "/api/v1/comments")
 }

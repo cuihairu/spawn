@@ -7,7 +7,9 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/tappi/tappi/services/api-gateway/internal/community"
 	"github.com/tappi/tappi/services/api-gateway/internal/config"
+	"github.com/tappi/tappi/services/api-gateway/internal/content"
 	"github.com/tappi/tappi/services/api-gateway/internal/handler"
 	"github.com/tappi/tappi/services/api-gateway/internal/svc"
 
@@ -23,11 +25,13 @@ func main() {
 	var c config.Config
 	conf.MustLoad(*configFile, &c)
 
-	server := rest.MustNewServer(c.RestConf)
+	server := rest.MustNewServer(c.RestConf, rest.WithCors("*"))
 	defer server.Stop()
 
 	ctx := svc.NewServiceContext(c)
 	handler.RegisterHandlers(server, ctx)
+	content.RegisterContentProxyRoutes(server, ctx)
+	community.RegisterCommunityProxyRoutes(server, ctx)
 
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()

@@ -8,10 +8,12 @@ services:
       USER_SERVICE_URL: http://user-service:8888
       GAME_SERVICE_URL: http://game-catalog:8890
       CONTENT_SERVICE_URL: http://content-service:8891
+      COMMUNITY_SERVICE_URL: http://community:8892
     depends_on:
       - user-service
       - game-catalog
       - content-service
+      - community
     ports:
       - "8800:8800"
     restart: unless-stopped
@@ -26,6 +28,10 @@ services:
   content-service:
     build:
       context: ./services/content-service
+    environment:
+      JWT_SECRET: tappi-user-service-jwt-secret-key-2024
+      GAMECATALOG_BASE_URL: http://game-catalog:8890
+      GAMECATALOG_TIMEOUT: "5000"
     ports:
       - "8891:8891"
     restart: unless-stopped
@@ -44,13 +50,24 @@ services:
       - "8888:8888"
     restart: unless-stopped
 
+  community:
+    build:
+      context: ./services/community
+    environment:
+      JWT_SECRET: tappi-user-service-jwt-secret-key-2024
+    ports:
+      - "8892:8892"
+    restart: unless-stopped
+
   web-client:
     build:
       context: ./apps/web-client
       args:
-        VITE_USER_SERVICE_URL: http://user-service:8888
-        VITE_GAME_SERVICE_URL: http://game-catalog:8890
-        VITE_API_GATEWAY_URL: http://api-gateway:8800
+        VITE_USER_SERVICE_URL: http://localhost:8888
+        VITE_GAME_SERVICE_URL: http://localhost:8890
+        VITE_CONTENT_SERVICE_URL: http://localhost:8891
+        VITE_COMMUNITY_SERVICE_URL: http://localhost:8892
+        VITE_API_GATEWAY_URL: http://localhost:8800
     ports:
       - "4173:80"
     depends_on:
@@ -58,4 +75,5 @@ services:
       - user-service
       - api-gateway
       - content-service
+      - community
     restart: unless-stopped

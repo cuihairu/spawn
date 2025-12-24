@@ -186,7 +186,7 @@ func (r *PostRepository) Update(id, requesterId int64, req *types.UpdatePostReq)
 		return nil, ErrPostNotFound
 	}
 	if p.AuthorId != requesterId {
-		return nil, errors.New("permission denied")
+		return nil, ErrPermissionDenied
 	}
 	if title := strings.TrimSpace(req.Title); title != "" {
 		p.Title = title
@@ -215,7 +215,7 @@ func (r *PostRepository) Delete(id, requesterId int64) error {
 		return ErrPostNotFound
 	}
 	if p.AuthorId != requesterId {
-		return errors.New("permission denied")
+		return ErrPermissionDenied
 	}
 	p.Status = "deleted"
 	p.UpdatedAt = time.Now().UTC().Format(time.RFC3339)

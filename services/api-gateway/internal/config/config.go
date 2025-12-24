@@ -17,5 +17,13 @@ type Config struct {
 			BaseURL string `json:",env=GAME_SERVICE_URL"`
 			Timeout int64  `json:",default=5000"`
 		}
+		Content struct {
+			BaseURL string `json:",env=CONTENT_SERVICE_URL"`
+			Timeout int64  `json:",default=5000"`
+		}
+		Community struct {
+			BaseURL string `json:",env=COMMUNITY_SERVICE_URL"`
+			Timeout int64  `json:",default=5000"`
+		}
 	}
 }
