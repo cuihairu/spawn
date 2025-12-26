@@ -70,6 +70,21 @@
   font-size: 0.9rem;
 }
 
+.nav-logout {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(244, 245, 251, 0.9);
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.nav-logout:hover {
+  border-color: rgba(139, 150, 255, 0.45);
+  color: #8b96ff;
+}
+
 /* 新增：主内容区 */
 .main-content {
   flex: 1;
@@ -209,6 +224,12 @@
   padding: 0.5rem 1rem;
   border-radius: 999px;
   cursor: pointer;
+}
+
+.quick-links {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .game-grid {

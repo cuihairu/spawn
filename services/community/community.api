@@ -33,16 +33,16 @@ type (
 		TopicId int64    `json:"topic_id"`
 		Title   string   `json:"title"`
 		Content string   `json:"content"`
-		Images  []string `json:"images,omitempty"`
-		Type    string   `json:"type,omitempty"` // 默认 discussion
-		Tags    []string `json:"tags,omitempty"`
+		Images  []string `json:"images,optional"`
+		Type    string   `json:"type,optional"` // 默认 discussion
+		Tags    []string `json:"tags,optional"`
 	}
 	UpdatePostReq {
 		Id      int64    `path:"id"`
-		Title   string   `json:"title,omitempty"`
-		Content string   `json:"content,omitempty"`
-		Images  []string `json:"images,omitempty"`
-		Tags    []string `json:"tags,omitempty"`
+		Title   string   `json:"title,optional"`
+		Content string   `json:"content,optional"`
+		Images  []string `json:"images,optional"`
+		Tags    []string `json:"tags,optional"`
 	}
 	GetPostReq {
 		Id int64 `path:"id"`
@@ -81,8 +81,8 @@ type (
 	CreateTopicReq {
 		Name        string `json:"name"`
 		Description string `json:"description"`
-		Icon        string `json:"icon,omitempty"`
-		CoverImage  string `json:"cover_image,omitempty"`
+		Icon        string `json:"icon,optional"`
+		CoverImage  string `json:"cover_image,optional"`
 	}
 	GetTopicReq {
 		Id int64 `path:"id"`
@@ -208,3 +208,4 @@ service community-api {
 	@handler UnfollowUser
 	delete /users/:user_id/follow (FollowUserReq) returns (CommonResp)
 }
+

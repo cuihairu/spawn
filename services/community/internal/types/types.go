@@ -12,16 +12,16 @@ type CreatePostReq struct {
 	TopicId int64    `json:"topic_id"`
 	Title   string   `json:"title"`
 	Content string   `json:"content"`
-	Images  []string `json:"images,omitempty"`
-	Type    string   `json:"type,omitempty"` // 默认 discussion
-	Tags    []string `json:"tags,omitempty"`
+	Images  []string `json:"images,optional"`
+	Type    string   `json:"type,optional"` // 默认 discussion
+	Tags    []string `json:"tags,optional"`
 }
 
 type CreateTopicReq struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Icon        string `json:"icon,omitempty"`
-	CoverImage  string `json:"cover_image,omitempty"`
+	Icon        string `json:"icon,optional"`
+	CoverImage  string `json:"cover_image,optional"`
 }
 
 type DeletePostReq struct {
@@ -65,17 +65,13 @@ type GetTopicsReq struct {
 	Offset     int64  `form:"offset,optional,default=0"`
 }
 
-type LikeReq struct {
-	TargetType string `json:"target_type"` // post/comment
-	TargetId   int64  `json:"target_id"`
-}
-
 type LikePostReq struct {
 	Id int64 `path:"id"`
 }
 
-type SharePostReq struct {
-	Id int64 `path:"id"`
+type LikeReq struct {
+	TargetType string `json:"target_type"` // post/comment
+	TargetId   int64  `json:"target_id"`
 }
 
 type Post struct {
@@ -108,6 +104,10 @@ type PostsResp struct {
 	Total int64  `json:"total"`
 }
 
+type SharePostReq struct {
+	Id int64 `path:"id"`
+}
+
 type Topic struct {
 	Id            int64  `json:"id"`
 	Name          string `json:"name"`
@@ -132,8 +132,8 @@ type TopicsResp struct {
 
 type UpdatePostReq struct {
 	Id      int64    `path:"id"`
-	Title   string   `json:"title,omitempty"`
-	Content string   `json:"content,omitempty"`
-	Images  []string `json:"images,omitempty"`
-	Tags    []string `json:"tags,omitempty"`
+	Title   string   `json:"title,optional"`
+	Content string   `json:"content,optional"`
+	Images  []string `json:"images,optional"`
+	Tags    []string `json:"tags,optional"`
 }

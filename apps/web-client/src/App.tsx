@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
 import type { UserInfo } from './api/client'
 import HomePage from './pages/HomePage'
@@ -9,8 +9,30 @@ import GuideEditorPage from './pages/GuideEditorPage'
 import PostDetailPage from './pages/PostDetailPage'
 import './App.css'
 
+const AUTH_STORAGE_KEY = 'tappi.auth'
+
 function App() {
-  const [auth, setAuth] = useState<{ token: string; user: UserInfo } | null>(null)
+  const [auth, setAuth] = useState<{ token: string; user: UserInfo } | null>(() => {
+    try {
+      const raw = localStorage.getItem(AUTH_STORAGE_KEY)
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { token: string; user: UserInfo }
+      if (!parsed?.token || !parsed?.user?.id) return null
+      return parsed
+    } catch {
+      localStorage.removeItem(AUTH_STORAGE_KEY)
+      return null
+    }
+  })
+
+  const handleAuthChange = useCallback((next: { token: string; user: UserInfo } | null) => {
+    setAuth(next)
+    if (!next) {
+      localStorage.removeItem(AUTH_STORAGE_KEY)
+      return
+    }
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next))
+  }, [])
 
   return (
     <BrowserRouter>
@@ -30,18 +52,21 @@ function App() {
               <Link to="/guides" className="nav-link">
                 攻略
               </Link>
-              {auth && (
-                <span className="nav-user">
-                  👤 {auth.user.nickname || auth.user.username}
-                </span>
-              )}
+              {auth ? (
+                <>
+                  <span className="nav-user">👤 {auth.user.nickname || auth.user.username}</span>
+                  <button type="button" className="nav-logout" onClick={() => handleAuthChange(null)}>
+                    退出登录
+                  </button>
+                </>
+              ) : null}
             </div>
           </div>
         </nav>
 
         <main className="main-content">
           <Routes>
-            <Route path="/" element={<HomePage onAuthChange={setAuth} />} />
+            <Route path="/" element={<HomePage auth={auth} onAuthChange={handleAuthChange} />} />
             <Route path="/community" element={<CommunityPage token={auth?.token} />} />
             <Route path="/community/posts/:id" element={<PostDetailPage token={auth?.token} />} />
             <Route

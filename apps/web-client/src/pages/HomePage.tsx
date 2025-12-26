@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -11,17 +11,19 @@ import {
 import GameCard from '../components/GameCard'
 
 interface Props {
+  auth: { token: string; user: UserInfo } | null
   onAuthChange: (auth: { token: string; user: UserInfo } | null) => void
 }
 
-const HomePage = ({ onAuthChange }: Props) => {
+const HomePage = ({ auth, onAuthChange }: Props) => {
   const [form, setForm] = useState({ username: '', password: '' })
-  const [auth, setAuth] = useState<{ token: string; user: UserInfo } | null>(null)
   const [featured, setFeatured] = useState<GameSummary[]>([])
   const [recommendations, setRecommendations] = useState<GameSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [recoLoading, setRecoLoading] = useState(false)
   const [banner, setBanner] = useState<string | null>(null)
+  const userId = auth?.user?.id
+  const token = auth?.token
 
   useEffect(() => {
     const loadFeatured = async () => {
@@ -44,9 +46,7 @@ const HomePage = ({ onAuthChange }: Props) => {
     try {
       const result = await login(form.username.trim(), form.password)
       const authData = { token: result.token, user: result.userInfo }
-      setAuth(authData)
       onAuthChange(authData)
-      await hydrateRecommendations(result.userInfo.id, result.token)
     } catch (error) {
       setBanner((error as Error).message || '登录失败')
     } finally {
@@ -54,7 +54,7 @@ const HomePage = ({ onAuthChange }: Props) => {
     }
   }
 
-  const hydrateRecommendations = async (userId: number, token: string) => {
+  const hydrateRecommendations = useCallback(async (userId: number, token: string) => {
     setRecoLoading(true)
     try {
       const items = await fetchRecommendations(userId, token, 6)
@@ -64,12 +64,22 @@ const HomePage = ({ onAuthChange }: Props) => {
     } finally {
       setRecoLoading(false)
     }
-  }
+  }, [])
 
   const greeting = useMemo(() => {
     if (!auth?.user) return '登录后即可同步个人推荐'
     return `欢迎回来，${auth.user.nickname || auth.user.username}`
   }, [auth])
+
+  useEffect(() => {
+    if (!userId || !token) {
+      setRecommendations([])
+      return
+    }
+
+    setRecommendations([])
+    hydrateRecommendations(userId, token)
+  }, [hydrateRecommendations, token, userId])
 
   return (
     <div className="app-shell">
@@ -81,31 +91,46 @@ const HomePage = ({ onAuthChange }: Props) => {
             打通用户服务与游戏目录，登录即可获取实时推荐，并通过 Web 客户端观察整体体验。
           </p>
         </div>
-        <form className="auth-card" onSubmit={handleLogin}>
-          <h2>快速登录</h2>
-          <label>
-            <span>用户名</span>
-            <input
-              type="text"
-              value={form.username}
-              onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))}
-              placeholder="例如 demo 或 tester"
-            />
-          </label>
-          <label>
-            <span>密码</span>
-            <input
-              type="password"
-              value={form.password}
-              onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-              placeholder="输入任意测试密码"
-            />
-          </label>
-          <button type="submit" disabled={loading}>
-            {loading ? '登录中...' : '登录并获取推荐'}
-          </button>
-          <p className="helper-text">{greeting}</p>
-        </form>
+        {auth ? (
+          <div className="auth-card">
+            <h2>已登录</h2>
+            <p className="helper-text">{greeting}</p>
+            <div className="quick-links">
+              <Link to="/community" className="ghost-button">
+                进入社区 →
+              </Link>
+              <Link to="/guides" className="ghost-button">
+                浏览攻略 →
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <form className="auth-card" onSubmit={handleLogin}>
+            <h2>快速登录</h2>
+            <label>
+              <span>用户名</span>
+              <input
+                type="text"
+                value={form.username}
+                onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))}
+                placeholder="例如 demo 或 tester"
+              />
+            </label>
+            <label>
+              <span>密码</span>
+              <input
+                type="password"
+                value={form.password}
+                onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+                placeholder="输入任意测试密码"
+              />
+            </label>
+            <button type="submit" disabled={loading}>
+              {loading ? '登录中...' : '登录并获取推荐'}
+            </button>
+            <p className="helper-text">{greeting}</p>
+          </form>
+        )}
       </header>
 
       {banner ? (

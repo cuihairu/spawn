@@ -117,7 +117,7 @@ Web Client 现已支持完整的攻略创作和社区互动功能，包括：
 VITE_USER_SERVICE_URL=http://localhost:8888
 VITE_GAME_SERVICE_URL=http://localhost:8890
 VITE_CONTENT_SERVICE_URL=http://localhost:8891
-VITE_API_GATEWAY_URL=http://localhost:8889  # 可选，使用网关
+VITE_API_GATEWAY_URL=http://localhost:8800  # 可选，使用网关
 ```
 
 ## 快速启动
@@ -179,13 +179,13 @@ Web Client 集成了以下后端服务：
 ## 注意事项
 
 1. **需要后端服务运行**：确保 user-service、game-catalog 和 content-service 都在运行
-2. **登录状态持久化**：当前登录状态仅在内存中，刷新页面会丢失
+2. **登录状态持久化**：登录状态会写入 LocalStorage，刷新页面后仍可继续使用
 3. **草稿功能**：草稿保存后不会在攻略列表中显示，需要发布后才可见
 4. **权限控制**：只有作者可以编辑和删除自己的攻略和评论
 
 ## 未来改进方向
 
-- [ ] 添加 LocalStorage 持久化登录状态
+- [x] 添加 LocalStorage 持久化登录状态
 - [ ] 支持 Markdown 格式的攻略内容
 - [ ] 添加图片上传功能
 - [ ] 实现攻略搜索和高级筛选

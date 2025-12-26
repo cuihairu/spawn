@@ -101,7 +101,7 @@
 - `POST /auth/login` - 用户登录
 - `GET /games/featured` - 精选游戏
 - `GET /users/:id/recommendations` - 用户推荐
-- 端口：8889
+- 端口：8800
 
 #### 5. Web Client（`apps/web-client`）✨ 大幅增强
 React + Vite + React Router 构建的完整前端应用，支持账号登录、跨服务推荐展示、游戏榜单渲染、**攻略浏览与创作、评论互动**。
@@ -147,7 +147,7 @@ cd apps/web-client && npm install && npm run dev
 | 服务 | 端口 | 描述 | 状态 |
 |------|------|------|------|
 | user-service | 8888 | 用户服务 | ✅ 完成 |
-| api-gateway | 8889 | API网关 | ✅ 完成 |
+| api-gateway | 8800 | API网关 | ✅ 完成 |
 | game-catalog | 8890 | 游戏目录服务 | ✅ 完成 |
 | content-service | 8891 | 内容服务（攻略+评论） | ✅ 完成 |
 | community | 8892 | 社区服务（帖子+话题） | ✅ MVP |
