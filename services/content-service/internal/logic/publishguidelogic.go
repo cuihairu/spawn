@@ -27,6 +27,35 @@ func NewPublishGuideLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Publ
 }
 
 func (l *PublishGuideLogic) PublishGuide(req *types.PublishGuideRequest) (resp *types.PublishGuideResponse, err error) {
+	userId, ok := l.ctx.Value("user_id").(int64)
+	if !ok || userId == 0 {
+		return &types.PublishGuideResponse{
+			Code:    http.StatusUnauthorized,
+			Message: "用户认证失败",
+		}, nil
+	}
+
+	guide, err := l.svcCtx.GuideRepository.Get(req.Id)
+	if err != nil {
+		if errors.Is(err, model.ErrGuideNotFound) {
+			return &types.PublishGuideResponse{
+				Code:    http.StatusNotFound,
+				Message: "攻略不存在",
+			}, nil
+		}
+		l.Logger.Errorf("get guide failed: %v", err)
+		return &types.PublishGuideResponse{
+			Code:    http.StatusInternalServerError,
+			Message: "发布失败",
+		}, nil
+	}
+	if guide.AuthorId != userId {
+		return &types.PublishGuideResponse{
+			Code:    http.StatusForbidden,
+			Message: "无权限操作",
+		}, nil
+	}
+
 	err = l.svcCtx.GuideRepository.Publish(req.Id)
 	if err != nil {
 		if errors.Is(err, model.ErrGuideNotFound) {

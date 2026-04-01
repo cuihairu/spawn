@@ -20,7 +20,6 @@ const GuidesPage = ({ token, userId }: Props) => {
     setError(null)
     try {
       const params = {
-        status: 'published' as const,
         ...(filter === 'my' && userId ? { authorId: userId } : {}),
         limit: 50,
         token,
@@ -59,7 +58,7 @@ const GuidesPage = ({ token, userId }: Props) => {
             >
               全部攻略
             </button>
-            {userId && (
+            {token && userId && (
               <button
                 type="button"
                 className={`filter-tab ${filter === 'my' ? 'active' : ''}`}
@@ -99,7 +98,12 @@ const GuidesPage = ({ token, userId }: Props) => {
           {guides.map((guide) => (
             <Link key={guide.id} to={`/guides/${guide.id}`} className="guide-card">
               <div className="guide-card-header">
-                <h3>{guide.title}</h3>
+                <div className="guide-title-row">
+                  <h3>{guide.title}</h3>
+                  <span className={`guide-status ${guide.status}`}>
+                    {guide.status === 'draft' ? '草稿' : '已发布'}
+                  </span>
+                </div>
                 <div className="guide-tags">
                   {guide.tags.slice(0, 3).map((tag) => (
                     <span key={tag} className="guide-tag">

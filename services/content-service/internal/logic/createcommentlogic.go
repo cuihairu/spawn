@@ -2,6 +2,7 @@ package logic
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/tappi/tappi/services/content-service/internal/svc"
@@ -34,6 +35,30 @@ func (l *CreateCommentLogic) CreateComment(req *types.CreateCommentRequest) (res
 			Code:    http.StatusUnauthorized,
 			Message: "用户认证失败",
 		}, nil
+	}
+
+	// 草稿攻略不允许评论（避免通过评论接口探测草稿存在）
+	if req.TargetType == "guide" && req.TargetId > 0 {
+		guide, err := l.svcCtx.GuideRepository.Get(req.TargetId)
+		if err != nil {
+			if errors.Is(err, model.ErrGuideNotFound) {
+				return &types.CreateCommentResponse{
+					Code:    http.StatusNotFound,
+					Message: "攻略不存在",
+				}, nil
+			}
+			l.Logger.Errorf("get guide failed: %v", err)
+			return &types.CreateCommentResponse{
+				Code:    http.StatusInternalServerError,
+				Message: "创建评论失败",
+			}, nil
+		}
+		if !guide.IsPublished {
+			return &types.CreateCommentResponse{
+				Code:    http.StatusNotFound,
+				Message: "攻略不存在",
+			}, nil
+		}
 	}
 
 	username, ok := l.ctx.Value("username").(string)

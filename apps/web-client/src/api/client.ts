@@ -242,7 +242,6 @@ function mapContentGuide(dto: ContentGuideDto): Guide {
 
 export async function fetchGuides(params?: {
   gameId?: string
-  status?: 'draft' | 'published'
   authorId?: number
   limit?: number
   offset?: number
@@ -267,11 +266,7 @@ export async function fetchGuides(params?: {
     headers,
   })
 
-  let guides = (response.data ?? []).map(mapContentGuide)
-  if (params?.status) {
-    guides = guides.filter((g) => g.status === params.status)
-  }
-  return guides
+  return (response.data ?? []).map(mapContentGuide)
 }
 
 export async function fetchGuideById(id: number, token?: string): Promise<Guide> {

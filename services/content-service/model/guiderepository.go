@@ -30,11 +30,12 @@ type Guide struct {
 }
 
 type GuideFilter struct {
-	GameId   string
-	AuthorId int64
-	Tag      string
-	Page     int
-	PageSize int
+	GameId        string
+	AuthorId      int64
+	Tag           string
+	Page          int
+	PageSize      int
+	PublishedOnly bool
 }
 
 type GuideRepository struct {
@@ -226,6 +227,10 @@ func (r *GuideRepository) IncrementViews(id int64) error {
 
 func matchesGuide(guide *Guide, filter GuideFilter) bool {
 	if filter.GameId != "" && guide.GameId != filter.GameId {
+		return false
+	}
+
+	if filter.PublishedOnly && !guide.IsPublished {
 		return false
 	}
 

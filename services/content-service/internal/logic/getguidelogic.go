@@ -42,6 +42,17 @@ func (l *GetGuideLogic) GetGuide(req *types.GetGuideRequest) (resp *types.GetGui
 		}, nil
 	}
 
+	// 草稿只允许作者访问（匿名/其他用户视为不存在）
+	if !guide.IsPublished {
+		userId, _ := l.ctx.Value("user_id").(int64)
+		if userId == 0 || userId != guide.AuthorId {
+			return &types.GetGuideResponse{
+				Code:    http.StatusNotFound,
+				Message: "攻略不存在",
+			}, nil
+		}
+	}
+
 	// 增加浏览次数
 	_ = l.svcCtx.GuideRepository.IncrementViews(req.Id)
 

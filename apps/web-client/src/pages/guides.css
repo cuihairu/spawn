@@ -93,6 +93,40 @@
   gap: 1.5rem;
 }
 
+.guide-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.guide-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background-color: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+}
+
+.guide-status.draft {
+  background-color: rgba(255, 193, 7, 0.15);
+  border-color: rgba(255, 193, 7, 0.35);
+  color: #ffd27a;
+}
+
+.guide-status.published {
+  background-color: rgba(76, 175, 80, 0.15);
+  border-color: rgba(76, 175, 80, 0.35);
+  color: #a7f3aa;
+}
+
 .guide-card {
   display: block;
   padding: 1.5rem;
@@ -110,9 +144,13 @@
   transform: translateY(-2px);
 }
 
+.guide-card-header .guide-title-row {
+  margin-bottom: 0.75rem;
+}
+
 .guide-card-header h3 {
   font-size: 1.25rem;
-  margin-bottom: 0.75rem;
+  margin: 0;
   color: #f4f5fb;
   line-height: 1.4;
 }
@@ -176,6 +214,12 @@
   margin-bottom: 2rem;
 }
 
+.inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .back-link,
 .edit-link {
   padding: 0.5rem 1rem;
@@ -191,6 +235,29 @@
   background-color: rgba(255, 255, 255, 0.1);
 }
 
+.secondary-btn {
+  padding: 0.5rem 1rem;
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #f4f5fb;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s;
+  font-size: 0.95rem;
+}
+
+.secondary-btn:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.secondary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .guide-detail {
   background-color: rgba(12, 16, 28, 0.9);
   padding: 2rem;
@@ -199,9 +266,13 @@
   margin-bottom: 2rem;
 }
 
+.guide-detail-header .guide-title-row {
+  margin-bottom: 1rem;
+}
+
 .guide-detail-header h1 {
   font-size: 2rem;
-  margin-bottom: 1rem;
+  margin: 0;
   color: #f4f5fb;
   line-height: 1.4;
 }

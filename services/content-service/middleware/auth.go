@@ -15,6 +15,20 @@ func AuthMiddleware(svcCtx *svc.ServiceContext) func(http.Handler) http.Handler 
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// 跳过不需要认证的路径
 			if skipAuth(r.Method, r.URL.Path) {
+				// 对只读接口：认证可选（带 token 则尝试解析，失败不阻断匿名访问）
+				authHeader := r.Header.Get("Authorization")
+				if strings.HasPrefix(authHeader, "Bearer ") {
+					token := strings.TrimSpace(authHeader[7:])
+					if token != "" {
+						if claims, err := svcCtx.Auth.ParseToken(token); err == nil {
+							ctx := context.WithValue(r.Context(), "user_id", claims.UserId)
+							ctx = context.WithValue(ctx, "username", claims.Username)
+							next.ServeHTTP(w, r.WithContext(ctx))
+							return
+						}
+					}
+				}
+
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -33,12 +33,16 @@ func (l *ListGuidesLogic) ListGuides(req *types.ListGuidesRequest) (resp *types.
 		req.PageSize = 20
 	}
 
+	userId, _ := l.ctx.Value("user_id").(int64)
+	includeDrafts := userId > 0 && req.AuthorId > 0 && req.AuthorId == userId
+
 	filter := model.GuideFilter{
-		GameId:   req.GameId,
-		AuthorId: req.AuthorId,
-		Tag:      req.Tag,
-		Page:     req.Page,
-		PageSize: req.PageSize,
+		GameId:        req.GameId,
+		AuthorId:      req.AuthorId,
+		Tag:           req.Tag,
+		Page:          req.Page,
+		PageSize:      req.PageSize,
+		PublishedOnly: !includeDrafts,
 	}
 
 	guides, total := l.svcCtx.GuideRepository.List(filter)

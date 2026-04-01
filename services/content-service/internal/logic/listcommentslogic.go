@@ -33,6 +33,23 @@ func (l *ListCommentsLogic) ListComments(req *types.ListCommentsRequest) (resp *
 		req.PageSize = 20
 	}
 
+	// 草稿攻略的评论不可访问（避免通过评论接口探测草稿存在）
+	if req.TargetType == "guide" && req.TargetId > 0 {
+		guide, err := l.svcCtx.GuideRepository.Get(req.TargetId)
+		if err != nil {
+			return &types.ListCommentsResponse{
+				Code:    http.StatusNotFound,
+				Message: "攻略不存在",
+			}, nil
+		}
+		if !guide.IsPublished {
+			return &types.ListCommentsResponse{
+				Code:    http.StatusNotFound,
+				Message: "攻略不存在",
+			}, nil
+		}
+	}
+
 	filter := model.CommentFilter{
 		TargetType: req.TargetType,
 		TargetId:   req.TargetId,

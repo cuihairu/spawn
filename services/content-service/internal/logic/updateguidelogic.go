@@ -27,6 +27,35 @@ func NewUpdateGuideLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Updat
 }
 
 func (l *UpdateGuideLogic) UpdateGuide(req *types.UpdateGuideRequest) (resp *types.UpdateGuideResponse, err error) {
+	userId, ok := l.ctx.Value("user_id").(int64)
+	if !ok || userId == 0 {
+		return &types.UpdateGuideResponse{
+			Code:    http.StatusUnauthorized,
+			Message: "用户认证失败",
+		}, nil
+	}
+
+	guide, err := l.svcCtx.GuideRepository.Get(req.Id)
+	if err != nil {
+		if errors.Is(err, model.ErrGuideNotFound) {
+			return &types.UpdateGuideResponse{
+				Code:    http.StatusNotFound,
+				Message: "攻略不存在",
+			}, nil
+		}
+		l.Logger.Errorf("get guide failed: %v", err)
+		return &types.UpdateGuideResponse{
+			Code:    http.StatusInternalServerError,
+			Message: "获取失败",
+		}, nil
+	}
+	if guide.AuthorId != userId {
+		return &types.UpdateGuideResponse{
+			Code:    http.StatusForbidden,
+			Message: "无权限操作",
+		}, nil
+	}
+
 	updates := make(map[string]interface{})
 
 	if req.Title != "" {

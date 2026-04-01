@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import type { Guide } from '../api/client'
-import { fetchGuideById, likeGuide } from '../api/client'
+import { fetchGuideById, likeGuide, publishGuide } from '../api/client'
 import CommentList from '../components/comments/CommentList'
 import './guides.css'
 
@@ -54,6 +54,19 @@ const GuideDetailPage = ({ token, userId }: Props) => {
     }
   }
 
+  const handlePublish = async () => {
+    if (!token || !guide) {
+      setError('请先登录')
+      return
+    }
+    try {
+      await publishGuide(guide.id, token)
+      await loadGuide(guide.id)
+    } catch (err) {
+      setError((err as Error).message || '发布失败')
+    }
+  }
+
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleString('zh-CN', {
       year: 'numeric',
@@ -92,9 +105,16 @@ const GuideDetailPage = ({ token, userId }: Props) => {
           ← 返回列表
         </Link>
         {isAuthor && (
-          <Link to={`/guides/${guide.id}/edit`} className="edit-link">
-            ✏️ 编辑
-          </Link>
+          <div className="inline-actions">
+            <Link to={`/guides/${guide.id}/edit`} className="edit-link">
+              ✏️ 编辑
+            </Link>
+            {guide.status === 'draft' && (
+              <button type="button" className="secondary-btn" onClick={handlePublish}>
+                🚀 发布
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -106,12 +126,19 @@ const GuideDetailPage = ({ token, userId }: Props) => {
 
       <article className="guide-detail">
         <header className="guide-detail-header">
-          <h1>{guide.title}</h1>
+          <div className="guide-title-row">
+            <h1>{guide.title}</h1>
+            <span className={`guide-status ${guide.status}`}>
+              {guide.status === 'draft' ? '草稿' : '已发布'}
+            </span>
+          </div>
           <div className="guide-meta-info">
             <span className="guide-author">
               作者: {guide.authorName || `用户${guide.authorId}`}
             </span>
-            <span className="guide-date">发布于: {formatDate(guide.publishedAt || guide.createdAt)}</span>
+            <span className="guide-date">
+              {guide.status === 'draft' ? '创建于' : '发布于'}: {formatDate(guide.publishedAt || guide.createdAt)}
+            </span>
             {guide.updatedAt !== guide.createdAt && (
               <span className="guide-updated">更新于: {formatDate(guide.updatedAt)}</span>
             )}
@@ -132,7 +159,7 @@ const GuideDetailPage = ({ token, userId }: Props) => {
             type="button"
             className={`action-btn like-btn ${liked ? 'liked' : ''}`}
             onClick={handleLike}
-            disabled={!token || liked}
+            disabled={!token || liked || guide.status !== 'published'}
           >
             👍 {liked ? '已赞' : '点赞'} ({guide.likeCount})
           </button>
@@ -143,12 +170,16 @@ const GuideDetailPage = ({ token, userId }: Props) => {
         </div>
       </article>
 
-      <CommentList
-        targetType="guide"
-        targetId={guide.id}
-        currentUserId={userId}
-        token={token}
-      />
+      {guide.status === 'published' ? (
+        <CommentList
+          targetType="guide"
+          targetId={guide.id}
+          currentUserId={userId}
+          token={token}
+        />
+      ) : (
+        <div className="comment-login-hint">草稿未发布，评论暂不可用</div>
+      )}
     </div>
   )
 }

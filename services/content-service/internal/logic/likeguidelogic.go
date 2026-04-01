@@ -27,6 +27,27 @@ func NewLikeGuideLogic(ctx context.Context, svcCtx *svc.ServiceContext) *LikeGui
 }
 
 func (l *LikeGuideLogic) LikeGuide(req *types.LikeGuideRequest) (resp *types.LikeGuideResponse, err error) {
+	guide, err := l.svcCtx.GuideRepository.Get(req.Id)
+	if err != nil {
+		if errors.Is(err, model.ErrGuideNotFound) {
+			return &types.LikeGuideResponse{
+				Code:    http.StatusNotFound,
+				Message: "攻略不存在",
+			}, nil
+		}
+		l.Logger.Errorf("get guide failed: %v", err)
+		return &types.LikeGuideResponse{
+			Code:    http.StatusInternalServerError,
+			Message: "点赞失败",
+		}, nil
+	}
+	if !guide.IsPublished {
+		return &types.LikeGuideResponse{
+			Code:    http.StatusNotFound,
+			Message: "攻略不存在",
+		}, nil
+	}
+
 	likes, err := l.svcCtx.GuideRepository.Like(req.Id)
 	if err != nil {
 		if errors.Is(err, model.ErrGuideNotFound) {
