@@ -17,6 +17,7 @@ const GuideDetailPage = ({ token, userId }: Props) => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [liked, setLiked] = useState(false)
+  const [commentCount, setCommentCount] = useState(0)
 
   const loadGuide = useCallback(
     async (guideId: number) => {
@@ -25,6 +26,7 @@ const GuideDetailPage = ({ token, userId }: Props) => {
       try {
         const data = await fetchGuideById(guideId, token)
         setGuide(data)
+        setCommentCount(0)
       } catch (err) {
         setError((err as Error).message || '加载攻略失败')
       } finally {
@@ -137,9 +139,9 @@ const GuideDetailPage = ({ token, userId }: Props) => {
               作者: {guide.authorName || `用户${guide.authorId}`}
             </span>
             <span className="guide-date">
-              {guide.status === 'draft' ? '创建于' : '发布于'}: {formatDate(guide.publishedAt || guide.createdAt)}
+              {guide.status === 'draft' ? '创建于' : '最近更新'}: {formatDate(guide.updatedAt)}
             </span>
-            {guide.updatedAt !== guide.createdAt && (
+            {guide.updatedAt !== guide.createdAt && guide.status === 'draft' && (
               <span className="guide-updated">更新于: {formatDate(guide.updatedAt)}</span>
             )}
           </div>
@@ -165,7 +167,7 @@ const GuideDetailPage = ({ token, userId }: Props) => {
           </button>
           <div className="guide-stats-bar">
             <span>👁️ {guide.viewCount} 阅读</span>
-            <span>💬 {guide.commentCount} 评论</span>
+            <span>💬 {commentCount} 评论</span>
           </div>
         </div>
       </article>
@@ -176,6 +178,7 @@ const GuideDetailPage = ({ token, userId }: Props) => {
           targetId={guide.id}
           currentUserId={userId}
           token={token}
+          onCountChange={setCommentCount}
         />
       ) : (
         <div className="comment-login-hint">草稿未发布，评论暂不可用</div>

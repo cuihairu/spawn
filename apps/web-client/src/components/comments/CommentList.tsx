@@ -9,9 +9,14 @@ interface Props {
   targetId: number
   currentUserId?: number
   token?: string
+  onCountChange?: (count: number) => void
 }
 
-const CommentList = ({ targetType, targetId, currentUserId, token }: Props) => {
+function countComments(items: Comment[]): number {
+  return items.reduce((total, item) => total + 1 + countComments(item.replies ?? []), 0)
+}
+
+const CommentList = ({ targetType, targetId, currentUserId, token, onCountChange }: Props) => {
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(false)
   const [newComment, setNewComment] = useState('')
@@ -24,12 +29,13 @@ const CommentList = ({ targetType, targetId, currentUserId, token }: Props) => {
     try {
       const data = await fetchComments({ targetType, targetId, limit: 100 })
       setComments(data)
+      onCountChange?.(countComments(data))
     } catch (err) {
       setError((err as Error).message || '加载评论失败')
     } finally {
       setLoading(false)
     }
-  }, [targetType, targetId])
+  }, [onCountChange, targetType, targetId])
 
   useEffect(() => {
     // When switching targets, reset composing state to avoid replying to the wrong entity.

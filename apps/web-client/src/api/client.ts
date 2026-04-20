@@ -64,6 +64,7 @@ export interface CreateCommentParams {
   targetId: number
   content: string
   parentId?: number
+  replyToId?: number
 }
 
 type GameDto = {
@@ -236,7 +237,6 @@ function mapContentGuide(dto: ContentGuideDto): Guide {
     commentCount: 0,
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
-    publishedAt: isPublished ? dto.updated_at : undefined,
   }
 }
 
@@ -461,6 +461,7 @@ export async function createComment(
       target_id: params.targetId,
       content: params.content,
       parent_id: params.parentId,
+      reply_to_id: params.replyToId,
     }),
   })
   if (!response.data) {
