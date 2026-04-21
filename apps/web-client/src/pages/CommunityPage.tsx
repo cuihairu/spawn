@@ -30,6 +30,10 @@ const CommunityPage = ({ token }: Props) => {
   const [topicDraft, setTopicDraft] = useState({ name: '', description: '' })
   const [postDraft, setPostDraft] = useState({ title: '', content: '', tags: '' })
 
+  const updateTopicStats = useCallback((topicId: number, updater: (topic: Topic) => Topic) => {
+    setTopics((prev) => prev.map((topic) => (topic.id === topicId ? updater(topic) : topic)))
+  }, [])
+
   const activeTopic = useMemo(() => {
     if (!activeTopicId) return null
     return topics.find((t) => t.id === activeTopicId) ?? null
@@ -110,6 +114,8 @@ const CommunityPage = ({ token }: Props) => {
       setTopics((prev) => [created, ...prev])
       setActiveTopicId(created.id)
       setTopicDraft({ name: '', description: '' })
+      setMode('latest')
+      setPosts([])
     } catch (err) {
       setError((err as Error).message || '创建话题失败')
     } finally {
@@ -132,9 +138,17 @@ const CommunityPage = ({ token }: Props) => {
           next.delete(activeTopicId)
           return next
         })
+        updateTopicStats(activeTopicId, (topic) => ({
+          ...topic,
+          followerCount: Math.max(0, topic.followerCount - 1),
+        }))
       } else {
         await followTopic(activeTopicId, token)
         setFollowing((prev) => new Set(prev).add(activeTopicId))
+        updateTopicStats(activeTopicId, (topic) => ({
+          ...topic,
+          followerCount: topic.followerCount + 1,
+        }))
       }
     } catch (err) {
       setError((err as Error).message || '操作失败')
@@ -164,12 +178,17 @@ const CommunityPage = ({ token }: Props) => {
         .map((t) => t.trim())
         .filter(Boolean)
         .slice(0, 8)
-      await createPost(
+      const created = await createPost(
         { topicId: activeTopicId, title: postDraft.title.trim(), content: postDraft.content.trim(), tags },
         token,
       )
       setPostDraft({ title: '', content: '', tags: '' })
-      await loadPosts()
+      setMode('latest')
+      setPosts((prev) => [created, ...prev])
+      updateTopicStats(activeTopicId, (topic) => ({
+        ...topic,
+        postCount: topic.postCount + 1,
+      }))
     } catch (err) {
       setError((err as Error).message || '发帖失败')
     } finally {
@@ -331,4 +350,3 @@ const CommunityPage = ({ token }: Props) => {
 }
 
 export default CommunityPage
-

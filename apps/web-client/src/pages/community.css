@@ -180,6 +180,11 @@
   cursor: pointer;
 }
 
+.danger-btn {
+  border-color: rgba(255, 89, 107, 0.55);
+  color: #ffb6c0;
+}
+
 .inline-actions {
   display: flex;
   gap: 0.5rem;
@@ -196,3 +201,20 @@
   border: 1px solid rgba(255, 89, 107, 0.5);
 }
 
+.post-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.post-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(151, 141, 255, 0.14);
+  border: 1px solid rgba(151, 141, 255, 0.35);
+  color: #d7d2ff;
+  font-size: 0.85rem;
+}
