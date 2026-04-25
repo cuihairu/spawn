@@ -67,7 +67,10 @@ function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<HomePage auth={auth} onAuthChange={handleAuthChange} />} />
-            <Route path="/community" element={<CommunityPage token={auth?.token} />} />
+            <Route
+              path="/community"
+              element={<CommunityPage token={auth?.token} userId={auth?.user.id} />}
+            />
             <Route
               path="/community/posts/:id"
               element={<PostDetailPage token={auth?.token} userId={auth?.user.id} />}

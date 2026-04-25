@@ -16,15 +16,16 @@ import './community.css'
 
 interface Props {
   token?: string
+  userId?: number
 }
 
-const CommunityPage = ({ token }: Props) => {
+const CommunityPage = ({ token, userId }: Props) => {
   const [topics, setTopics] = useState<Topic[]>([])
   const [activeTopicId, setActiveTopicId] = useState<number | null>(null)
   const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [mode, setMode] = useState<'latest' | 'hot'>('latest')
+  const [mode, setMode] = useState<'latest' | 'hot' | 'mine'>('latest')
   const [following, setFollowing] = useState<Set<number>>(new Set())
 
   const [topicDraft, setTopicDraft] = useState({ name: '', description: '' })
@@ -77,19 +78,29 @@ const CommunityPage = ({ token }: Props) => {
         setPosts(list)
         return
       }
-      const res = await fetchPosts({ topicId: activeTopicId ?? undefined, limit: 50 })
+      const res = await fetchPosts({
+        topicId: mode === 'mine' ? undefined : activeTopicId ?? undefined,
+        authorId: mode === 'mine' && userId ? userId : undefined,
+        limit: 50,
+      })
       setPosts(res.posts)
     } catch (err) {
       setError((err as Error).message || '加载帖子失败')
     } finally {
       setLoading(false)
     }
-  }, [activeTopicId, mode])
+  }, [activeTopicId, mode, userId])
 
   useEffect(() => {
     loadTopics()
     loadFollowing()
   }, [loadTopics, loadFollowing])
+
+  useEffect(() => {
+    if (mode === 'mine' && (!token || !userId)) {
+      setMode('latest')
+    }
+  }, [mode, token, userId])
 
   useEffect(() => {
     loadPosts()
@@ -183,8 +194,8 @@ const CommunityPage = ({ token }: Props) => {
         token,
       )
       setPostDraft({ title: '', content: '', tags: '' })
-      setMode('latest')
-      setPosts((prev) => [created, ...prev])
+      setMode('mine')
+      setPosts((prev) => [created, ...prev.filter((item) => item.id !== created.id)])
       updateTopicStats(activeTopicId, (topic) => ({
         ...topic,
         postCount: topic.postCount + 1,
@@ -232,9 +243,15 @@ const CommunityPage = ({ token }: Props) => {
                   className={`topic-item ${topic.id === activeTopicId ? 'active' : ''}`}
                   role="button"
                   tabIndex={0}
-                  onClick={() => setActiveTopicId(topic.id)}
+                  onClick={() => {
+                    setActiveTopicId(topic.id)
+                    setMode('latest')
+                  }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') setActiveTopicId(topic.id)
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      setActiveTopicId(topic.id)
+                      setMode('latest')
+                    }
                   }}
                 >
                   <div className="topic-title">
@@ -281,15 +298,21 @@ const CommunityPage = ({ token }: Props) => {
               <div className="secondary-text">
                 {mode === 'hot'
                   ? '热门帖子（全站）'
+                  : mode === 'mine'
+                    ? '我的帖子（按最近更新排序）'
                   : activeTopic
                     ? `当前话题：${activeTopic.name}`
                     : '未选择话题'}
               </div>
             </div>
             <div className="inline-actions">
-              <select value={mode} onChange={(e) => setMode(e.target.value as 'latest' | 'hot')}>
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as 'latest' | 'hot' | 'mine')}
+              >
                 <option value="latest">最新</option>
                 <option value="hot">热门</option>
+                {token ? <option value="mine">我的帖子</option> : null}
               </select>
               <button type="button" className="secondary-btn" onClick={handleToggleFollow} disabled={!token || loading}>
                 {activeTopicId && following.has(activeTopicId) ? '取消关注' : '关注话题'}
@@ -300,21 +323,37 @@ const CommunityPage = ({ token }: Props) => {
           {loading ? (
             <div className="secondary-text">加载中...</div>
           ) : posts.length === 0 ? (
-            <div className="secondary-text">暂无帖子</div>
+            <div className="community-empty">
+              <div className="secondary-text">
+                {mode === 'mine' ? '你还没有发布帖子' : '暂无帖子'}
+              </div>
+              {mode === 'mine' ? (
+                <button type="button" className="secondary-btn" onClick={() => setMode('latest')}>
+                  去当前话题看看
+                </button>
+              ) : null}
+            </div>
           ) : (
             <div className="post-list">
               {posts.map((p) => (
                 <Link key={p.id} to={`/community/posts/${p.id}`} className="post-item">
-                  <div className="post-title">{p.title}</div>
+                  <div className="post-item-head">
+                    <div className="post-title">{p.title}</div>
+                    {userId && p.authorId === userId ? <span className="post-badge">我的</span> : null}
+                  </div>
                   <div className="post-preview">
                     {p.content.length > 120 ? `${p.content.slice(0, 120)}...` : p.content}
                   </div>
                   <div className="post-meta">
                     <span>👤 {p.authorName || `用户${p.authorId}`}</span>
                     <span>👁️ {p.viewCount}</span>
+                    <span>💬 {p.commentCount}</span>
                     <span>👍 {p.likeCount}</span>
                     <span>🔁 {p.shareCount}</span>
                   </div>
+                  {userId && p.authorId === userId ? (
+                    <div className="post-manage-hint">进入详情可编辑或删除</div>
+                  ) : null}
                 </Link>
               ))}
             </div>
@@ -322,7 +361,7 @@ const CommunityPage = ({ token }: Props) => {
 
           {token ? (
             <div className="post-form">
-              <h2>在当前话题发帖</h2>
+              <h2>{mode === 'mine' ? '继续发帖' : '在当前话题发帖'}</h2>
               <input
                 value={postDraft.title}
                 onChange={(e) => setPostDraft((p) => ({ ...p, title: e.target.value }))}
