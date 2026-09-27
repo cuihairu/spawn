@@ -244,5 +244,37 @@ curl http://localhost:8890/games/the-last-of-us-2
    - `client/metrics.go`：`content_service_gamecatalog_client_requests_total{result}`（success / breaker_open / transient_error / bad_request / canceled / contract_error）、`retries_total`、`request_duration_seconds`（含重试与退避）、`breaker_state` gauge（0=closed 1=half-open 2=open，经熔断器 `onChange` 回调上报）。
    - 指标注册到默认 registry，随 go-zero Prometheus agent 的 `/metrics` 暴露（`etc/content-api.yaml` 中 `Prometheus.Port: 9093`）；同时为全部 6 个服务补充 `Prometheus` 配置段（端口见 `docs/development-guide.md` 监控章节），go-zero 内置 `http_server_requests_*` / `rpc_server_requests_*` 指标自动生效。
    - 测试（`client/metrics_test.go`，独立 registry 隔离并行用例）：默认 registry 注册断言、按 result 分类的调用计数 delta、熔断打开快速失败计数、重试次数与直方图 SampleCount 采集、熔断状态 gauge 迁移序列（closed→open→half-open→closed）、promhttp 文本格式渲染断言。
-4. 考虑实现 gRPC 调用替代 HTTP 以提升性能
+4. ~~考虑实现 gRPC 调用替代 HTTP 以提升性能~~ ✅ 评估完成（结论：**暂不落地，保留 HTTP 通路**）：
+
+   **收益（预期，当前无法兑现）**
+   - protobuf 序列化：Game 对象约 12 个字段、JSON 体积 < 1KB，编码/解码差在环回链路上为微秒级；
+   - HTTP/2 多路复用：仅在单连接高并发时有效。该调用仅发生在创建攻略（`CreateGuide`，低频写路径），
+     每次请求只调用一次 game-catalog；
+   - proto 契约强类型：现有 `client.GameInfo` 结构 + `content.api` 已承担契约职责。
+
+   **成本（确定发生）**
+   - game-catalog 需新增 zrpc 服务端：proto 定义 + goctl 代码生成 + 第二监听端口 + 配置/部署面
+     （Dockerfile、compose、监控端口规划），而其数据后端目前只是单个 JSON 文件的内存仓储，
+     不存在被序列化开销放大的数据库往返；
+   - content-service 需新增 gRPC 客户端与服务发现配置（参照 user-service-rpc 需引入 etcd，
+     或改用直连 Endpoints 模式）；
+   - 既有韧性栈需重构或双轨维护：熔断（`client/breaker.go`）、重试退避（`client/retry.go`）、
+     错误分类与降级语义、Prometheus 指标（`client/metrics.go`）均挂在 HTTP 客户端上，
+     迁移意味着这些实现与 28 个 client 测试需重写，或长期维护两条通路；
+   - 运维/调试面翻倍（curl vs grpcurl），api-gateway 的 REST 聚合仍走 HTTP。
+
+   **兼容性**
+   - HTTP 通路无其他破坏性影响（保留即可）；但引入双协议后，同一数据面出现两套契约与两套错误语义，
+     后续每加一个调用方都要选型一次。
+
+   **与既有熔断/重试/指标链路的关系**
+   - go-zero zrpc 自带按方法的自适应熔断，能力与自研 breaker 重叠但语义不同（无显式半开观测）；
+     切换后 `breaker_state` gauge、重试退避序列、result 分类指标及对应测试将失去挂载点，
+     指标口径会出现断代，PromQL 告警需重写。
+
+   **重评触发条件（满足其一再评估）**
+   1. game-catalog 迁移到真实数据库且攻略创建链路出现实测瓶颈——第 3 项接入的
+      `content_service_gamecatalog_client_request_duration_seconds` 直方图可直接提供 p99 证据；
+   2. 出现多个服务高频消费游戏数据、需要严格契约版本管理；
+   3. 服务间调用跨主机/跨机房部署，环回假设失效。
 5. ~~实现用户权限控制（只能修改/删除自己的攻略）~~ ✅ 已完成（见 `internal/logic/permissions_test.go`）
