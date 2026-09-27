@@ -235,7 +235,11 @@ curl http://localhost:8890/games/the-last-of-us-2
    - `utils/auth_test.go` 覆盖 `ParseToken`/`ValidateToken`/`GetUserIdFromToken`（有效令牌、过期、密钥错误、非 HMAC 签名方法、畸形令牌、密钥隔离）。
    - `client/gamecatalog_test.go` 覆盖 `GetGameById`（裸 `{"game":...}` 响应、旧版 `{code,data}` 包装响应、非 200 状态码、业务错误码、非法 JSON、无法识别的响应体、服务不可达、上下文取消、baseURL 尾斜杠归一化）。
    - 同时修复客户端与 game-catalog 实际契约不一致的问题：请求路径由 `/api/v1/games/:id` 改为 game-catalog 实际路由 `/games/:id`，并兼容裸 `{"game": {...}}` 响应格式（此前跨服务调用始终失败并降级为 gameId）。
-2. 实现服务熔断和重试机制
+2. ~~实现服务熔断和重试机制~~ ✅ 已完成：
+   - `client/breaker.go`：基于连续失败次数的熔断器（closed → open → half-open → closed/open），`Allow/Success/Failure` 状态机，可注入时钟。
+   - `client/retry.go`：错误分类（`kindTransient` 网络错误/5xx/429/业务错误码 → 重试+计入熔断；`kindBadRequest` 4xx 与 `kindCanceled` 上下文取消 → 不重试不计入；`kindContract` 解析失败/无法识别响应 → 不重试但计入熔断）与确定性指数退避 `base×2^(n-1)` 封顶 `maxDelay`（无抖动，便于测试）。
+   - `GetGameById`：瞬时错误按指数退避重试（默认 3 次尝试、100ms→1s），熔断开启时快速失败（`ErrBreakerOpen`，默认连续失败 3 次、冷却 5s）；失败降级（调用方用 gameId 作标题）语义不变。
+   - 测试：`breaker_test.go` 覆盖 open/半开探测成功恢复/探测失败重开/单探测占用/连续失败复位/非法配置钳制；`gamecatalog_test.go` 覆盖重试退避序列与封顶、重试耗尽、4xx/取消/契约异常不重试、熔断打开后快速失败与半开恢复（成功/失败/4xx 探测）。
 3. 添加 Prometheus 指标监控跨服务调用
 4. 考虑实现 gRPC 调用替代 HTTP 以提升性能
 5. ~~实现用户权限控制（只能修改/删除自己的攻略）~~ ✅ 已完成（见 `internal/logic/permissions_test.go`）
