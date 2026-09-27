@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -24,17 +25,22 @@ type GameInfo struct {
 	Platforms  []string `json:"platforms"`
 }
 
-// GameResponse 游戏详情响应
-type GameResponse struct {
-	Code    int      `json:"code"`
-	Message string   `json:"message"`
-	Data    GameInfo `json:"data"`
+// responsePayload 兼容两种返回格式：
+//   - game-catalog 实际返回：{"game": {...}}（GET /games/:id）
+//   - 早期文档约定的旧格式：{"code": 200, "message": "...", "data": {...}}
+//
+// Code/Data/Game 均用指针以区分字段缺失与零值。
+type responsePayload struct {
+	Code    *int      `json:"code"`
+	Message string    `json:"message"`
+	Data    *GameInfo `json:"data"`
+	Game    *GameInfo `json:"game"`
 }
 
 // NewGameCatalogClient 创建游戏目录服务客户端
 func NewGameCatalogClient(baseURL string, timeout time.Duration) *GameCatalogClient {
 	return &GameCatalogClient{
-		baseURL: baseURL,
+		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
@@ -43,7 +49,7 @@ func NewGameCatalogClient(baseURL string, timeout time.Duration) *GameCatalogCli
 
 // GetGameById 根据游戏ID获取游戏信息
 func (c *GameCatalogClient) GetGameById(ctx context.Context, gameId string) (*GameInfo, error) {
-	url := fmt.Sprintf("%s/api/v1/games/%s", c.baseURL, gameId)
+	url := fmt.Sprintf("%s/games/%s", c.baseURL, gameId)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -65,14 +71,21 @@ func (c *GameCatalogClient) GetGameById(ctx context.Context, gameId string) (*Ga
 		return nil, fmt.Errorf("请求失败，状态码: %d, 响应: %s", resp.StatusCode, string(body))
 	}
 
-	var gameResp GameResponse
-	if err := json.Unmarshal(body, &gameResp); err != nil {
+	var payload responsePayload
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %w", err)
 	}
 
-	if gameResp.Code != http.StatusOK {
-		return nil, fmt.Errorf("获取游戏信息失败: %s", gameResp.Message)
+	if payload.Code != nil && *payload.Code != http.StatusOK {
+		return nil, fmt.Errorf("获取游戏信息失败: %s", payload.Message)
 	}
 
-	return &gameResp.Data, nil
+	if payload.Game != nil {
+		return payload.Game, nil
+	}
+	if payload.Data != nil {
+		return payload.Data, nil
+	}
+
+	return nil, fmt.Errorf("响应格式无法识别: %s", string(body))
 }

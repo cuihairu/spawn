@@ -140,7 +140,7 @@ if err != nil {
 ```
 [CreateGuide] 创建攻略请求
     ↓
-[GameCatalogClient] 调用 GET /api/v1/games/:id
+[GameCatalogClient] 调用 GET /games/:id
     ↓
 获取游戏信息（标题、封面等）
     ↓
@@ -210,7 +210,7 @@ curl -X POST http://localhost:8891/api/v1/guides \
 
 ```bash
 # 确保 game-catalog 服务运行
-curl http://localhost:8890/api/v1/games/the-last-of-us-2
+curl http://localhost:8890/games/the-last-of-us-2
 
 # 创建攻略时会自动获取游戏名称
 # 检查返回的 game_title 字段
@@ -231,8 +231,11 @@ curl http://localhost:8890/api/v1/games/the-last-of-us-2
 
 ## 下一步建议
 
-1. 添加单元测试覆盖认证和跨服务调用逻辑
+1. ~~添加单元测试覆盖认证和跨服务调用逻辑~~ ✅ 已完成：
+   - `utils/auth_test.go` 覆盖 `ParseToken`/`ValidateToken`/`GetUserIdFromToken`（有效令牌、过期、密钥错误、非 HMAC 签名方法、畸形令牌、密钥隔离）。
+   - `client/gamecatalog_test.go` 覆盖 `GetGameById`（裸 `{"game":...}` 响应、旧版 `{code,data}` 包装响应、非 200 状态码、业务错误码、非法 JSON、无法识别的响应体、服务不可达、上下文取消、baseURL 尾斜杠归一化）。
+   - 同时修复客户端与 game-catalog 实际契约不一致的问题：请求路径由 `/api/v1/games/:id` 改为 game-catalog 实际路由 `/games/:id`，并兼容裸 `{"game": {...}}` 响应格式（此前跨服务调用始终失败并降级为 gameId）。
 2. 实现服务熔断和重试机制
 3. 添加 Prometheus 指标监控跨服务调用
 4. 考虑实现 gRPC 调用替代 HTTP 以提升性能
-5. 实现用户权限控制（只能修改/删除自己的攻略）
+5. ~~实现用户权限控制（只能修改/删除自己的攻略）~~ ✅ 已完成（见 `internal/logic/permissions_test.go`）
