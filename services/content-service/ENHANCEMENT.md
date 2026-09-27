@@ -240,6 +240,9 @@ curl http://localhost:8890/games/the-last-of-us-2
    - `client/retry.go`：错误分类（`kindTransient` 网络错误/5xx/429/业务错误码 → 重试+计入熔断；`kindBadRequest` 4xx 与 `kindCanceled` 上下文取消 → 不重试不计入；`kindContract` 解析失败/无法识别响应 → 不重试但计入熔断）与确定性指数退避 `base×2^(n-1)` 封顶 `maxDelay`（无抖动，便于测试）。
    - `GetGameById`：瞬时错误按指数退避重试（默认 3 次尝试、100ms→1s），熔断开启时快速失败（`ErrBreakerOpen`，默认连续失败 3 次、冷却 5s）；失败降级（调用方用 gameId 作标题）语义不变。
    - 测试：`breaker_test.go` 覆盖 open/半开探测成功恢复/探测失败重开/单探测占用/连续失败复位/非法配置钳制；`gamecatalog_test.go` 覆盖重试退避序列与封顶、重试耗尽、4xx/取消/契约异常不重试、熔断打开后快速失败与半开恢复（成功/失败/4xx 探测）。
-3. 添加 Prometheus 指标监控跨服务调用
+3. ~~添加 Prometheus 指标监控跨服务调用~~ ✅ 已完成：
+   - `client/metrics.go`：`content_service_gamecatalog_client_requests_total{result}`（success / breaker_open / transient_error / bad_request / canceled / contract_error）、`retries_total`、`request_duration_seconds`（含重试与退避）、`breaker_state` gauge（0=closed 1=half-open 2=open，经熔断器 `onChange` 回调上报）。
+   - 指标注册到默认 registry，随 go-zero Prometheus agent 的 `/metrics` 暴露（`etc/content-api.yaml` 中 `Prometheus.Port: 9093`）；同时为全部 6 个服务补充 `Prometheus` 配置段（端口见 `docs/development-guide.md` 监控章节），go-zero 内置 `http_server_requests_*` / `rpc_server_requests_*` 指标自动生效。
+   - 测试（`client/metrics_test.go`，独立 registry 隔离并行用例）：默认 registry 注册断言、按 result 分类的调用计数 delta、熔断打开快速失败计数、重试次数与直方图 SampleCount 采集、熔断状态 gauge 迁移序列（closed→open→half-open→closed）、promhttp 文本格式渲染断言。
 4. 考虑实现 gRPC 调用替代 HTTP 以提升性能
 5. ~~实现用户权限控制（只能修改/删除自己的攻略）~~ ✅ 已完成（见 `internal/logic/permissions_test.go`）

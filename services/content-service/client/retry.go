@@ -87,6 +87,7 @@ type clientOptions struct {
 	retry   retryConfig
 	breaker *Breaker
 	sleep   func(time.Duration)
+	metrics *clientMetrics // nil 时使用注册到默认 registry 的 defaultMetrics
 }
 
 // defaultClientOptions 默认熔断与重试参数。

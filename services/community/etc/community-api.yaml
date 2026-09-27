@@ -10,3 +10,8 @@ DataSource:
 
 Auth:
   JWTSecret: your-secret-key-change-in-production
+
+# Prometheus 指标端点（go-zero agent 自动暴露 /metrics）
+Prometheus:
+  Host: 0.0.0.0
+  Port: 9094

@@ -35,6 +35,21 @@
 
 > 目录可随业务演化调整，初期可根据优先级逐步落地。
 
+## 可观测性
+
+各 go-zero 服务通过配置中的 `Prometheus` 段暴露 `/metrics` 指标端点（go-zero agent，独立监听端口），
+内置请求量/耗时/状态码指标；content-service 另有跨服务调用自定义指标。
+各服务指标端口与指标说明见 `docs/development-guide.md` 的「监控与指标（Prometheus）」章节：
+
+| 服务 | 业务端口 | /metrics 端口 |
+| --- | --- | --- |
+| user-service | 8888 | 9091 |
+| game-catalog | 8890 | 9092 |
+| content-service | 8891 | 9093 |
+| community | 8892 | 9094 |
+| api-gateway | 8800 | 9095 |
+| user-service-rpc | 8080 (gRPC) | 9096 |
+
 ### 模块职责概览
 
 - `apps/`: 聚焦体验层。web-client 负责攻略/社区主站；mobile-app 聚合开黑、战绩、活动；mini-program 侧重轻量浏览与小游戏联机；admin-console 提供内容和运营配置。

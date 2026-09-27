@@ -445,6 +445,63 @@ func TestUserLogic_User(t *testing.T) {
 }
 ```
 
+## 监控与指标（Prometheus）
+
+所有 go-zero 服务通过配置文件中的 `Prometheus` 段暴露 `/metrics` 端点（go-zero agent，
+独立于业务端口监听），输出 Prometheus 文本格式：
+
+| 服务 | 业务端口 | /metrics 端口 |
+| --- | --- | --- |
+| user-service | 8888 | 9091 |
+| game-catalog | 8890 | 9092 |
+| content-service | 8891 | 9093 |
+| community | 8892 | 9094 |
+| api-gateway | 8800 | 9095 |
+| user-service-rpc | 8080 (gRPC) | 9096 |
+
+```bash
+# 验证指标端点
+curl http://localhost:9093/metrics
+```
+
+### 内置指标（go-zero 自动采集）
+
+rest 服务（`rest.MustNewServer` 内部调用 `ServiceConf.SetUp()` 启动 agent，Prometheus 中间件默认开启）：
+
+- `http_server_requests_duration_ms_bucket{path,method,code}` — 请求耗时直方图
+- `http_server_requests_code_total{path,method,code}` — 按状态码统计的请求量
+
+zrpc 服务（经 `UnaryPrometheusInterceptor`）：
+
+- `rpc_server_requests_duration_ms_bucket{method,code}` 等
+
+### 自定义指标（content-service 跨服务调用）
+
+`services/content-service/client` 对 game-catalog 的跨服务调用（含熔断与重试）导出：
+
+- `content_service_gamecatalog_client_requests_total{result}` — 调用次数，
+  `result` ∈ success / breaker_open / transient_error / bad_request / canceled / contract_error
+- `content_service_gamecatalog_client_retries_total` — 瞬时错误触发的重试次数
+- `content_service_gamecatalog_client_request_duration_seconds` — 调用总耗时（含重试与退避）
+- `content_service_gamecatalog_client_breaker_state` — 熔断器状态：0=closed 1=half-open 2=open
+
+错误率示例（PromQL）：
+
+```promql
+sum(rate(content_service_gamecatalog_client_requests_total{result!="success"}[5m]))
+  / sum(rate(content_service_gamecatalog_client_requests_total[5m]))
+```
+
+### 新服务接入监控
+
+在 `etc/*.yaml` 中增加配置即可（无需改代码）：
+
+```yaml
+Prometheus:
+  Host: 0.0.0.0
+  Port: <未占用端口>
+```
+
 ## 故障排查
 
 ### 1. 常见问题

@@ -30,6 +30,7 @@ type GameCatalogClient struct {
 	retry      retryConfig
 	breaker    *Breaker
 	sleep      func(time.Duration)
+	metrics    *clientMetrics
 }
 
 // GameInfo 游戏基本信息
@@ -75,6 +76,13 @@ func newGameCatalogClient(baseURL string, timeout time.Duration, opts clientOpti
 	if opts.breaker == nil {
 		opts.breaker = NewBreaker(defaultMaxFailures, defaultCooldown)
 	}
+	if opts.metrics == nil {
+		opts.metrics = defaultMetrics
+	}
+	if opts.breaker.onChange == nil {
+		// 接入熔断状态指标（未注入自定义回调时）。
+		attachBreakerMetrics(opts.breaker, opts.metrics)
+	}
 
 	return &GameCatalogClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
@@ -84,6 +92,7 @@ func newGameCatalogClient(baseURL string, timeout time.Duration, opts clientOpti
 		retry:   opts.retry,
 		breaker: opts.breaker,
 		sleep:   opts.sleep,
+		metrics: opts.metrics,
 	}
 }
 
@@ -93,19 +102,27 @@ func newGameCatalogClient(baseURL string, timeout time.Duration, opts clientOpti
 func (c *GameCatalogClient) GetGameById(ctx context.Context, gameId string) (*GameInfo, error) {
 	// 调用方上下文已不可用：直接失败，不触发重试或熔断。
 	if err := ctx.Err(); err != nil {
+		c.metrics.requests.WithLabelValues(resultCanceled).Inc()
 		return nil, err
 	}
+
+	start := time.Now()
+	defer func() {
+		c.metrics.duration.Observe(time.Since(start).Seconds())
+	}()
 
 	var lastErr error
 	for attempt := 1; attempt <= c.retry.maxAttempts; attempt++ {
 		// 熔断检查：open 时快速失败；half-open 时仅放行探测请求。
 		if !c.breaker.Allow() {
+			c.metrics.requests.WithLabelValues(resultBreakerOpen).Inc()
 			return nil, ErrBreakerOpen
 		}
 
 		game, err := c.getGameByIdOnce(ctx, gameId)
 		if err == nil {
 			c.breaker.Success()
+			c.metrics.requests.WithLabelValues(resultSuccess).Inc()
 			return game, nil
 		}
 
@@ -113,8 +130,10 @@ func (c *GameCatalogClient) GetGameById(ctx context.Context, gameId string) (*Ga
 		reportBreaker(c.breaker, err)
 
 		if attempt == c.retry.maxAttempts || !isRetryable(err) {
+			c.metrics.requests.WithLabelValues(resultLabel(err)).Inc()
 			return nil, lastErr
 		}
+		c.metrics.retries.Inc()
 
 		// 退避期间上下文失效则放弃后续重试。
 		delay := c.retry.backoffDelay(attempt)
@@ -122,9 +141,11 @@ func (c *GameCatalogClient) GetGameById(ctx context.Context, gameId string) (*Ga
 			c.sleep(delay)
 		}
 		if err := ctx.Err(); err != nil {
+			c.metrics.requests.WithLabelValues(resultCanceled).Inc()
 			return nil, err
 		}
 	}
+	// 循环内所有分支均已 return，此处仅为编译完整性兜底。
 	return nil, lastErr
 }
 

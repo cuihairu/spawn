@@ -26,6 +26,7 @@
 - **数据存储**: 内存存储（JSON种子数据）
 - **端口**: 8891
 - **跨服务调用**: `client/` 内置熔断（连续失败 3 次开启、冷却 5s、半开探测恢复）与指数退避重试（3 次尝试、100ms→1s），失败时降级使用 gameId 作标题
+- **监控**: `/metrics` Prometheus 端点（端口 9093，见 `etc/content-api.yaml`），含 go-zero 内置请求指标与 `content_service_gamecatalog_client_*` 跨服务调用指标（调用量/错误分类/重试/耗时/熔断状态）
 
 ## 目录结构
 

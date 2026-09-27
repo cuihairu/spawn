@@ -34,6 +34,9 @@ type Breaker struct {
 	failures  int
 	openSince time.Time
 	probing   bool // half-open 下是否已有探测请求在途
+
+	// onChange 状态迁移回调（在锁外调用），用于导出指标等副作用。
+	onChange func(breakerState)
 }
 
 // NewBreaker 创建熔断器，maxFailures < 1 时按 1 处理。
@@ -57,37 +60,54 @@ func NewBreaker(maxFailures int, cooldown time.Duration) *Breaker {
 // half-open 下已有探测在途时拒绝其余请求。
 func (b *Breaker) Allow() bool {
 	b.mu.Lock()
-	defer b.mu.Unlock()
+	var transition breakerState
+	transitioned := false
+	allowed := false
 
 	switch b.state {
 	case stateClosed:
-		return true
+		allowed = true
 	case stateOpen:
 		if b.now().Before(b.openSince.Add(b.cooldown)) {
+			b.mu.Unlock()
 			return false
 		}
 		// 冷却结束：进入半开并放行一个探测请求。
 		b.state = stateHalfOpen
 		b.probing = true
-		return true
+		allowed = true
+		transition, transitioned = stateHalfOpen, true
 	default: // stateHalfOpen
-		if b.probing {
-			return false
+		if !b.probing {
+			b.probing = true
+			allowed = true
 		}
-		b.probing = true
-		return true
 	}
+	cb := b.onChange
+	b.mu.Unlock()
+
+	if transitioned && cb != nil {
+		cb(transition)
+	}
+	return allowed
 }
 
 // Success 记录一次成功：closed 下复位连续失败计数；half-open 下恢复为 closed。
 func (b *Breaker) Success() {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	b.probing = false
 	b.failures = 0
+	var transition breakerState
+	transitioned := false
 	if b.state == stateHalfOpen {
 		b.state = stateClosed
+		transition, transitioned = stateClosed, true
+	}
+	cb := b.onChange
+	b.mu.Unlock()
+
+	if transitioned && cb != nil {
+		cb(transition)
 	}
 }
 
@@ -95,19 +115,27 @@ func (b *Breaker) Success() {
 // half-open 下探测失败直接转回 open。
 func (b *Breaker) Failure() {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	b.probing = false
+	var transition breakerState
+	transitioned := false
 	switch b.state {
 	case stateHalfOpen:
 		b.state = stateOpen
 		b.openSince = b.now()
+		transition, transitioned = stateOpen, true
 	case stateClosed:
 		b.failures++
 		if b.failures >= b.maxFailures {
 			b.state = stateOpen
 			b.openSince = b.now()
+			transition, transitioned = stateOpen, true
 		}
+	}
+	cb := b.onChange
+	b.mu.Unlock()
+
+	if transitioned && cb != nil {
+		cb(transition)
 	}
 }
 
