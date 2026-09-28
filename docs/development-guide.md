@@ -573,6 +573,26 @@ etcdctl get --prefix "" | grep user-service
 curl -v http://localhost:8888/health
 ```
 
+## CI 流水线
+
+`.github/workflows/ci.yml`（GitHub Actions）在 push 到 main 与所有 PR 时执行三道门禁：
+
+1. **gofmt 检查**：`gofmt -l .` 非空即失败；
+2. **全模块构建**：遍历 `go work edit -json` 声明的模块执行 `go build ./...`（新增服务自动纳入，无需改 workflow）；
+3. **全模块测试**：同列表执行 `go test ./... -race -count=1`。
+
+Go 版本跟随 `go.work`（`actions/setup-go@v5` 的 `go-version-file`），模块间共享构建缓存。
+等价的本地验证：
+
+```bash
+gofmt -l .                                        # 应无输出
+for m in $(go work edit -json | jq -r '.Use[].DiskPath'); do
+  (cd "$m" && go build ./... && go test ./... -race -count=1) || echo "FAIL: $m"
+done
+```
+
+CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/镜像仓库凭据），待部署方案确定后补充。
+
 ## 下一步
 
 1. ~~实现用户认证和授权~~ ✅ 已完成（详见上文「认证与授权（JWT）」）：
@@ -584,7 +604,9 @@ curl -v http://localhost:8888/health
 2. 添加数据库模型和缓存
 3. 实现服务间通信
 4. 集成监控和日志收集
-5. 配置 CI/CD 流水线
+5. ~~配置 CI/CD 流水线~~ ✅ CI 部分已完成（`.github/workflows/ci.yml`，见上文「CI 流水线」）：
+   push/PR 触发 gofmt + 全模块 build + `go test -race` 门禁，模块列表动态读取 go.work；
+   CD 部分（部署流水线）因无部署目标暂缓。
 
 更多详细信息请参考：
 - [Go-zero 官方文档](https://go-zero.dev/)

@@ -1,0 +1,62 @@
+# CI 流水线：对 go.work 声明的全部模块执行 gofmt / build / test(-race) 门禁。
+# 模块列表从 go.work 动态读取（go work edit -json），新增服务无需改此文件。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: gofmt + build + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: '**/go.sum'
+
+      - name: Report modules
+        run: |
+          go work edit -json | jq -r '.Use[].DiskPath' | sed 's/^/module: /'
+
+      - name: gofmt check
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed for:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Build all modules
+        run: |
+          status=0
+          for m in $(go work edit -json | jq -r '.Use[].DiskPath'); do
+            echo "::group::build $m"
+            (cd "$m" && go build ./...) || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+      - name: Test all modules (-race)
+        run: |
+          status=0
+          for m in $(go work edit -json | jq -r '.Use[].DiskPath'); do
+            echo "::group::test $m"
+            (cd "$m" && go test ./... -race -count=1) || status=1
+            echo "::endgroup::"
+          done
+          exit $status
