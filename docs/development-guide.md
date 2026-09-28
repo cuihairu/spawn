@@ -502,6 +502,56 @@ Prometheus:
   Port: <未占用端口>
 ```
 
+## 认证与授权（JWT）
+
+### 现状总览（6 个服务）
+
+| 服务 | 鉴权状态 | 实现位置 |
+|------|---------|---------|
+| user-service | ✅ 签发 + 全局校验 | 签发：`utils/auth.go` `GenerateToken`（HS256，默认 7 天）；校验：`middleware/auth.go` 全局挂载（`server.Use`），白名单 `/auth/register`、`/auth/login`、`/ping`、`/health`、`/from/` 前缀 |
+| content-service | ✅ 可选校验 | `utils/auth.go` + `middleware/auth.go`（GET 公开、写接口需令牌），已有单测 |
+| community | ✅ 按路由校验 | `internal/middleware/auth_middleware.go`（`rest.Middleware`），写路由经 `rest.WithMiddlewares` 挂载，已有集成测试 |
+| api-gateway | ✅ 透传 | 转发 `Authorization` 头到上游（`upstream_test.go` 覆盖） |
+| user-service-rpc | ➖ 无需鉴权 | 仅集群内部 gRPC 通信，不直接暴露公网 |
+| game-catalog | ✅ 按路由校验（本次新增） | `utils/auth.go` + `middleware/auth.go`，`POST /games` 受保护，4 个 GET 路由保持匿名公开 |
+
+### 令牌机制
+
+- **算法**：HS256 对称签名；user-service 是唯一签发方，其余服务只做校验。
+- **载荷**：`user_id`（int64）、`username`（string），校验通过后注入请求上下文 key `user_id` / `username`。
+- **过期**：签发方 `TokenExpire` 默认 7 天；校验方在 `ParseToken` 中强制检查 `exp`。
+- **密钥**：各服务 `etc/*.yaml` 的 `Auth.JWTSecret`，支持 `JWT_SECRET` 环境变量覆盖；
+  开发环境共享默认值，生产环境必须通过环境变量注入独立密钥。
+
+### 受保护路由示例（game-catalog）
+
+```bash
+# 登录获取令牌（user-service 签发）
+TOKEN=$(curl -s -X POST http://localhost:8888/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"demo","password":"***"}' | jq -r '.data.token')
+
+# 匿名读：公开
+curl http://localhost:8890/games
+
+# 匿名写：401
+curl -X POST http://localhost:8890/games -d '{}'   # {"code":401,"message":"缺少认证令牌"}
+
+# 携带令牌写：通过
+curl -X POST http://localhost:8890/games \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Halo","description":"FPS","genres":["FPS"],"platforms":["Xbox"],"release_date":"2001-11-15","developer":"Bungie","publisher":"Microsoft","tags":[],"score":9.5,"cover_image":""}'
+```
+
+### 新服务接入认证
+
+1. 复制任一服务的 `utils/auth.go`（校验工具）到本服务；
+2. `config.Config` 增加 `Auth.JWTSecret`（带 `env=JWT_SECRET`），yaml 补 `Auth` 段；
+3. 按 go-zero 惯例二选一挂载：
+   - 全局：`server.Use(middleware.AuthMiddleware(serverCtx))`（user-service 模式，配白名单）；
+   - 按路由：`rest.WithMiddleware(...)` / `rest.WithMiddlewares(...)` 包裹受保护路由（community / game-catalog 模式）。
+
 ## 故障排查
 
 ### 1. 常见问题
@@ -525,7 +575,12 @@ curl -v http://localhost:8888/health
 
 ## 下一步
 
-1. 实现用户认证和授权
+1. ~~实现用户认证和授权~~ ✅ 已完成（详见上文「认证与授权（JWT）」）：
+   核查 6 个服务均有 JWT 体系——user-service 签发+全局校验、content-service 可选校验、
+   community 按路由校验、api-gateway 透传、user-service-rpc 内网免鉴权（设计如此）；
+   唯一缺口 game-catalog（有公开写端点 POST /games）已补齐：`utils/auth.go` 校验工具 +
+   `middleware/auth.go` + 路由挂载（`POST /games` 受保护、GET 匿名公开）。
+   同时补齐 user-service 鉴权中间件与 game-catalog 认证工具/中间件/路由集成测试。
 2. 添加数据库模型和缓存
 3. 实现服务间通信
 4. 集成监控和日志收集
