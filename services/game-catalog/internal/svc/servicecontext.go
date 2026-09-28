@@ -9,11 +9,13 @@ import (
 
 	"github.com/tappi/tappi/services/game-catalog/internal/config"
 	"github.com/tappi/tappi/services/game-catalog/model"
+	"github.com/tappi/tappi/services/game-catalog/utils"
 )
 
 type ServiceContext struct {
 	Config         config.Config
 	GameRepository *model.GameRepository
+	Auth           *utils.Auth
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -30,5 +32,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	return &ServiceContext{
 		Config:         c,
 		GameRepository: repo,
+		Auth:           utils.NewAuth(c.Auth.JWTSecret),
 	}
 }

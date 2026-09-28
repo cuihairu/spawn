@@ -12,4 +12,9 @@ type Config struct {
 	DataSource struct {
 		File string `json:",default=data/games.json"`
 	}
+
+	// Auth JWT 校验配置（与 user-service 共享密钥，令牌由 user-service 签发）
+	Auth struct {
+		JWTSecret string `json:",env=JWT_SECRET"`
+	}
 }
