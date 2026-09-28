@@ -59,8 +59,8 @@ func (l *UpdateUserInfoLogic) UpdateUserInfo(req *types.UpdateUserInfoRequest) (
 
 	// 更新用户信息
 	updateUser := &model.User{
-		Id:       req.Id,
-		Email:    req.Email,
+		Id:    req.Id,
+		Email: req.Email,
 	}
 
 	if req.Nickname != "" {

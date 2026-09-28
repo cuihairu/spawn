@@ -7,13 +7,15 @@ import (
 
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 	"github.com/zeromicro/go-zero/core/logx"
+	"github.com/zeromicro/go-zero/rest"
 )
 
 // AuthMiddleware JWT 认证中间件：校验 Bearer 令牌并注入用户信息。
 // 用于受保护的写接口（POST /games）；令牌由 user-service 签发，本服务仅校验。
-func AuthMiddleware(svcCtx *svc.ServiceContext) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// 签名对齐 go-zero rest.Middleware（社区服务同款），可经 rest.WithMiddleware 挂到单条路由。
+func AuthMiddleware(svcCtx *svc.ServiceContext) rest.Middleware {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -45,7 +47,7 @@ func AuthMiddleware(svcCtx *svc.ServiceContext) func(http.Handler) http.Handler 
 			ctx := context.WithValue(r.Context(), "user_id", claims.UserId)
 			ctx = context.WithValue(ctx, "username", claims.Username)
 
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
+			next(w, r.WithContext(ctx))
+		}
 	}
 }

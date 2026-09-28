@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/tappi/tappi/services/content-service/internal/metrics"
 )
 
 // 默认熔断与重试参数。
@@ -103,12 +105,14 @@ func (c *GameCatalogClient) GetGameById(ctx context.Context, gameId string) (*Ga
 	// 调用方上下文已不可用：直接失败，不触发重试或熔断。
 	if err := ctx.Err(); err != nil {
 		c.metrics.requests.WithLabelValues(resultCanceled).Inc()
+		metrics.GameCatalogClientCallsTotal.WithLabelValues("GetGameById", "canceled").Inc()
 		return nil, err
 	}
 
 	start := time.Now()
 	defer func() {
 		c.metrics.duration.Observe(time.Since(start).Seconds())
+		metrics.GameCatalogClientCallDurationSeconds.WithLabelValues("GetGameById").Observe(time.Since(start).Seconds())
 	}()
 
 	var lastErr error
@@ -116,6 +120,7 @@ func (c *GameCatalogClient) GetGameById(ctx context.Context, gameId string) (*Ga
 		// 熔断检查：open 时快速失败；half-open 时仅放行探测请求。
 		if !c.breaker.Allow() {
 			c.metrics.requests.WithLabelValues(resultBreakerOpen).Inc()
+			metrics.GameCatalogClientCallsTotal.WithLabelValues("GetGameById", "circuit_open").Inc()
 			return nil, ErrBreakerOpen
 		}
 
@@ -123,6 +128,7 @@ func (c *GameCatalogClient) GetGameById(ctx context.Context, gameId string) (*Ga
 		if err == nil {
 			c.breaker.Success()
 			c.metrics.requests.WithLabelValues(resultSuccess).Inc()
+			metrics.GameCatalogClientCallsTotal.WithLabelValues("GetGameById", "success").Inc()
 			return game, nil
 		}
 
@@ -131,6 +137,7 @@ func (c *GameCatalogClient) GetGameById(ctx context.Context, gameId string) (*Ga
 
 		if attempt == c.retry.maxAttempts || !isRetryable(err) {
 			c.metrics.requests.WithLabelValues(resultLabel(err)).Inc()
+			metrics.GameCatalogClientCallsTotal.WithLabelValues("GetGameById", statusForInternalMetrics(err)).Inc()
 			return nil, lastErr
 		}
 		c.metrics.retries.Inc()
@@ -142,11 +149,32 @@ func (c *GameCatalogClient) GetGameById(ctx context.Context, gameId string) (*Ga
 		}
 		if err := ctx.Err(); err != nil {
 			c.metrics.requests.WithLabelValues(resultCanceled).Inc()
+			metrics.GameCatalogClientCallsTotal.WithLabelValues("GetGameById", "canceled").Inc()
 			return nil, err
 		}
 	}
 	// 循环内所有分支均已 return，此处仅为编译完整性兜底。
 	return nil, lastErr
+}
+
+// statusForInternalMetrics 将错误映射为内部 metrics 的状态标签。
+func statusForInternalMetrics(err error) string {
+	callErr, ok := err.(*callError)
+	if !ok {
+		return "unknown_error"
+	}
+	switch callErr.kind {
+	case kindTransient:
+		return "transient_error"
+	case kindBadRequest:
+		return "bad_request"
+	case kindCanceled:
+		return "canceled"
+	case kindContract:
+		return "parse_error"
+	default:
+		return "unknown_error"
+	}
 }
 
 // getGameByIdOnce 发起单次请求并按错误类别返回。

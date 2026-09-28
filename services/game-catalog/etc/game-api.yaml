@@ -5,6 +5,10 @@ Port: 8890
 DataSource:
   File: "data/games.json"
 
+# JWT 校验密钥（与 user-service 共享；生产环境用 JWT_SECRET 环境变量覆盖）
+Auth:
+  JWTSecret: "tappi-user-service-jwt-secret-key-2024"
+
 # Prometheus 指标端点（go-zero agent 自动暴露 /metrics）
 Prometheus:
   Host: 0.0.0.0

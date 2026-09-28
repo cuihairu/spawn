@@ -18,8 +18,8 @@ type JWTClaims struct {
 
 // Auth 认证工具
 type Auth struct {
-	jwtSecret     []byte
-	tokenExpire   time.Duration
+	jwtSecret   []byte
+	tokenExpire time.Duration
 }
 
 // NewAuth 创建认证工具

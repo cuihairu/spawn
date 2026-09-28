@@ -3,6 +3,8 @@ package client
 import (
 	"sync"
 	"time"
+
+	"github.com/tappi/tappi/services/content-service/internal/metrics"
 )
 
 // breakerState 熔断器状态。
@@ -55,11 +57,19 @@ func NewBreaker(maxFailures int, cooldown time.Duration) *Breaker {
 	}
 }
 
+// SetOnChange 设置状态迁移回调（用于指标导出等副作用）。
+func (b *Breaker) SetOnChange(cb func(breakerState)) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.onChange = cb
+}
+
 // Allow 判断是否允许发起请求。
 // open 且未过冷却期时拒绝；冷却结束后转入 half-open 并放行探测请求；
 // half-open 下已有探测在途时拒绝其余请求。
 func (b *Breaker) Allow() bool {
 	b.mu.Lock()
+	prevState := b.state
 	var transition breakerState
 	transitioned := false
 	allowed := false
@@ -88,6 +98,9 @@ func (b *Breaker) Allow() bool {
 
 	if transitioned && cb != nil {
 		cb(transition)
+		// 导出熔断器指标（内部 metrics 包映射：0=closed, 1=half-open, 2=open）
+		metrics.CircuitBreakerState.WithLabelValues("game_catalog").Set(float64(breakerStateToMetricValue(transition)))
+		metrics.CircuitBreakerTransitionsTotal.WithLabelValues("game_catalog", fromStateName(prevState), transitionStateName(transition)).Inc()
 	}
 	return allowed
 }
@@ -95,6 +108,7 @@ func (b *Breaker) Allow() bool {
 // Success 记录一次成功：closed 下复位连续失败计数；half-open 下恢复为 closed。
 func (b *Breaker) Success() {
 	b.mu.Lock()
+	prevState := b.state
 	b.probing = false
 	b.failures = 0
 	var transition breakerState
@@ -108,6 +122,8 @@ func (b *Breaker) Success() {
 
 	if transitioned && cb != nil {
 		cb(transition)
+		metrics.CircuitBreakerState.WithLabelValues("game_catalog").Set(float64(breakerStateToMetricValue(transition)))
+		metrics.CircuitBreakerTransitionsTotal.WithLabelValues("game_catalog", fromStateName(prevState), transitionStateName(transition)).Inc()
 	}
 }
 
@@ -115,6 +131,7 @@ func (b *Breaker) Success() {
 // half-open 下探测失败直接转回 open。
 func (b *Breaker) Failure() {
 	b.mu.Lock()
+	prevState := b.state
 	b.probing = false
 	var transition breakerState
 	transitioned := false
@@ -136,6 +153,8 @@ func (b *Breaker) Failure() {
 
 	if transitioned && cb != nil {
 		cb(transition)
+		metrics.CircuitBreakerState.WithLabelValues("game_catalog").Set(float64(breakerStateToMetricValue(transition)))
+		metrics.CircuitBreakerTransitionsTotal.WithLabelValues("game_catalog", fromStateName(prevState), transitionStateName(transition)).Inc()
 	}
 }
 
@@ -144,4 +163,44 @@ func (b *Breaker) stateValue() breakerState {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.state
+}
+
+// fromStateName 返回迁移前状态名。
+func fromStateName(s breakerState) string {
+	switch s {
+	case stateClosed:
+		return "closed"
+	case stateOpen:
+		return "open"
+	case stateHalfOpen:
+		return "half_open"
+	default:
+		return "unknown"
+	}
+}
+
+// transitionStateName 返回迁移后状态名。
+func transitionStateName(s breakerState) string {
+	switch s {
+	case stateClosed:
+		return "closed"
+	case stateOpen:
+		return "open"
+	case stateHalfOpen:
+		return "half_open"
+	default:
+		return "unknown"
+	}
+}
+
+// breakerStateToMetricValue 将内部状态映射为内部 metrics 包的标准值（0=closed, 1=half-open, 2=open）。
+func breakerStateToMetricValue(s breakerState) int {
+	switch s {
+	case stateOpen:
+		return 2
+	case stateHalfOpen:
+		return 1
+	default:
+		return 0
+	}
 }
