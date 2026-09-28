@@ -601,8 +601,23 @@ CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/�
    唯一缺口 game-catalog（有公开写端点 POST /games）已补齐：`utils/auth.go` 校验工具 +
    `middleware/auth.go` + 路由挂载（`POST /games` 受保护、GET 匿名公开）。
    同时补齐 user-service 鉴权中间件与 game-catalog 认证工具/中间件/路由集成测试。
-2. 添加数据库模型和缓存
-3. 实现服务间通信
+2. 添加数据库模型和缓存（待设计决策：落地服务与顺序、MySQL DSN/部署形态、
+   缓存方案——go-zero sqlc 需 Redis，或进程内 TTL 缓存；user-service 已有
+   MySQL/SQLite 双驱动先例可参照）
+3. ~~实现服务间通信~~ ✅ 已完成（通路审计 + 补齐客户端契约测试）：
+
+   | 通路 | 实现位置 | 契约测试 |
+   |------|---------|---------|
+   | api-gateway → user-service | `services/api-gateway/internal/integration/user_client.go`（Login、GetRecommendations，Bearer 透传） | `user_client_test.go`（httptest 断言路径/查询/头/响应解析） |
+   | api-gateway → game-catalog | `services/api-gateway/internal/integration/game_client.go`（GetFeatured） | `game_client_test.go` |
+   | api-gateway → community / content（反向代理） | `internal/proxy` + `internal/{community,content}/routes.go` | `internal/proxy` 上游转发测试（既有） |
+   | content-service → game-catalog | `client/gamecatalog.go`（熔断/重试/指标加持） | `client/*_test.go`（既有，89.7%） |
+   | user-service → game-catalog | `internal/integration/gamecatalog_client.go`（GetRecommendations） | `gamecatalog_client_test.go`（新增，97.2%） |
+   | 其余服务 → user-service-rpc | `user-service-rpc`（zrpc + etcd） | goctl 生成通路，服务端暂无测试（见下） |
+   | community | 无出向调用（独立域） | — |
+
+   全部 HTTP 通路的端点/参数/响应契约均已对照服务端真实路由核实
+   （曾修复 content-service 客户端路径不一致问题，见 ENHANCEMENT.md）。
 4. 集成监控和日志收集
 5. ~~配置 CI/CD 流水线~~ ✅ CI 部分已完成（`.github/workflows/ci.yml`，见上文「CI 流水线」）：
    push/PR 触发 gofmt + 全模块 build + `go test -race` 门禁，模块列表动态读取 go.work；
