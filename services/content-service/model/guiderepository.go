@@ -101,6 +101,9 @@ func (r *GuideRepository) List(filter GuideFilter) ([]*Guide, int) {
 
 	var filtered []*Guide
 	for _, guide := range r.guides {
+		if guide == nil {
+			continue
+		}
 		if !matchesGuide(guide, filter) {
 			continue
 		}
@@ -109,7 +112,14 @@ func (r *GuideRepository) List(filter GuideFilter) ([]*Guide, int) {
 
 	total := len(filtered)
 	start := (filter.Page - 1) * filter.PageSize
+	// 非法分页参数（page<1 或 size<0）钳制为空页/首页，避免负索引切片 panic
+	if start < 0 {
+		start = 0
+	}
 	end := start + filter.PageSize
+	if end < start {
+		end = start
+	}
 
 	if start > total {
 		start = total
