@@ -11,10 +11,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/tappi/tappi/services/game-catalog/internal/config"
+	"github.com/tappi/tappi/services/game-catalog/internal/logic"
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 	"github.com/tappi/tappi/services/game-catalog/utils"
 
 	"github.com/zeromicro/go-zero/rest"
+	"github.com/zeromicro/go-zero/rest/httpx"
 )
 
 const testJWTSecret = "routes-integration-secret"
@@ -23,6 +25,9 @@ const testJWTSecret = "routes-integration-secret"
 // 返回 base URL 与签发令牌的工具函数。端口取自空闲端口，数据目录隔离到临时目录。
 func newAuthedTestServer(t *testing.T) (string, func(claims utils.JWTClaims) string) {
 	t.Helper()
+
+	// 与 game.go 生产装配一致：注册 logic 层错误处理器（404/500 状态码生效）
+	httpx.SetErrorHandlerCtx(logic.ErrorHandler)
 
 	// 预占一个空闲端口再释放，供 go-zero 使用（go-zero 不暴露 listener 句柄）
 	l, err := net.Listen("tcp", "127.0.0.1:0")
