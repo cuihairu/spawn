@@ -373,7 +373,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 | 模块 | 覆盖率 | 备注 |
 |------|-------|------|
 | api-gateway | 96.3% | |
-| user-service | 96.8% | 重测确认（旧快照 15.8% 系滞后） |
+| user-service | 97.2% | 重测确认（旧快照 15.8% 系滞后） |
 | game-catalog | 95.7% | |
 | community | 91.5% | |
 | content-service | 88.8% | |
@@ -403,9 +403,18 @@ no such column: email；闭库会让先执行的用户名检查先失败，够�
   Valid=true 的 Nickname，更新后的行 nickname 不可能为 NULL；
 - `model/usermodel.go:77`（LastInsertId）：mattn/go-sqlite3 的
   SQLiteResult.LastInsertId 恒返回 (id, nil)，无错误路径。
-剩余未覆盖 15 块 = 上述 5 块 + 既定 ledger（main、handler `httpx.ErrorCtx`
-空错分支 ×5、svc sql.Open/CreateUsersTable panic 防御分支 ×2、
-utils HS256 GenerateToken 错误）。
+**巡检第三轮（同日）**：原沿袭登记的 svc 两个 panic 分支复核后实际可达，已补测
+（`internal/svc/servicecontext_test.go`）——
+`servicecontext.go:44`：畸形 MySQL DSN 使 sql.Open 阶段 ParseDSN 即失败
+（如 `user:pw@tcp(127.0.0.1:3306)x`，tcp 地址后缺 "/dbname" 分隔）；
+`servicecontext.go:63`：只读库（`file:...?mode=ro`）且 users 表不存在时
+Ping 成功、CreateUsersTable 的 SQLite/MySQL 双格式建表均失败。
+96.8% → 97.2%。handler `httpx.ErrorCtx` 空错分支 ×5 经逐一核对：对应 logic
+（register/update/getuserinfo/getuserrecommendations/user）全部零非 nil error
+返回（envelope 恒 `}, nil`；login 的 logic 会返回真实错误且其 handler 分支已覆盖），
+维持 ledger。
+剩余未覆盖 13 块 = 已论证 5 块（register:89、login:57、update:85/97、usermodel:77）
++ main（2）、handler ×5、utils HS256 GenerateToken 错误（1）。
 
 ## 部署
 

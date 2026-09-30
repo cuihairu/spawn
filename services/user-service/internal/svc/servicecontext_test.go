@@ -1,7 +1,9 @@
 package svc
 
 import (
+	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tappi/tappi/services/user-service/internal/config"
@@ -59,6 +61,55 @@ func TestNewServiceContext_BadSQLitePathPanic(t *testing.T) {
 	defer func() {
 		if recover() == nil {
 			t.Fatal("unopenable sqlite file must panic in NewServiceContext")
+		}
+	}()
+	NewServiceContext(c)
+}
+
+// TestNewServiceContext_SqlOpenMalformedDSNPanic MySQL 畸形 DSN（tcp 地址后
+// 缺 "/dbname" 分隔）在 sql.Open 阶段 ParseDSN 即失败 → panic，连 Ping 都到不了。
+func TestNewServiceContext_SqlOpenMalformedDSNPanic(t *testing.T) {
+	c := sqliteConfig(t)
+	c.MySQL.DataSource = "user:pw@tcp(127.0.0.1:3306)x" // 无 file:/.db → mysql 分支
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("malformed DSN must panic at sql.Open")
+		}
+		if msg, ok := r.(string); !ok || !strings.Contains(msg, "连接数据库失败") {
+			t.Fatalf("panic = %v, want 连接数据库失败", r)
+		}
+	}()
+	NewServiceContext(c)
+}
+
+// TestNewServiceContext_CreateUsersTableFailsPanic 只读库且 users 表不存在：
+// Ping 成功（读连接正常）→ CreateUsersTable 的 SQLite/MySQL 两种建表格式
+// 均因只读/语法失败 → panic。
+func TestNewServiceContext_CreateUsersTableFailsPanic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ro.db")
+	writable, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatalf("open writable db: %v", err)
+	}
+	if _, err := writable.Exec(`CREATE TABLE seed(x)`); err != nil { // 落盘建文件
+		t.Fatalf("create seed table: %v", err)
+	}
+	if err := writable.Close(); err != nil {
+		t.Fatalf("close writable db: %v", err)
+	}
+
+	c := sqliteConfig(t)
+	c.MySQL.DataSource = "file:" + path + "?mode=ro" // 含 file: → sqlite 分支
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("readonly db without users table must panic at CreateUsersTable")
+		}
+		if msg, ok := r.(string); !ok || !strings.Contains(msg, "创建用户表失败") {
+			t.Fatalf("panic = %v, want 创建用户表失败", r)
 		}
 	}()
 	NewServiceContext(c)
