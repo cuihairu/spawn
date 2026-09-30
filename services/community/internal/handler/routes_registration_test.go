@@ -264,3 +264,45 @@ func TestAllRoutesReachable(t *testing.T) {
 	// 注：UnfollowUser/GetFollowingTopics/GetTopics/GetHotPosts/CreateTopic 等
 	// handler 的 err 分支仅剩仓储落盘失败或中间件前 ctx 缺失——无 HTTP 可达路径。
 }
+
+// TestMiddleware_401_nonJWT_authHeader 中间件对非 Bearer 认证头的 401 响应分支。
+func TestMiddleware_401_nonJWT_authHeader(t *testing.T) {
+	base, _, _ := startRouteTestServer(t)
+
+	req, err := http.NewRequest(http.MethodPost, base+"/api/v1/posts", nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Authorization", "Basic xyz")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s /api/v1/posts: %v", http.MethodPost, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("non-JWT auth header status = %d, want 401", resp.StatusCode)
+	}
+}
+
+// TestMiddleware_401_malformedBearerToken 中间件对 Bearer 头但令牌非法时的 401 响应分支。
+func TestMiddleware_401_malformedBearerToken(t *testing.T) {
+	base, _, _ := startRouteTestServer(t)
+
+	// 使用无效的 Bearer 令牌（随机字符串，未 HMAC 签名）
+	token := "Bearer random-junk-token-string"
+	req, err := http.NewRequest(http.MethodPost, base+"/api/v1/posts", nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Authorization", token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s /api/v1/posts: %v", http.MethodPost, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("malformed Bearer token status = %d, want 401", resp.StatusCode)
+	}
+}
