@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,5 +103,75 @@ func TestAuthMiddleware_WriteRequiresAuth(t *testing.T) {
 	mw(next).ServeHTTP(rr, req)
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("unexpected status: %d", rr.Code)
+	}
+}
+
+func TestAuthMiddleware_InvalidAuthScheme401(t *testing.T) {
+	t.Parallel()
+
+	svcCtx := &svc.ServiceContext{Auth: utils.NewAuth("test-secret")}
+	mw := AuthMiddleware(svcCtx)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/guides", nil)
+	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
+	rr := httptest.NewRecorder()
+
+	mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next must not run for non-Bearer scheme")
+	})).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "无效的令牌格式") {
+		t.Fatalf("body = %s, want 无效的令牌格式", rr.Body.String())
+	}
+}
+
+func TestAuthMiddleware_EmptyBearerToken401(t *testing.T) {
+	t.Parallel()
+
+	svcCtx := &svc.ServiceContext{Auth: utils.NewAuth("test-secret")}
+	mw := AuthMiddleware(svcCtx)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/guides", nil)
+	req.Header.Set("Authorization", "Bearer ")
+	rr := httptest.NewRecorder()
+
+	mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next must not run for empty bearer token")
+	})).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "令牌不能为空") {
+		t.Fatalf("body = %s, want 令牌不能为空", rr.Body.String())
+	}
+}
+
+// TestSkipAuth_ReadOnlyFallback GET 且路径不在 /guides、/comments 前缀内 →
+// 走到最后的 return（false）；guides/comments 前缀放行。
+func TestSkipAuth_ReadOnlyFallback(t *testing.T) {
+	if !skipAuth(http.MethodGet, "/api/v1/guides/1") {
+		t.Fatal("GET guides must be skipped")
+	}
+	if !skipAuth(http.MethodGet, "/api/v1/comments") {
+		t.Fatal("GET comments must be skipped")
+	}
+	if skipAuth(http.MethodGet, "/api/v1/other") {
+		t.Fatal("GET other paths must not be skipped")
+	}
+	if skipAuth(http.MethodPost, "/api/v1/guides") {
+		t.Fatal("POST must not be skipped")
+	}
+}
+
+// TestSkipAuth_HealthEndpoints /ping 与 /health 无条件放行。
+func TestSkipAuth_HealthEndpoints(t *testing.T) {
+	for _, path := range []string{"/ping", "/health"} {
+		if !skipAuth(http.MethodGet, path) || !skipAuth(http.MethodPost, path) {
+			t.Fatalf("%s must always be skipped", path)
+		}
 	}
 }

@@ -376,7 +376,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 | user-service | 97.2% | 重测确认（旧快照 15.8% 系滞后） |
 | game-catalog | 95.7% | |
 | community | 91.5% | |
-| content-service | 88.8% | |
+| content-service | 94.2% | 本轮补测（原 88.8%，全仓最大缺口） |
 | user-service-rpc | 79.2%（含生成代码）/ **91.7%（手写面）** | 见下 |
 
 **user-service-rpc 首轮测试落地**：`user.go` main→run 重构（与五个兄弟服务一致，
@@ -415,6 +415,36 @@ Ping 成功、CreateUsersTable 的 SQLite/MySQL 双格式建表均失败。
 维持 ledger。
 剩余未覆盖 13 块 = 已论证 5 块（register:89、login:57、update:85/97、usermodel:77）
 + main（2）、handler ×5、utils HS256 GenerateToken 错误（1）。
+
+**content-service 收口轮（同日第四轮，88.8% → 94.2%）**：已补测试——
+- logic 层：五个 401 分支（createcomment/createguide/deletecomment/updateguide/
+  publishguide，ctx 缺 user_id）、createcomment 的目标攻略缺失 404 与昵称回退、
+  createguide 的游戏拉取失败回退 gameId 标题与昵称回退、likecomment 的评论缺失
+  404 与指向已删攻略的二级 404（种子孤儿评论触达）、listcomments/listguides
+  分页归一化与草稿攻略评论 404、updateguide 的 cover_image/tags 增量字段、
+  mapper 两个 nil 防御分支（`internal/logic/errorbranches_test.go`）；
+- middleware：非 Bearer 头 401、空 Bearer token 401、/ping 与 /health 放行、
+  GET 非 guides/comments 前缀的兜底 return；
+- client：构造参数归一化（负值/nil 注入项）、退避期间 ctx 取消、调用前 ctx
+  已取消、截断响应体（hijack 写半截 Content-Length）、gameId 含控制字符的
+  构造请求失败、statusForInternalMetrics/resultLabel 的 unknown/canceled 映射、
+  breaker SetOnChange 回调与 half-open 双探测（白盒置态）、非法状态名的
+  unknown 兜底、退避封顶的循环内与循环后两个分支（`client/extras_test.go`）。
+
+content-service 剩余 43 块全部按台账口径登记（不硬造用例）：
+- 仓储为纯内存 map（构造时一次性加载，写入不落盘），`Get`/写方法各自只有
+  单一哨兵错误——「get failed → 500」分支（getguide:38、createcomment:50、
+  likecomment:38/55、likeguide:38、deletecomment:46、updateguide:46、
+  publishguide:46）与「Get 成功后写操作再 404/500」分支（likecomment:71/77、
+  likeguide:53/59、deletecomment:61/67、publishguide:61/67、updateguide:79/85、
+  createcomment:81、createguide:70）均不可达；
+- handler `httpx.ErrorCtx` 空错分支 ×10：十个 logic 恒返回 envelope+nil error
+  （与 user-service 同款 envelope 模式，逐一核对）；
+- `content.go` main stderr+exit（全仓既定）；
+- `utils/auth.go:46/51`：jwt/v5 在 Parse 阶段已完成 exp 与签名校验，
+  err==nil 蕴含 token.Valid，两分支为死代码；
+- `client/gamecatalog.go:157`（重试循环编译完整性兜底，源码注释自述）、
+  `gamecatalog.go:176` 与 `metrics.go:90`（错误类别 switch 穷举后的 default）。
 
 ## 部署
 
