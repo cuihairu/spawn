@@ -163,3 +163,49 @@ func TestUserServiceClient_Defaults(t *testing.T) {
 		t.Fatalf("default timeout = %v, want 5s", c.httpClient.Timeout)
 	}
 }
+
+func TestUserServiceClient_Login_ConnectionError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	base := server.URL
+	server.Close()
+
+	client := NewUserServiceClient(base, time.Second)
+	if _, err := client.Login(context.Background(), LoginPayload{Username: "a", Password: "b"}); err == nil {
+		t.Fatal("connection failure must error")
+	}
+}
+
+func TestUserServiceClient_Login_InvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<html>not json</html>`))
+	}))
+	defer server.Close()
+
+	client := NewUserServiceClient(server.URL, time.Second)
+	if _, err := client.Login(context.Background(), LoginPayload{Username: "a", Password: "b"}); err == nil {
+		t.Fatal("invalid JSON body must error")
+	}
+}
+
+func TestUserServiceClient_GetRecommendations_ConnectionError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	client := NewUserServiceClient(server.URL, time.Second)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := client.GetRecommendations(ctx, 1, 5, "", ""); err == nil {
+		t.Fatal("canceled context must error")
+	}
+}
+
+func TestUserServiceClient_GetRecommendations_InvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{not-json`))
+	}))
+	defer server.Close()
+
+	client := NewUserServiceClient(server.URL, time.Second)
+	if _, err := client.GetRecommendations(context.Background(), 1, 5, "", ""); err == nil {
+		t.Fatal("invalid JSON body must error")
+	}
+}

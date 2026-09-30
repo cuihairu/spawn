@@ -156,3 +156,35 @@ func TestUpstream_StripsHopByHopHeaders(t *testing.T) {
 	}
 	_ = respHeaders
 }
+
+// TestCopyHeaderDeletesHopByHop 白盒直测 dst 侧剥离循环（经代理响应头无法
+// 触达：Go http 服务端会吞掉出站的 hop-by-hop 头）。
+func TestCopyHeaderDeletesHopByHop(t *testing.T) {
+	t.Parallel()
+
+	dst := http.Header{
+		"Connection":     {"close"},
+		"X-Preset":       {"stay"},
+		"Content-Type":   {"application/json"},
+		"Content-Length": {"0"},
+	}
+	src := http.Header{
+		"Connection":     {"upgrade"},
+		"Content-Type":   {"application/json"},
+		"X-Upstream-New": {"1"},
+	}
+	copyHeader(dst, src)
+
+	if dst.Get("Connection") != "" {
+		t.Fatalf("Connection must be deleted, got %q", dst.Get("Connection"))
+	}
+	if dst.Get("X-Upstream-New") != "1" {
+		t.Fatal("upstream header must be added")
+	}
+	if dst.Get("Content-Type") != "application/json" {
+		t.Fatalf("content type = %q", dst.Get("Content-Type"))
+	}
+	if dst.Get("X-Preset") != "stay" {
+		t.Fatal("unrelated preset header must survive")
+	}
+}

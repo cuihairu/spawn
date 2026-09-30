@@ -110,3 +110,17 @@ func readAll(t *testing.T, r io.Reader) string {
 	}
 	return string(b)
 }
+
+// TestRegisterContentProxyRoutesPanics 非法上游地址 → NewUpstream 失败 panic。
+func TestRegisterContentProxyRoutesPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("invalid upstream base url must panic at registration")
+		}
+	}()
+
+	var cfg config.Config
+	cfg.Upstreams.Content.BaseURL = "/relative/only"
+	cfg.Upstreams.Content.Timeout = 1000
+	RegisterContentProxyRoutes(rest.MustNewServer(rest.RestConf{}), &svc.ServiceContext{Config: cfg})
+}
