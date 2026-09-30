@@ -373,7 +373,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 | 模块 | 覆盖率 | 备注 |
 |------|-------|------|
 | api-gateway | 96.3% | |
-| user-service | 96.5% | 重测确认（旧快照 15.8% 系滞后） |
+| user-service | 96.8% | 重测确认（旧快照 15.8% 系滞后） |
 | game-catalog | 95.7% | |
 | community | 91.5% | |
 | content-service | 88.8% | |
@@ -387,13 +387,25 @@ reflection 注册分支）。手写代码除 `main()`（stderr+exit，全仓既�
 （getter/Descriptor/GZIP/Unimplemented 守卫，`DO NOT EDIT`）——按「不硬造不可达
 路径用例」的既定约定不做覆盖，同其早前被排除出覆盖率战役的理由一致。
 
-**user-service 剩余未覆盖面（下一步候选，本轮不展开，约 9 条语句）**：
-- `logic/registerlogic.go:73,89`、`loginlogic.go:57`、`updateuserinfologic.go:85,97`
-  ——存在性检查/Update 的 DB 错误分支（可用关库或只读库触达）；
-- `model/usermodel.go:77` —— Create 的 `LastInsertId` 错误分支
-  （SQLite rowid 表不会失败，疑不可达，候选入 ledger）；
-- 其余 10 块属既定 ledger（main、handler `httpx.ErrorCtx` 空错分支 ×5、
-  HS256 GenerateToken、svc 数据文件防御分支）。
+**user-service logic 层 DB 错误分支收口（同日第二轮）**：
+`registerlogic.go:73`（邮箱存在性检查报错）已补——用缺 `email` 列的 users 表触达
+（CheckUsernameExists 按 username 查询正常，CheckEmailExists 报
+no such column: email；闭库会让先执行的用户名检查先失败，够不到此分支），
+见 `internal/logic/register_dberror_test.go`，96.5% → 96.8%。
+其余候选经逐行论证确属不可达，按台账口径登记：
+- `registerlogic.go:89`（HashPassword）：bcrypt 唯一错误 ErrPasswordTooLong
+  （>72 字节），而 ValidatePassword 以 len() 字节计上限 50 < 72，不可达；
+- `loginlogic.go:57`（GenerateToken）：HS256 生成恒成功（既定 ledger）；
+- `updateuserinfologic.go:85`（更新后二次 FindOne 失败）：关库/只读库故障会先在
+  Update 处返回（同一故障对称命中写、读两步），单请求内无法注入
+  「写成功、随后读失败」；
+- `updateuserinfologic.go:97`（昵称回退 else）：logic 的 if/else 两臂均构造
+  Valid=true 的 Nickname，更新后的行 nickname 不可能为 NULL；
+- `model/usermodel.go:77`（LastInsertId）：mattn/go-sqlite3 的
+  SQLiteResult.LastInsertId 恒返回 (id, nil)，无错误路径。
+剩余未覆盖 15 块 = 上述 5 块 + 既定 ledger（main、handler `httpx.ErrorCtx`
+空错分支 ×5、svc sql.Open/CreateUsersTable panic 防御分支 ×2、
+utils HS256 GenerateToken 错误）。
 
 ## 部署
 
