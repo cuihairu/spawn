@@ -4,7 +4,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
+
+	"github.com/tappi/tappi/services/user-service/internal/cache"
 )
 
 // User 用户模型
@@ -18,14 +21,39 @@ type User struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 }
 
-// UserModel 用户数据访问层
+// 缓存参数：进程内 TTL+LRU（设计决策见 docs/development-guide.md
+// 「数据库集成 → 设计决策」）。60s TTL 同时兜底任何失效遗漏的最终一致性。
+const (
+	defaultUserCacheTTL = 60 * time.Second
+	defaultUserCacheMax = 4096
+)
+
+// UserModel 用户数据访问层。
+// FindOne/FindByUsername/FindByEmail 读进程内缓存；Create/Update 走失效点。
+// 不做负缓存（未找到/错误不写入），CheckXxxExists 的 COUNT 恒直查数据库。
 type UserModel struct {
-	db *sql.DB
+	db    *sql.DB
+	cache *cache.Cache[string, User]
 }
 
-// NewUserModel 创建用户模型
+// NewUserModel 创建用户模型（缓存默认开启）
 func NewUserModel(db *sql.DB) *UserModel {
-	return &UserModel{db: db}
+	return &UserModel{
+		db:    db,
+		cache: cache.New[string, User](defaultUserCacheTTL, defaultUserCacheMax),
+	}
+}
+
+// 缓存键：三种键指向同一份 User 值副本（值语义，读写均无别名共享）。
+func userKeyID(id int64) string       { return "id:" + strconv.FormatInt(id, 10) }
+func userKeyUsername(u string) string { return "username:" + u }
+func userKeyEmail(e string) string    { return "email:" + e }
+
+// invalidateKeys 删除指定键组合（写路径失效点）。
+func (m *UserModel) invalidateKeys(keys ...string) {
+	for _, k := range keys {
+		m.cache.Delete(k)
+	}
 }
 
 // Create 创建用户
@@ -50,11 +78,18 @@ func (m *UserModel) Create(user *User) error {
 	}
 
 	user.Id = id
+	// 失效新行的键（负缓存不存在，通常无键可删；防御同名重建路径）
+	m.invalidateKeys(userKeyID(id), userKeyUsername(user.Username), userKeyEmail(user.Email))
 	return nil
 }
 
-// FindByUsername 根据用户名查找用户
+// FindByUsername 根据用户名查找用户（读缓存）
 func (m *UserModel) FindByUsername(username string) (*User, error) {
+	key := userKeyUsername(username)
+	if cached, ok := m.cache.Get(key); ok {
+		return &cached, nil
+	}
+
 	query := `
 		SELECT id, username, email, password, nickname, created_at, updated_at
 		FROM users WHERE username = ?
@@ -73,11 +108,17 @@ func (m *UserModel) FindByUsername(username string) (*User, error) {
 		return nil, fmt.Errorf("查询用户失败: %w", err)
 	}
 
+	m.cache.Set(key, *user)
 	return user, nil
 }
 
-// FindByEmail 根据邮箱查找用户
+// FindByEmail 根据邮箱查找用户（读缓存）
 func (m *UserModel) FindByEmail(email string) (*User, error) {
+	key := userKeyEmail(email)
+	if cached, ok := m.cache.Get(key); ok {
+		return &cached, nil
+	}
+
 	query := `
 		SELECT id, username, email, password, nickname, created_at, updated_at
 		FROM users WHERE email = ?
@@ -96,11 +137,17 @@ func (m *UserModel) FindByEmail(email string) (*User, error) {
 		return nil, fmt.Errorf("查询用户失败: %w", err)
 	}
 
+	m.cache.Set(key, *user)
 	return user, nil
 }
 
-// FindOne 根据ID查找用户
+// FindOne 根据ID查找用户（读缓存）
 func (m *UserModel) FindOne(id int64) (*User, error) {
+	key := userKeyID(id)
+	if cached, ok := m.cache.Get(key); ok {
+		return &cached, nil
+	}
+
 	query := `
 		SELECT id, username, email, password, nickname, created_at, updated_at
 		FROM users WHERE id = ?
@@ -119,11 +166,18 @@ func (m *UserModel) FindOne(id int64) (*User, error) {
 		return nil, fmt.Errorf("查询用户失败: %w", err)
 	}
 
+	m.cache.Set(key, *user)
 	return user, nil
 }
 
-// Update 更新用户信息
+// Update 更新用户信息（email/nickname 可变，username 不变）。
+// 失效前先读取行内旧 username/email（绕过缓存取数据库真值）：
+// 调用方常只带 Id+Email 构造部分结构，旧键必须从行内容推导。
 func (m *UserModel) Update(user *User) error {
+	var oldUsername, oldEmail string
+	_ = m.db.QueryRow(`SELECT username, email FROM users WHERE id = ?`, user.Id).
+		Scan(&oldUsername, &oldEmail) // 读不到不影响后续 UPDATE 的错误语义
+
 	query := `
 		UPDATE users
 		SET email = ?, nickname = ?, updated_at = ?
@@ -136,6 +190,12 @@ func (m *UserModel) Update(user *User) error {
 		return fmt.Errorf("更新用户失败: %w", err)
 	}
 
+	m.invalidateKeys(
+		userKeyID(user.Id),
+		userKeyUsername(oldUsername),
+		userKeyEmail(oldEmail),
+		userKeyEmail(user.Email), // 防 A→B→A 翻转后的旧映射残留
+	)
 	return nil
 }
 

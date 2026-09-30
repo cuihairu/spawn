@@ -310,6 +310,60 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 }
 ```
 
+> 注：上例 goctl model cache / Redis 流程为**未来可选方案**，当前未采用
+> （原因见下文设计决策第 3 条）。
+
+### 4. 设计决策：数据库模型与缓存（「下一步」第 2 项）
+
+> 2026-09-30 拍板并落档。本项为多轮工作，以下决策覆盖全部后续切片；
+> 首个切片（user-service 模型层缓存）已落地，交付物见第 3 条。
+
+#### 1）落地服务与顺序
+
+| 顺序 | 服务 | 理由 | 状态 |
+|------|------|------|------|
+| 1 | user-service | 模型层已有 MySQL/SQLite 双驱动（本节先例），只缺缓存；登录/注册是全仓最热 DB 路径，缓存收益直接 | ✅ 本切片已落地 |
+| 2 | game-catalog | 现为 JSON 文件仓库，按 user-service 模式迁 MySQL；其读路径已在内存（无 DB I/O），缓存收益低于 user-service，故排第二 | 待做 |
+| 3 | community、content-service | 同为文件仓库，按 game-catalog 跑通的模式跟进 | 待做 |
+
+- user-service-rpc 为 goctl 生成层，不手改、不纳入切片。
+
+#### 2）MySQL DSN 与部署形态（沿用双驱动先例）
+
+- **DSN 注入**：`MySQL.DataSource`（env `DATASOURCE`），标准形态见上文
+  「配置数据库连接」：`user:pass@tcp(host:3306)/tappi?charset=utf8mb4&parseTime=true&...`
+- **驱动选择**（`svc.NewServiceContext` 判定）：DSN 含 `file:` 或 `.db` → SQLite；
+  否则 → MySQL。启动时 `Ping` 失败即 panic（快速失败，启动期暴露配置问题）。
+- **部署形态**（假设注明：仓库当前无 K8s 集群/镜像仓库凭据，与上文
+  「CI 流水线」一节结论一致）：
+  - 开发：本页「启动依赖服务」的 docker mysql（8.0）；
+  - CI / 单测：SQLite（临时文件或 `:memory:`），门禁零外部依赖；
+  - 生产：环境变量注入的外置 MySQL 8 实例（单实例假定；
+    多实例化前需先落跨进程缓存失效方案，见第 3 条）。
+
+#### 3）缓存选型：进程内 TTL+LRU（本切片），Redis 留作演进
+
+- **选型**：进程内泛型缓存 `services/user-service/internal/cache`（TTL + LRU，
+  可注入时钟，`ttl<=0` 即禁用），接入 `model.UserModel`：
+  - 读：`FindOne` / `FindByUsername` / `FindByEmail` 命中返回值副本（无别名共享）；
+  - 写：`Create` / `Update` 走统一失效点；`Update` 先读行内旧 username/email
+    （调用方常只传 Id+Email 部分结构，旧键须从行内容推导）；
+  - 不做负缓存（未找到/错误不写入）；`CheckXxxExists` 的 COUNT 恒直查数据库；
+  - 兜底：任何失效遗漏由 60s TTL 硬界收敛（陈旧 ≤60s）。
+- **不选 go-zero sqlc / goctl model cache + Redis 的原因**：
+  1. 本仓模型为手写 `database/sql`，全仓无 sqlc 代码生成，引入即等于重写全部模型；
+  2. CI 无 Redis 服务，新增外部依赖会破坏「门禁零外部依赖」的现状；
+  3. 当前单实例部署，进程内缓存语义正确（无跨进程失效问题）。
+- **演进触发条件**：实例数 >1、或出现跨进程失效/共享缓存需求时，将
+  `internal/cache` 实现替换为 go-zero `cache.Cache`（Redis，接入点不变、
+  模型层代码零改动）；届时启用本页「启动依赖服务」的 Redis 容器，
+  上文 goctl model cache 流程按需采用。
+- **首个切片交付物**：
+  - `services/user-service/internal/cache/ttlcache.go` —— 泛型 TTL+LRU 缓存；
+  - `services/user-service/model/usermodel.go` —— 读缓存与失效点接入；
+  - 单测 `internal/cache/ttlcache_test.go`（命中/过期/LRU 淘汰/禁用/并发）；
+  - 集成测试 `model/usercache_test.go`（关库命中、更新失效、无负缓存、值副本隔离）。
+
 ## 部署
 
 ### 1. Docker 构建
@@ -601,9 +655,11 @@ CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/�
    唯一缺口 game-catalog（有公开写端点 POST /games）已补齐：`utils/auth.go` 校验工具 +
    `middleware/auth.go` + 路由挂载（`POST /games` 受保护、GET 匿名公开）。
    同时补齐 user-service 鉴权中间件与 game-catalog 认证工具/中间件/路由集成测试。
-2. 添加数据库模型和缓存（待设计决策：落地服务与顺序、MySQL DSN/部署形态、
-   缓存方案——go-zero sqlc 需 Redis，或进程内 TTL 缓存；user-service 已有
-   MySQL/SQLite 双驱动先例可参照）
+2. 添加数据库模型和缓存 ⚙️ 部分完成：设计决策已落档（见上文「数据库集成 →
+   设计决策：数据库模型与缓存」——落地顺序 user-service → game-catalog →
+   community/content、DSN 双驱动部署形态、进程内 TTL+LRU 缓存选型）；
+   首个切片 user-service 已落地（模型层读缓存 + 单测/集成测试，
+   全模块 build + `-race` 门禁通过）；game-catalog 起的后续切片待做
 3. ~~实现服务间通信~~ ✅ 已完成（通路审计 + 补齐客户端契约测试）：
 
    | 通路 | 实现位置 | 契约测试 |
