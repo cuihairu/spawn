@@ -83,6 +83,66 @@ Services:
 	}
 }
 
+// TestFromNameMe 通过昵称 "me" 访问示例路由
+func TestFromNameMe(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("grab port: %v", err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close()
+
+	cfg := filepath.Join(t.TempDir(), "user-api.yaml")
+	content := `Name: user-service-test
+Host: 127.0.0.1
+Port: ` + strconv.Itoa(port) + `
+MySQL:
+  DataSource: file:` + filepath.Join(t.TempDir(), "users.db") + `
+Auth:
+  JWTSecret: run-integration-secret
+  TokenExpire: 7
+Services:
+  GameCatalog:
+    BaseURL: "http://localhost:8890"
+    Timeout: 1000
+`
+	if err := os.WriteFile(cfg, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	*configFile = cfg
+
+	done := make(chan error, 1)
+	go func() { done <- run() }()
+
+	base := "http://127.0.0.1:" + strconv.Itoa(port)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp, err := http.Get(base + "/readyz")
+		if err == nil {
+			resp.Body.Close()
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("run exited early: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("service did not become ready")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	resp, err := http.Get(base + "/from/me")
+	if err != nil {
+		t.Fatalf("from/me: %v", err)
+	}
+	body := readAll(t, resp)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "Hello, me!") {
+		t.Fatalf("from/me status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
 func readAll(t *testing.T, resp *http.Response) string {
 	t.Helper()
 	defer resp.Body.Close()
