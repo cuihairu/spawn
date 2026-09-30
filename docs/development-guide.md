@@ -364,6 +364,37 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
   - 单测 `internal/cache/ttlcache_test.go`（命中/过期/LRU 淘汰/禁用/并发）；
   - 集成测试 `model/usercache_test.go`（关库命中、更新失效、无负缓存、值副本隔离）。
 
+### 5. 覆盖率台账刷新与 user-service-rpc 测试落地（2026-09-30）
+
+全仓覆盖率快照（`services/cov_*.out`，本地不入库；生成命令：
+`cd services/<模块> && go test ./... -covermode=atomic -coverpkg=./... -coverprofile=...`
+后按块聚合去重，可信总数以 `go tool cover -func` 为准）：
+
+| 模块 | 覆盖率 | 备注 |
+|------|-------|------|
+| api-gateway | 96.3% | |
+| user-service | 96.5% | 重测确认（旧快照 15.8% 系滞后） |
+| game-catalog | 95.7% | |
+| community | 91.5% | |
+| content-service | 88.8% | |
+| user-service-rpc | 79.2%（含生成代码）/ **91.7%（手写面）** | 见下 |
+
+**user-service-rpc 首轮测试落地**：`user.go` main→run 重构（与五个兄弟服务一致，
+配置加载失败返回错误而非 panic）；新增 logic/server/svc 单测 + main 集成测试
+（`run()` 起真 zRPC 服务，`userclient` 经 gRPC 端到端 Ping，`Mode: test` 覆盖
+reflection 注册分支）。手写代码除 `main()`（stderr+exit，全仓既定不可达约定）外
+100% 覆盖。模块口径 79.2% 的缺口全部来自 `user/` 包 protoc 生成管道
+（getter/Descriptor/GZIP/Unimplemented 守卫，`DO NOT EDIT`）——按「不硬造不可达
+路径用例」的既定约定不做覆盖，同其早前被排除出覆盖率战役的理由一致。
+
+**user-service 剩余未覆盖面（下一步候选，本轮不展开，约 9 条语句）**：
+- `logic/registerlogic.go:73,89`、`loginlogic.go:57`、`updateuserinfologic.go:85,97`
+  ——存在性检查/Update 的 DB 错误分支（可用关库或只读库触达）；
+- `model/usermodel.go:77` —— Create 的 `LastInsertId` 错误分支
+  （SQLite rowid 表不会失败，疑不可达，候选入 ledger）；
+- 其余 10 块属既定 ledger（main、handler `httpx.ErrorCtx` 空错分支 ×5、
+  HS256 GenerateToken、svc 数据文件防御分支）。
+
 ## 部署
 
 ### 1. Docker 构建
@@ -669,7 +700,7 @@ CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/�
    | api-gateway → community / content（反向代理） | `internal/proxy` + `internal/{community,content}/routes.go` | `internal/proxy` 上游转发测试（既有） |
    | content-service → game-catalog | `client/gamecatalog.go`（熔断/重试/指标加持） | `client/*_test.go`（既有，89.7%） |
    | user-service → game-catalog | `internal/integration/gamecatalog_client.go`（GetRecommendations） | `gamecatalog_client_test.go`（新增，97.2%） |
-   | 其余服务 → user-service-rpc | `user-service-rpc`（zrpc + etcd） | goctl 生成通路，服务端暂无测试（见下） |
+   | 其余服务 → user-service-rpc | `user-service-rpc`（zrpc + etcd） | `user_test.go` 集成测试（run() 起真 zRPC + userclient 端到端 Ping，见「覆盖率台账刷新」一节） |
    | community | 无出向调用（独立域） | — |
 
    全部 HTTP 通路的端点/参数/响应契约均已对照服务端真实路由核实
