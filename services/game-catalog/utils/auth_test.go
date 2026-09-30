@@ -108,4 +108,9 @@ func TestGetUserIdFromToken(t *testing.T) {
 	if id != 7 {
 		t.Fatalf("user id = %d, want 7", id)
 	}
+
+	// 非法令牌 → 解析错误原样透传
+	if _, err := auth.GetUserIdFromToken("garbage"); err == nil {
+		t.Fatal("invalid token must fail")
+	}
 }
