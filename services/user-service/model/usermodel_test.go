@@ -2,6 +2,7 @@ package model
 
 import (
 	"database/sql"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -506,5 +507,38 @@ func TestUserModel_ConcurrentAccess(t *testing.T) {
 	close(errChan)
 	for err := range errChan {
 		t.Errorf("concurrent access error: %v", err)
+	}
+}
+
+// TestUserModel_ClosedDBErrors 已关闭连接上的查询/写入/建表：所有 *sql.DB
+// 错误分支原样返回包装错误；CreateUsersTable 在 SQLite 语法失败后尝试
+// MySQL 语法、再度失败时返回双重尝试错误。
+func TestUserModel_ClosedDBErrors(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	m := NewUserModel(db)
+	if err := db.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	if _, err := m.FindByUsername("alice"); err == nil || !strings.Contains(err.Error(), "查询用户失败") {
+		t.Fatalf("FindByUsername closed-db err = %v", err)
+	}
+	if _, err := m.FindByEmail("alice@example.com"); err == nil || !strings.Contains(err.Error(), "查询用户失败") {
+		t.Fatalf("FindByEmail closed-db err = %v", err)
+	}
+	if _, err := m.FindOne(1); err == nil || !strings.Contains(err.Error(), "查询用户失败") {
+		t.Fatalf("FindOne closed-db err = %v", err)
+	}
+	if err := m.Update(&User{Id: 1, Email: "a@b.com"}); err == nil || !strings.Contains(err.Error(), "更新用户失败") {
+		t.Fatalf("Update closed-db err = %v", err)
+	}
+	if _, err := m.CheckEmailExists("a@b.com"); err == nil || !strings.Contains(err.Error(), "检查邮箱失败") {
+		t.Fatalf("CheckEmailExists closed-db err = %v", err)
+	}
+	if err := m.CreateUsersTable(); err == nil || !strings.Contains(err.Error(), "尝试了 SQLite 和 MySQL 格式") {
+		t.Fatalf("CreateUsersTable double-failure err = %v", err)
 	}
 }

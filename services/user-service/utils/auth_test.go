@@ -306,3 +306,17 @@ func TestParseToken_NewAuthWithDifferentSecretIsolation(t *testing.T) {
 		t.Fatal("authB should reject tokens signed with a different secret")
 	}
 }
+
+// TestHashPassword_TooLong bcrypt 72 字节上限：超长密码返回包装错误而非 panic。
+func TestHashPassword_TooLong(t *testing.T) {
+	if _, err := HashPassword(strings.Repeat("x", 73)); err == nil || !strings.Contains(err.Error(), "密码加密失败") {
+		t.Fatalf("oversized password err = %v", err)
+	}
+}
+
+// TestValidateEmail_TooLong 超长邮箱在格式校验前被长度上限拦截。
+func TestValidateEmail_TooLong(t *testing.T) {
+	if err := ValidateEmail(strings.Repeat("a", 97) + "@b.com"); err == nil || !strings.Contains(err.Error(), "超过100位") {
+		t.Fatalf("oversized email err = %v", err)
+	}
+}

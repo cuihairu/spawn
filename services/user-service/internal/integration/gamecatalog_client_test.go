@@ -159,3 +159,12 @@ func equalStrings(a, b []string) bool {
 	}
 	return true
 }
+
+// TestGameCatalogClient_MalformedBaseURL 非法 baseURL（未闭合 IPv6）→
+// http.NewRequestWithContext 构造失败，错误原样返回。
+func TestGameCatalogClient_MalformedBaseURL(t *testing.T) {
+	client := NewGameCatalogClient("http://[::1", time.Second)
+	if _, err := client.GetRecommendations(context.Background(), RecommendationParams{UserID: "u1"}); err == nil {
+		t.Fatal("malformed baseURL must fail request construction")
+	}
+}
