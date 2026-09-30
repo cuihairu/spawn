@@ -393,3 +393,33 @@ func TestRoutes_CommentFlow(t *testing.T) {
 		t.Fatalf("re-delete code = %v, want 404", body["code"])
 	}
 }
+
+// TestRoutes_PublishGuideNotFound 发布不存在的攻略 → 404 业务码
+func TestRoutes_PublishGuideNotFound(t *testing.T) {
+	base, sign := newHandlerTestServer(t)
+
+	status, body := do(t, http.MethodPost, base+"/api/v1/guides/999/publish", sign(1001, "alice"), "")
+	if status != http.StatusOK || num(t, body, "code") != 404 {
+		t.Fatalf("publish not found: status=%d body=%v", status, body)
+	}
+}
+
+// TestRoutes_UpdateGuideNotFound 更新不存在的攻略 → 404 业务码
+func TestRoutes_UpdateGuideNotFound(t *testing.T) {
+	base, sign := newHandlerTestServer(t)
+
+	status, body := do(t, http.MethodPut, base+"/api/v1/guides/999", sign(1001, "alice"), `{"title":"x"}`)
+	if status != http.StatusOK || num(t, body, "code") != 404 {
+		t.Fatalf("update not found: status=%d body=%v", status, body)
+	}
+}
+
+// TestRoutes_LikeGuideNotFound 点赞不存在的攻略 → 404 业务码
+func TestRoutes_LikeGuideNotFound(t *testing.T) {
+	base, sign := newHandlerTestServer(t)
+
+	status, body := do(t, http.MethodPost, base+"/api/v1/guides/999/like", sign(1001, "alice"), "")
+	if status != http.StatusOK || num(t, body, "code") != 404 {
+		t.Fatalf("like not found: status=%d body=%v", status, body)
+	}
+}
