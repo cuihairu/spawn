@@ -326,6 +326,11 @@ func TestRegisterLogicDBError(t *testing.T) {
 	}
 }
 
+// TestRegisterLogicHashPasswordError RegisterLogic 中的 HashPassword 错误分支不可达：
+// ValidatePassword 限制密码 ≤50 字符，bcrypt 限制 72 字节，前置校验拦截了所有会导致
+// HashPassword 失败的输入。该分支在 RegisterLogic 中属死代码，登记台账不硬造用例。
+// （HashPassword 直接调用的错误路径由 utils.TestHashPassword_TooLong 覆盖。）
+
 // --- GetUserRecommendations 用户不存在分支 ---
 
 func TestGetUserRecommendationsUserMissing(t *testing.T) {

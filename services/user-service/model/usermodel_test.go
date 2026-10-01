@@ -541,4 +541,10 @@ func TestUserModel_ClosedDBErrors(t *testing.T) {
 	if err := m.CreateUsersTable(); err == nil || !strings.Contains(err.Error(), "尝试了 SQLite 和 MySQL 格式") {
 		t.Fatalf("CreateUsersTable double-failure err = %v", err)
 	}
+
+	// Create 在已关闭 DB 上：Exec 报错或 LastInsertId 报错
+	u := &User{Username: "x", Email: "x@y.com", Password: "pw"}
+	if err := m.Create(u); err == nil || !strings.Contains(err.Error(), "创建用户失败") {
+		t.Fatalf("Create closed-db err = %v, want 创建用户失败", err)
+	}
 }

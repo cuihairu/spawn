@@ -373,7 +373,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 | 模块 | 覆盖率 | 备注 |
 |------|-------|------|
 | api-gateway | 98.2% | 本轮收口（原 96.3%） |
-| user-service | 97.7% | 本轮收口（原 97.2%） |
+| user-service | 97.7% | 本轮验证天花板（原 97.7%，上轮 97.2% → 97.7%） |
 | game-catalog | 97.6% | 本轮收口（原 95.7%） |
 | community | 99.2% | 本轮收口（原 91.5%，手写面最大缺口） |
 | content-service | 98.2% | 本轮收口（原 88.8% → 94.2% → 98.2%） |
@@ -433,6 +433,23 @@ logic 调用签名不变；既有测试的复合字面量构造同步兼容）�
 字节，校验上限 50）、login:57 与 utils:69（HS256 签发恒成功）、
 usermodel:90（原 :77，mattn/go-sqlite3 LastInsertId 恒 (id, nil)；行号随接口
 插入平移）+ main ×2、handler envelope ×5。
+
+
+**user-service 覆盖率天花板验证轮（本轮，97.7% → 97.7%）**：复测全模块覆盖率快照（台账口径），
+仍为 97.7%。本轮新增 1 例单测：
+- `model/usermodel_test.go` 追加 Create 分支（关库触发 Exec 错误 → 500 "创建用户失败"），
+  覆盖 `usermodel.go:85` Exec 错误分支；
+复核其余候选均为既定不可达集，维持台账登记：
+1. `usermodel.go:90` LastInsertId —— mattn/go-sqlite3 恒返回 (id, nil)；
+2. `registerlogic.go:89` HashPassword —— bcrypt ErrPasswordTooLong 需 >72 字节，校验上限 50；
+3. `loginlogic.go:57` GenerateToken —— HS256 签发既定恒成功（同 utils/auth.go:69）；
+4. `handler/*` envelope 空错分支 ×5 —— 对应 logic 恒返回 `ApiResponse, nil`（login 除外，其
+   handler 分支已 100%）；
+5. `utils/auth.go:69` ParseToken "无效的令牌" —— jwt/v5 Parse 阶段已完成 exp/签名校验，
+   err==nil 蕴含 token.Valid；
+6. `user.go:23` main stderr+exit —— 全仓既定不可达约定。
+剩余 11 块即上述全量不可达集。手写面最低可推进项现为 user-service-rpc（91.7%，protoc
+缺口维持不碰）。
 
 **content-service 收口轮（同日第四轮，88.8% → 94.2%）**：已补测试——
 - logic 层：五个 401 分支（createcomment/createguide/deletecomment/updateguide/
