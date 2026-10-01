@@ -373,7 +373,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 | 模块 | 覆盖率 | 备注 |
 |------|-------|------|
 | api-gateway | 98.2% | 本轮收口（原 96.3%） |
-| user-service | 97.2% | 重测确认（旧快照 15.8% 系滞后） |
+| user-service | 97.7% | 本轮收口（原 97.2%） |
 | game-catalog | 97.6% | 本轮收口（原 95.7%） |
 | community | 99.2% | 本轮收口（原 91.5%，手写面最大缺口） |
 | content-service | 98.2% | 本轮收口（原 88.8% → 94.2% → 98.2%） |
@@ -415,6 +415,24 @@ Ping 成功、CreateUsersTable 的 SQLite/MySQL 双格式建表均失败。
 维持 ledger。
 剩余未覆盖 13 块 = 已论证 5 块（register:89、login:57、update:85/97、usermodel:77）
 + main（2）、handler ×5、utils HS256 GenerateToken 错误（1）。
+
+**user-service 仓储接口化收口轮（次日第九轮，97.2% → 97.7%）**：上段登记的
+update:85（更新后二次回读失败 → 500）与 update:97（昵称 NULL 回退 else）
+复核后确认——不可达的根源是 `ServiceContext` 持有具体指针
+`*model.UserModel`，对称 DB 故障（关库/只读库）在先行语句即返回，
+单请求内无法注入「写成功、随后读失败」与「回读 NULL 昵称」，
+而非分支本身死代码（生产瞬时故障与历史 NULL 行均可达）。
+处置沿用 content-service 第六轮先例：model 包新增 `UserStore` 接口（含
+`var _ UserStore = (*UserModel)(nil)` 编译期断言），`ServiceContext.UserModel`
+字段改接口类型；生产装配不变（`NewServiceContext` 仍注入同一具体模型，
+logic 调用签名不变；既有测试的复合字面量构造同步兼容）。
+据此以内嵌真实仓储 + 仅覆写 `FindOne` 的故障实现补测 2 例
+（`internal/logic/updateuser_refetch_test.go`）：二次回读报错 → 500
+「更新成功，但获取信息失败」；二次回读昵称 NULL → 回退分支取 username。
+剩余 11 块维持不可达登记：register:89（bcrypt ErrPasswordTooLong 需 >72
+字节，校验上限 50）、login:57 与 utils:69（HS256 签发恒成功）、
+usermodel:90（原 :77，mattn/go-sqlite3 LastInsertId 恒 (id, nil)；行号随接口
+插入平移）+ main ×2、handler envelope ×5。
 
 **content-service 收口轮（同日第四轮，88.8% → 94.2%）**：已补测试——
 - logic 层：五个 401 分支（createcomment/createguide/deletecomment/updateguide/

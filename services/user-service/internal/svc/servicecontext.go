@@ -21,7 +21,7 @@ import (
 type ServiceContext struct {
 	Config            config.Config
 	DB                *sql.DB
-	UserModel         *model.UserModel
+	UserModel         model.UserStore
 	Auth              *utils.Auth
 	GameCatalogClient *integration.GameCatalogClient
 }

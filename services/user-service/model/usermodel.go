@@ -36,6 +36,19 @@ type UserModel struct {
 	cache *cache.Cache[string, User]
 }
 
+// UserStore 用户仓储接口：ServiceContext 面向接口依赖，测试可注入故障实现。
+type UserStore interface {
+	Create(user *User) error
+	FindOne(id int64) (*User, error)
+	FindByUsername(username string) (*User, error)
+	FindByEmail(email string) (*User, error)
+	Update(user *User) error
+	CheckUsernameExists(username string) (bool, error)
+	CheckEmailExists(email string) (bool, error)
+}
+
+var _ UserStore = (*UserModel)(nil)
+
 // NewUserModel 创建用户模型（缓存默认开启）
 func NewUserModel(db *sql.DB) *UserModel {
 	return &UserModel{
