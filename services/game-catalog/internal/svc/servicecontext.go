@@ -14,7 +14,7 @@ import (
 
 type ServiceContext struct {
 	Config         config.Config
-	GameRepository *model.GameRepository
+	GameRepository model.GameStore
 	Auth           *utils.Auth
 }
 

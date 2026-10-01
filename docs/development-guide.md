@@ -374,7 +374,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 |------|-------|------|
 | api-gateway | 96.3% | |
 | user-service | 97.2% | 重测确认（旧快照 15.8% 系滞后） |
-| game-catalog | 95.7% | |
+| game-catalog | 97.6% | 本轮收口（原 95.7%） |
 | community | 99.2% | 本轮收口（原 91.5%，手写面最大缺口） |
 | content-service | 98.2% | 本轮收口（原 88.8% → 94.2% → 98.2%） |
 | user-service-rpc | 79.2%（含生成代码）/ **91.7%（手写面）** | 见下 |
@@ -465,6 +465,32 @@ createcomment 的目标攻略 Get 500 与评论落库 500，deletecomment/likeco
 - `client/gamecatalog.go:157`、`gamecatalog.go:176`、`metrics.go:90`
   （编译完整性兜底与穷举 switch default，重试次数归一化/错误类别枚举为
   构造器不变量，生产不可达）。
+
+**game-catalog 收口轮（次日第七轮，95.7% → 97.6%）**：按台账口径重跑快照
+（372 语句，原 16 未覆盖语句 / 12 块），逐块分诊后 4 块补测、8 块登记。
+沿用 content-service 第六轮的仓储接口化先例——`ServiceContext` 原持具体指针
+`*model.GameRepository`，故障无法注入：model 包新增 `GameStore` 接口（含
+`var _ GameStore = (*GameRepository)(nil)` 编译期断言），字段改接口类型，
+生产装配与 logic 调用签名不变。已补测试——
+- svc 层：相对路径数据源走 `filepath.Clean` 归一化分支，文件不存在时回落
+  内置种子（`internal/svc/servicecontext_test.go`）；
+- logic 层故障注入 ×2：getgamedetail 仓储 Get 非哨兵错误 → 500 查询失败、
+  creategame 校验通过后落库失败 → 500 创建失败
+  （`internal/logic/repoerror_test.go`，同包访问 `*apiError` 断言状态码）；
+- handler 层：请求上下文缺路由变量 id 时 `httpx.Parse` 失败走
+  `httpx.ErrorCtx` 分支 → 400（`internal/handler/getgamedetail_parse_test.go`，
+  go-zero 对缺失 path 必填字段报错；真服务路由恒有 pathvar，故仅直调注入）。
+
+game-catalog 剩余 8 块（372 语句中 9 句）登记不可达（不硬造用例）：
+- `game.go` main stderr+exit ×2（全仓既定；run() 错误路径与其他服务一致
+  已有单测）；
+- handler `httpx.ErrorCtx` 空错分支 ×3：listgames/getfeaturedgames/
+  getrecommendations 三个 logic 恒 `return &types.XxxResponse{...}, nil`
+  无非 nil error（逐一核对；getgamedetail 的 Parse 分支本轮已补）；
+- `model/gamerepository.go:290`：内嵌种子 JSON 编译期字面量，
+  `defaultSeedGames` 的 unmarshal panic 生产不可达；
+- `utils/auth.go:43/47`：jwt/v5 Parse 阶段已完成 exp 与签名校验，
+  err==nil 蕴含 token.Valid，两分支为死代码（全仓同款既有登记）。
 
 **community 收口轮（同日第五轮，91.5% → 99.2%）**：按台账口径重跑快照确认
 community 为手写面最大缺口（77 个未覆盖块），逐块分诊后 70 块补测、7 块登记。

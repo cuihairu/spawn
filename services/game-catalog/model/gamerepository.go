@@ -47,6 +47,17 @@ type GameRepository struct {
 	index map[string]*Game
 }
 
+// GameStore 游戏仓储接口：ServiceContext 面向接口依赖，测试可注入故障实现。
+type GameStore interface {
+	List(filter GameFilter) ([]*Game, int)
+	Get(id string) (*Game, error)
+	Create(game *Game) (*Game, error)
+	Featured(limit int) []*Game
+	Recommend(userId string, genres []string, limit int) []*Game
+}
+
+var _ GameStore = (*GameRepository)(nil)
+
 func NewGameRepository(source string) (*GameRepository, error) {
 	repo := &GameRepository{}
 	if err := repo.load(source); err != nil {
