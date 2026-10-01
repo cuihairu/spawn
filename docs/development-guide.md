@@ -430,7 +430,10 @@ logic 调用签名不变；既有测试的复合字面量构造同步兼容）�
 （`internal/logic/updateuser_refetch_test.go`）：二次回读报错 → 500
 「更新成功，但获取信息失败」；二次回读昵称 NULL → 回退分支取 username。
 剩余 11 块维持不可达登记：register:89（bcrypt ErrPasswordTooLong 需 >72
-字节，校验上限 50）、login:57 与 utils:69（HS256 签发恒成功）、
+字节，校验上限 50）、login:57（HS256 签发恒成功）、utils:69（jwt/v5 在
+Parse 阶段已完成 exp 与签名校验，err==nil 蕴含 token.Valid 的死代码，
+全仓同款既有登记；原与 login:57 合并写作「HS256 签发恒成功」系误标，
+签发与该 Parse 侧分支无关，已更正）、
 usermodel:90（原 :77，mattn/go-sqlite3 LastInsertId 恒 (id, nil)；行号随接口
 插入平移）+ main ×2、handler envelope ×5。
 
