@@ -45,6 +45,19 @@ type GuideRepository struct {
 	nextId int64
 }
 
+// GuideStore 攻略仓储接口：ServiceContext 面向接口依赖，测试可注入故障实现。
+type GuideStore interface {
+	List(filter GuideFilter) ([]*Guide, int)
+	Get(id int64) (*Guide, error)
+	Create(guide *Guide) (*Guide, error)
+	Update(id int64, updates map[string]interface{}) (*Guide, error)
+	Publish(id int64) error
+	Like(id int64) (int, error)
+	IncrementViews(id int64) error
+}
+
+var _ GuideStore = (*GuideRepository)(nil)
+
 func NewGuideRepository(source string) (*GuideRepository, error) {
 	repo := &GuideRepository{
 		index:  make(map[int64]*Guide),

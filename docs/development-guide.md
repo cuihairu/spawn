@@ -376,7 +376,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 | user-service | 97.2% | 重测确认（旧快照 15.8% 系滞后） |
 | game-catalog | 95.7% | |
 | community | 99.2% | 本轮收口（原 91.5%，手写面最大缺口） |
-| content-service | 94.2% | 本轮补测（原 88.8%，全仓最大缺口） |
+| content-service | 98.2% | 本轮收口（原 88.8% → 94.2% → 98.2%） |
 | user-service-rpc | 79.2%（含生成代码）/ **91.7%（手写面）** | 见下 |
 
 **user-service-rpc 首轮测试落地**：`user.go` main→run 重构（与五个兄弟服务一致，
@@ -445,6 +445,26 @@ content-service 剩余 43 块全部按台账口径登记（不硬造用例）：
   err==nil 蕴含 token.Valid，两分支为死代码；
 - `client/gamecatalog.go:157`（重试循环编译完整性兜底，源码注释自述）、
   `gamecatalog.go:176` 与 `metrics.go:90`（错误类别 switch 穷举后的 default）。
+
+**content-service 仓储接口化收口轮（次日第六轮，94.2% → 98.2%）**：原登记为
+不可达的「仓储 Get/写失败 → 500」与「Get 成功后写再 404/500」两类分支（约
+41 语句）复核后确认——不可达的根源是 `ServiceContext` 持有具体指针类型
+`*model.GuideRepository` / `*model.CommentRepository`，故障无法注入，而非分支
+本身死代码。处置：model 包新增 `GuideStore` / `CommentStore` 接口（含
+`var _ XxxStore = (*XxxRepository)(nil)` 编译期断言），`ServiceContext` 两个字段
+改为接口类型；生产装配不变（`NewServiceContext` 仍注入同一具体仓储，行为
+零变化），logic 层方法调用签名不变。据此以「内嵌真实仓储 + 仅覆写指定方法
+注入错误」的故障仓储补测 19 例（`internal/logic/repoerror_test.go`）：getguide/
+createguide/updateguide/publishguide/likeguide 的 Get 500 与写 404/写 500，
+createcomment 的目标攻略 Get 500 与评论落库 500，deletecomment/likecomment
+的评论 Get 500、二级攻略 Get 500、写 404 与写 500，以及 updateguide 此前
+漏测的 Summary 增量字段。剩余 18 块维持不可达登记：
+- handler `httpx.ErrorCtx` 空错分支 ×10（十个 logic 恒 envelope+nil error）；
+- `content.go` main stderr+exit ×2；
+- `utils/auth.go:46/51`（jwt/v5 Parse 阶段已完成 exp 与签名校验的死代码）；
+- `client/gamecatalog.go:157`、`gamecatalog.go:176`、`metrics.go:90`
+  （编译完整性兜底与穷举 switch default，重试次数归一化/错误类别枚举为
+  构造器不变量，生产不可达）。
 
 **community 收口轮（同日第五轮，91.5% → 99.2%）**：按台账口径重跑快照确认
 community 为手写面最大缺口（77 个未覆盖块），逐块分诊后 70 块补测、7 块登记。

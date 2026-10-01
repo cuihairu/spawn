@@ -13,8 +13,8 @@ import (
 
 type ServiceContext struct {
 	Config            config.Config
-	GuideRepository   *model.GuideRepository
-	CommentRepository *model.CommentRepository
+	GuideRepository   model.GuideStore
+	CommentRepository model.CommentStore
 	Auth              *utils.Auth
 	GameCatalogClient *client.GameCatalogClient
 }

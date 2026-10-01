@@ -39,6 +39,17 @@ type CommentRepository struct {
 	nextId   int64
 }
 
+// CommentStore 评论仓储接口：ServiceContext 面向接口依赖，测试可注入故障实现。
+type CommentStore interface {
+	List(filter CommentFilter) ([]*Comment, int)
+	Get(id int64) (*Comment, error)
+	Create(comment *Comment) (*Comment, error)
+	Delete(id int64) error
+	Like(id int64) (int, error)
+}
+
+var _ CommentStore = (*CommentRepository)(nil)
+
 func NewCommentRepository(source string) (*CommentRepository, error) {
 	repo := &CommentRepository{
 		index:  make(map[int64]*Comment),
