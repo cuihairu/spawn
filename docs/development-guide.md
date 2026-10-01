@@ -445,7 +445,8 @@ usermodel:90（原 :77，mattn/go-sqlite3 LastInsertId 恒 (id, nil)；行号随
 复核其余候选均为既定不可达集，维持台账登记：
 1. `usermodel.go:90` LastInsertId —— mattn/go-sqlite3 恒返回 (id, nil)；
 2. `registerlogic.go:89` HashPassword —— bcrypt ErrPasswordTooLong 需 >72 字节，校验上限 50；
-3. `loginlogic.go:57` GenerateToken —— HS256 签发既定恒成功（同 utils/auth.go:69）；
+3. `loginlogic.go:57` GenerateToken —— HS256 签发既定恒成功（签发侧；utils:69 为
+   Parse 侧死代码，成因不同，见第 5 条与第九轮段落更正）；
 4. `handler/*` envelope 空错分支 ×5 —— 对应 logic 恒返回 `ApiResponse, nil`（login 除外，其
    handler 分支已 100%）；
 5. `utils/auth.go:69` ParseToken "无效的令牌" —— jwt/v5 Parse 阶段已完成 exp/签名校验，
