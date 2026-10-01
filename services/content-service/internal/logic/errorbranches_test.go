@@ -2,10 +2,7 @@ package logic
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -22,40 +19,14 @@ import (
 func newErrorBranchSvcCtx(t *testing.T, gameCatalogBaseURL string) *svc.ServiceContext {
 	t.Helper()
 
-	tmpDir := t.TempDir()
-	guidesFile := filepath.Join(tmpDir, "guides.json")
-	commentsFile := filepath.Join(tmpDir, "comments.json")
-
-	guides := []*model.Guide{
-		{Id: 1, GameId: "g1", GameTitle: "G1", Title: "pub", Content: "c", AuthorId: 1, AuthorName: "u1", IsPublished: true, CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
-	}
-	guidesBuf, err := json.Marshal(guides)
-	if err != nil {
-		t.Fatalf("marshal guides: %v", err)
-	}
-	if err := os.WriteFile(guidesFile, guidesBuf, 0o644); err != nil {
-		t.Fatalf("write guides: %v", err)
-	}
-
-	comments := []*model.Comment{
-		{Id: 10, TargetType: "guide", TargetId: 99999, UserId: 2, UserName: "u2", Content: "orphan", Likes: 3, CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
-	}
-	commentsBuf, err := json.Marshal(comments)
-	if err != nil {
-		t.Fatalf("marshal comments: %v", err)
-	}
-	if err := os.WriteFile(commentsFile, commentsBuf, 0o644); err != nil {
-		t.Fatalf("write comments: %v", err)
-	}
-
-	guideRepo, err := model.NewGuideRepository(guidesFile)
-	if err != nil {
-		t.Fatalf("new guide repo: %v", err)
-	}
-	commentRepo, err := model.NewCommentRepository(commentsFile)
-	if err != nil {
-		t.Fatalf("new comment repo: %v", err)
-	}
+	guideRepo, commentRepo := seedContentStores(t,
+		[]*model.Guide{
+			{Id: 1, GameId: "g1", GameTitle: "G1", Title: "pub", Content: "c", AuthorId: 1, AuthorName: "u1", IsPublished: true, CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
+		},
+		[]*model.Comment{
+			{Id: 10, TargetType: "guide", TargetId: 99999, UserId: 2, UserName: "u2", Content: "orphan", Likes: 3, CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
+		},
+	)
 
 	if gameCatalogBaseURL == "" {
 		gameCatalogBaseURL = "http://127.0.0.1:1" // 不可达：连接立即被拒

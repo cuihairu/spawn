@@ -1,32 +1,20 @@
-FROM golang:1.25.4-alpine AS builder
+# syntax=docker/dockerfile:1.9
 
-LABEL stage=gobuilder
-
-ENV CGO_ENABLED 0
-ENV GOPROXY https://goproxy.cn,direct
-
-WORKDIR /build
-
-# Copy go mod files
-COPY go.mod .
-COPY go.sum .
+FROM golang:1.22 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
 RUN go mod download
-
-# Copy source code
 COPY . .
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o /bin/content-service content.go
 
-# Build
-RUN go build -ldflags="-s -w" -o /app/content content.go
-
-FROM alpine
-
-RUN apk update --no-cache && apk add --no-cache ca-certificates tzdata
-ENV TZ Asia/Shanghai
-
+# 运行时含 glibc 与 sqlite3（CGO 驱动 mattn/go-sqlite3 需要）
+FROM debian:bookworm-slim
+ENV TZ=Asia/Shanghai
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata sqlite3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-
-# Copy binary and config
-COPY --from=builder /app/content /app/content
-COPY etc /app/etc
-
-CMD ["./content"]
+COPY --from=builder /bin/content-service /usr/local/bin/content-service
+COPY etc ./etc
+RUN mkdir -p /app/data
+ENV DATASOURCE=file:/app/data/content.db
+EXPOSE 8891
+ENTRYPOINT ["/usr/local/bin/content-service","-f","etc/content-api.yaml"]

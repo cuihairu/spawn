@@ -10,10 +10,10 @@ import (
 	"github.com/tappi/tappi/services/content-service/model"
 )
 
-// --- 故障注入仓储：内嵌真实仓储，仅覆写指定方法注入错误 ---
+// --- 故障注入仓储：内嵌真实仓储接口，仅覆写指定方法注入错误 ---
 
 type failingGuideRepo struct {
-	*model.GuideRepository
+	model.GuideStore
 	getErr     error
 	createErr  error
 	updateErr  error
@@ -25,39 +25,39 @@ func (f *failingGuideRepo) Get(id int64) (*model.Guide, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
-	return f.GuideRepository.Get(id)
+	return f.GuideStore.Get(id)
 }
 
 func (f *failingGuideRepo) Create(guide *model.Guide) (*model.Guide, error) {
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
-	return f.GuideRepository.Create(guide)
+	return f.GuideStore.Create(guide)
 }
 
 func (f *failingGuideRepo) Update(id int64, updates map[string]interface{}) (*model.Guide, error) {
 	if f.updateErr != nil {
 		return nil, f.updateErr
 	}
-	return f.GuideRepository.Update(id, updates)
+	return f.GuideStore.Update(id, updates)
 }
 
 func (f *failingGuideRepo) Publish(id int64) error {
 	if f.publishErr != nil {
 		return f.publishErr
 	}
-	return f.GuideRepository.Publish(id)
+	return f.GuideStore.Publish(id)
 }
 
 func (f *failingGuideRepo) Like(id int64) (int, error) {
 	if f.likeErr != nil {
 		return 0, f.likeErr
 	}
-	return f.GuideRepository.Like(id)
+	return f.GuideStore.Like(id)
 }
 
 type failingCommentRepo struct {
-	*model.CommentRepository
+	model.CommentStore
 	getErr    error
 	createErr error
 	deleteErr error
@@ -68,28 +68,28 @@ func (f *failingCommentRepo) Get(id int64) (*model.Comment, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
-	return f.CommentRepository.Get(id)
+	return f.CommentStore.Get(id)
 }
 
 func (f *failingCommentRepo) Create(comment *model.Comment) (*model.Comment, error) {
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
-	return f.CommentRepository.Create(comment)
+	return f.CommentStore.Create(comment)
 }
 
 func (f *failingCommentRepo) Delete(id int64) error {
 	if f.deleteErr != nil {
 		return f.deleteErr
 	}
-	return f.CommentRepository.Delete(id)
+	return f.CommentStore.Delete(id)
 }
 
 func (f *failingCommentRepo) Like(id int64) (int, error) {
 	if f.likeErr != nil {
 		return 0, f.likeErr
 	}
-	return f.CommentRepository.Like(id)
+	return f.CommentStore.Like(id)
 }
 
 var errRepoBoom = errors.New("repository on fire")
@@ -121,7 +121,7 @@ func requireEnvelope(t *testing.T, resp *types.CreateCommentResponse, err error,
 
 func TestGetGuide_GetFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withGuide(svcCtx, &failingGuideRepo{GuideRepository: svcCtx.GuideRepository.(*model.GuideRepository), getErr: errRepoBoom})
+	withGuide(svcCtx, &failingGuideRepo{GuideStore: svcCtx.GuideRepository.(model.GuideStore), getErr: errRepoBoom})
 	l := NewGetGuideLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.GetGuide(&types.GetGuideRequest{Id: 1})
 	if err != nil || resp.Code != http.StatusInternalServerError {
@@ -133,7 +133,7 @@ func TestGetGuide_GetFailed500(t *testing.T) {
 
 func TestCreateGuide_CreateFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withGuide(svcCtx, &failingGuideRepo{GuideRepository: svcCtx.GuideRepository.(*model.GuideRepository), createErr: errRepoBoom})
+	withGuide(svcCtx, &failingGuideRepo{GuideStore: svcCtx.GuideRepository.(model.GuideStore), createErr: errRepoBoom})
 	l := NewCreateGuideLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.CreateGuide(&types.CreateGuideRequest{GameId: "g1", Title: "t", Content: "c"})
 	if err != nil || resp.Code != http.StatusInternalServerError {
@@ -145,7 +145,7 @@ func TestCreateGuide_CreateFailed500(t *testing.T) {
 
 func TestUpdateGuide_GetFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withGuide(svcCtx, &failingGuideRepo{GuideRepository: svcCtx.GuideRepository.(*model.GuideRepository), getErr: errRepoBoom})
+	withGuide(svcCtx, &failingGuideRepo{GuideStore: svcCtx.GuideRepository.(model.GuideStore), getErr: errRepoBoom})
 	l := NewUpdateGuideLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.UpdateGuide(&types.UpdateGuideRequest{Id: 1, Title: "t"})
 	if err != nil || resp.Code != http.StatusInternalServerError {
@@ -155,7 +155,7 @@ func TestUpdateGuide_GetFailed500(t *testing.T) {
 
 func TestUpdateGuide_UpdateNotFound404(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withGuide(svcCtx, &failingGuideRepo{GuideRepository: svcCtx.GuideRepository.(*model.GuideRepository), updateErr: model.ErrGuideNotFound})
+	withGuide(svcCtx, &failingGuideRepo{GuideStore: svcCtx.GuideRepository.(model.GuideStore), updateErr: model.ErrGuideNotFound})
 	l := NewUpdateGuideLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.UpdateGuide(&types.UpdateGuideRequest{Id: 1, Title: "t"})
 	if err != nil || resp.Code != http.StatusNotFound {
@@ -165,7 +165,7 @@ func TestUpdateGuide_UpdateNotFound404(t *testing.T) {
 
 func TestUpdateGuide_UpdateFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withGuide(svcCtx, &failingGuideRepo{GuideRepository: svcCtx.GuideRepository.(*model.GuideRepository), updateErr: errRepoBoom})
+	withGuide(svcCtx, &failingGuideRepo{GuideStore: svcCtx.GuideRepository.(model.GuideStore), updateErr: errRepoBoom})
 	l := NewUpdateGuideLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.UpdateGuide(&types.UpdateGuideRequest{Id: 1, Title: "t"})
 	if err != nil || resp.Code != http.StatusInternalServerError {
@@ -189,7 +189,7 @@ func TestUpdateGuide_SummaryApplied(t *testing.T) {
 
 func TestPublishGuide_GetFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withGuide(svcCtx, &failingGuideRepo{GuideRepository: svcCtx.GuideRepository.(*model.GuideRepository), getErr: errRepoBoom})
+	withGuide(svcCtx, &failingGuideRepo{GuideStore: svcCtx.GuideRepository.(model.GuideStore), getErr: errRepoBoom})
 	l := NewPublishGuideLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.PublishGuide(&types.PublishGuideRequest{Id: 1})
 	if err != nil || resp.Code != http.StatusInternalServerError {
@@ -199,7 +199,7 @@ func TestPublishGuide_GetFailed500(t *testing.T) {
 
 func TestPublishGuide_PublishNotFound404(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withGuide(svcCtx, &failingGuideRepo{GuideRepository: svcCtx.GuideRepository.(*model.GuideRepository), publishErr: model.ErrGuideNotFound})
+	withGuide(svcCtx, &failingGuideRepo{GuideStore: svcCtx.GuideRepository.(model.GuideStore), publishErr: model.ErrGuideNotFound})
 	l := NewPublishGuideLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.PublishGuide(&types.PublishGuideRequest{Id: 1})
 	if err != nil || resp.Code != http.StatusNotFound {
@@ -209,7 +209,7 @@ func TestPublishGuide_PublishNotFound404(t *testing.T) {
 
 func TestPublishGuide_PublishFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withGuide(svcCtx, &failingGuideRepo{GuideRepository: svcCtx.GuideRepository.(*model.GuideRepository), publishErr: errRepoBoom})
+	withGuide(svcCtx, &failingGuideRepo{GuideStore: svcCtx.GuideRepository.(model.GuideStore), publishErr: errRepoBoom})
 	l := NewPublishGuideLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.PublishGuide(&types.PublishGuideRequest{Id: 1})
 	if err != nil || resp.Code != http.StatusInternalServerError {
@@ -221,7 +221,7 @@ func TestPublishGuide_PublishFailed500(t *testing.T) {
 
 func TestLikeGuide_GetFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withGuide(svcCtx, &failingGuideRepo{GuideRepository: svcCtx.GuideRepository.(*model.GuideRepository), getErr: errRepoBoom})
+	withGuide(svcCtx, &failingGuideRepo{GuideStore: svcCtx.GuideRepository.(model.GuideStore), getErr: errRepoBoom})
 	l := NewLikeGuideLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.LikeGuide(&types.LikeGuideRequest{Id: 1})
 	if err != nil || resp.Code != http.StatusInternalServerError {
@@ -231,7 +231,7 @@ func TestLikeGuide_GetFailed500(t *testing.T) {
 
 func TestLikeGuide_LikeNotFound404(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withGuide(svcCtx, &failingGuideRepo{GuideRepository: svcCtx.GuideRepository.(*model.GuideRepository), likeErr: model.ErrGuideNotFound})
+	withGuide(svcCtx, &failingGuideRepo{GuideStore: svcCtx.GuideRepository.(model.GuideStore), likeErr: model.ErrGuideNotFound})
 	l := NewLikeGuideLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.LikeGuide(&types.LikeGuideRequest{Id: 1})
 	if err != nil || resp.Code != http.StatusNotFound {
@@ -241,7 +241,7 @@ func TestLikeGuide_LikeNotFound404(t *testing.T) {
 
 func TestLikeGuide_LikeFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withGuide(svcCtx, &failingGuideRepo{GuideRepository: svcCtx.GuideRepository.(*model.GuideRepository), likeErr: errRepoBoom})
+	withGuide(svcCtx, &failingGuideRepo{GuideStore: svcCtx.GuideRepository.(model.GuideStore), likeErr: errRepoBoom})
 	l := NewLikeGuideLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.LikeGuide(&types.LikeGuideRequest{Id: 1})
 	if err != nil || resp.Code != http.StatusInternalServerError {
@@ -253,7 +253,7 @@ func TestLikeGuide_LikeFailed500(t *testing.T) {
 
 func TestCreateComment_TargetGuideGetFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withGuide(svcCtx, &failingGuideRepo{GuideRepository: svcCtx.GuideRepository.(*model.GuideRepository), getErr: errRepoBoom})
+	withGuide(svcCtx, &failingGuideRepo{GuideStore: svcCtx.GuideRepository.(model.GuideStore), getErr: errRepoBoom})
 	l := NewCreateCommentLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.CreateComment(&types.CreateCommentRequest{TargetType: "guide", TargetId: 1, Content: "x"})
 	requireEnvelope(t, resp, err, http.StatusInternalServerError)
@@ -261,7 +261,7 @@ func TestCreateComment_TargetGuideGetFailed500(t *testing.T) {
 
 func TestCreateComment_CreateFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withComment(svcCtx, &failingCommentRepo{CommentRepository: svcCtx.CommentRepository.(*model.CommentRepository), createErr: errRepoBoom})
+	withComment(svcCtx, &failingCommentRepo{CommentStore: svcCtx.CommentRepository.(model.CommentStore), createErr: errRepoBoom})
 	l := NewCreateCommentLogic(userCtx(1, "u1"), svcCtx)
 	// TargetType=game 跳过攻略存在性检查，直达评论创建
 	resp, err := l.CreateComment(&types.CreateCommentRequest{TargetType: "game", TargetId: 1, Content: "x"})
@@ -272,7 +272,7 @@ func TestCreateComment_CreateFailed500(t *testing.T) {
 
 func TestDeleteComment_GetFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withComment(svcCtx, &failingCommentRepo{CommentRepository: svcCtx.CommentRepository.(*model.CommentRepository), getErr: errRepoBoom})
+	withComment(svcCtx, &failingCommentRepo{CommentStore: svcCtx.CommentRepository.(model.CommentStore), getErr: errRepoBoom})
 	l := NewDeleteCommentLogic(userCtx(2, "u2"), svcCtx)
 	resp, err := l.DeleteComment(&types.DeleteCommentRequest{Id: 10})
 	if err != nil || resp.Code != http.StatusInternalServerError {
@@ -283,7 +283,7 @@ func TestDeleteComment_GetFailed500(t *testing.T) {
 // newOwnedComment 通过真实仓储创建一条属于用户 2 的评论，返回其 Id。
 func newOwnedComment(t *testing.T, svcCtx *svc.ServiceContext) int64 {
 	t.Helper()
-	repo := svcCtx.CommentRepository.(*model.CommentRepository)
+	repo := svcCtx.CommentRepository.(model.CommentStore)
 	created, err := repo.Create(&model.Comment{
 		TargetType: "game", TargetId: 1, UserId: 2, UserName: "u2", Content: "mine",
 	})
@@ -296,7 +296,7 @@ func newOwnedComment(t *testing.T, svcCtx *svc.ServiceContext) int64 {
 func TestDeleteComment_DeleteNotFound404(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
 	id := newOwnedComment(t, svcCtx)
-	withComment(svcCtx, &failingCommentRepo{CommentRepository: svcCtx.CommentRepository.(*model.CommentRepository), deleteErr: model.ErrCommentNotFound})
+	withComment(svcCtx, &failingCommentRepo{CommentStore: svcCtx.CommentRepository.(model.CommentStore), deleteErr: model.ErrCommentNotFound})
 	l := NewDeleteCommentLogic(userCtx(2, "u2"), svcCtx)
 	resp, err := l.DeleteComment(&types.DeleteCommentRequest{Id: id})
 	if err != nil || resp.Code != http.StatusNotFound {
@@ -307,7 +307,7 @@ func TestDeleteComment_DeleteNotFound404(t *testing.T) {
 func TestDeleteComment_DeleteFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
 	id := newOwnedComment(t, svcCtx)
-	withComment(svcCtx, &failingCommentRepo{CommentRepository: svcCtx.CommentRepository.(*model.CommentRepository), deleteErr: errRepoBoom})
+	withComment(svcCtx, &failingCommentRepo{CommentStore: svcCtx.CommentRepository.(model.CommentStore), deleteErr: errRepoBoom})
 	l := NewDeleteCommentLogic(userCtx(2, "u2"), svcCtx)
 	resp, err := l.DeleteComment(&types.DeleteCommentRequest{Id: id})
 	if err != nil || resp.Code != http.StatusInternalServerError {
@@ -319,7 +319,7 @@ func TestDeleteComment_DeleteFailed500(t *testing.T) {
 
 func TestLikeComment_GetFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
-	withComment(svcCtx, &failingCommentRepo{CommentRepository: svcCtx.CommentRepository.(*model.CommentRepository), getErr: errRepoBoom})
+	withComment(svcCtx, &failingCommentRepo{CommentStore: svcCtx.CommentRepository.(model.CommentStore), getErr: errRepoBoom})
 	l := NewLikeCommentLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.LikeComment(&types.LikeCommentRequest{Id: 10})
 	if err != nil || resp.Code != http.StatusInternalServerError {
@@ -330,7 +330,7 @@ func TestLikeComment_GetFailed500(t *testing.T) {
 func TestLikeComment_TargetGuideGetFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
 	// 评论存在但指向的攻略查询报非哨兵错误 → 500
-	withGuide(svcCtx, &failingGuideRepo{GuideRepository: svcCtx.GuideRepository.(*model.GuideRepository), getErr: errRepoBoom})
+	withGuide(svcCtx, &failingGuideRepo{GuideStore: svcCtx.GuideRepository.(model.GuideStore), getErr: errRepoBoom})
 	l := NewLikeCommentLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.LikeComment(&types.LikeCommentRequest{Id: 10})
 	if err != nil || resp.Code != http.StatusInternalServerError {
@@ -341,7 +341,7 @@ func TestLikeComment_TargetGuideGetFailed500(t *testing.T) {
 func TestLikeComment_LikeNotFound404(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
 	id := newOwnedComment(t, svcCtx) // 挂在 game 下，跳过攻略二级检查
-	withComment(svcCtx, &failingCommentRepo{CommentRepository: svcCtx.CommentRepository.(*model.CommentRepository), likeErr: model.ErrCommentNotFound})
+	withComment(svcCtx, &failingCommentRepo{CommentStore: svcCtx.CommentRepository.(model.CommentStore), likeErr: model.ErrCommentNotFound})
 	l := NewLikeCommentLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.LikeComment(&types.LikeCommentRequest{Id: id})
 	if err != nil || resp.Code != http.StatusNotFound {
@@ -352,7 +352,7 @@ func TestLikeComment_LikeNotFound404(t *testing.T) {
 func TestLikeComment_LikeFailed500(t *testing.T) {
 	svcCtx := newErrorBranchSvcCtx(t, "")
 	id := newOwnedComment(t, svcCtx)
-	withComment(svcCtx, &failingCommentRepo{CommentRepository: svcCtx.CommentRepository.(*model.CommentRepository), likeErr: errRepoBoom})
+	withComment(svcCtx, &failingCommentRepo{CommentStore: svcCtx.CommentRepository.(model.CommentStore), likeErr: errRepoBoom})
 	l := NewLikeCommentLogic(userCtx(1, "u1"), svcCtx)
 	resp, err := l.LikeComment(&types.LikeCommentRequest{Id: id})
 	if err != nil || resp.Code != http.StatusInternalServerError {

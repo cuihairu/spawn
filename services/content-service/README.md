@@ -23,7 +23,7 @@
 ## 技术架构
 
 - **框架**: go-zero
-- **数据存储**: 内存存储（JSON种子数据）
+- **数据存储**: SQLite/MySQL 双驱动（默认本地 SQLite 文件，`DATASOURCE` 注入 MySQL 连接串），进程内 TTL+LRU 读缓存
 - **端口**: 8891
 - **跨服务调用**: `client/` 内置熔断（连续失败 3 次开启、冷却 5s、半开探测恢复）与指数退避重试（3 次尝试、100ms→1s），失败时降级使用 gameId 作标题
 - **监控**: `/metrics` Prometheus 端点（端口 9093，见 `etc/content-api.yaml`），含 go-zero 内置请求指标与 `content_service_gamecatalog_client_*` 跨服务调用指标（调用量/错误分类/重试/耗时/熔断状态）
@@ -177,7 +177,7 @@ go run content.go -f etc/content-api.yaml
 
 ## 数据存储说明
 
-服务使用内存存储，数据在服务重启后会重置为种子数据。种子数据包含：
+数据存于数据库（默认本地 SQLite 文件 `data/content.db`）；空表首次启动时自动写入内嵌种子数据。种子数据包含：
 
 ### 攻略种子数据
 - 艾尔登法环新手指南
@@ -195,12 +195,11 @@ Name: content-api
 Host: 0.0.0.0
 Port: 8891
 
-DataSource:
-  GuidesFile: "data/guides.json"      # 攻略数据文件（可选）
-  CommentsFile: "data/comments.json"  # 评论数据文件（可选）
+MySQL:
+  DataSource: "file:data/content.db"  # 含 file:/.db 走 SQLite；生产用 MySQL 连接串
 ```
 
-如果数据文件不存在，服务会自动使用内置的种子数据。
+DSN 可用环境变量 `DATASOURCE` 覆盖（生产注入 MySQL 连接串）；空表首次启动自动写入内嵌种子数据。
 
 ## 后续改进建议
 
@@ -212,15 +211,10 @@ DataSource:
    - 创建攻略时应该调用game-catalog服务获取游戏名称
    - 可以增加游戏存在性验证
 
-3. **持久化存储**
-   - 可以将内存存储替换为MySQL或MongoDB
-   - 保持Repository接口不变，只需实现新的Repository
+3. **跨进程缓存**
+   - 多实例部署时将进程内 TTL+LRU 缓存替换为 Redis（接入点不变，见 development-guide「数据库集成 → 4」演进触发条件）
 
-4. **缓存优化**
-   - 热门攻略可以使用Redis缓存
-   - 减少重复查询
-
-5. **搜索功能**
+4. **搜索功能**
    - 集成ElasticSearch实现全文搜索
    - 支持按关键词搜索攻略内容
 

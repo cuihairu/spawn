@@ -2,11 +2,12 @@ package handler
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/tappi/tappi/services/content-service/model"
 	"github.com/tappi/tappi/services/content-service/utils"
 
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/zeromicro/go-zero/rest"
 )
 
@@ -46,26 +48,40 @@ func newHandlerTestServer(t *testing.T) (string, func(int64, string) string) {
 	}))
 	t.Cleanup(gameStub.Close)
 
-	guidesPath := t.TempDir() + "/guides.json"
-	commentsPath := t.TempDir() + "/comments.json"
-	if err := writeFile(guidesPath, seedGuides); err != nil {
-		t.Fatalf("write guides seed: %v", err)
-	}
-	if err := writeFile(commentsPath, seedComments); err != nil {
-		t.Fatalf("write comments seed: %v", err)
-	}
-	guideRepo, err := model.NewGuideRepository(guidesPath)
+	// 种子装载：JSON 常量 → 临时文件 SQLite（与生产同款 DB 仓储）
+	db, err := sql.Open("sqlite3", "file:"+filepath.Join(t.TempDir(), "content.db"))
 	if err != nil {
-		t.Fatalf("NewGuideRepository: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
-	commentRepo, err := model.NewCommentRepository(commentsPath)
-	if err != nil {
-		t.Fatalf("NewCommentRepository: %v", err)
+	t.Cleanup(func() { db.Close() })
+
+	var guides []*model.Guide
+	if err := json.Unmarshal([]byte(seedGuides), &guides); err != nil {
+		t.Fatalf("parse seed guides: %v", err)
+	}
+	var comments []*model.Comment
+	if err := json.Unmarshal([]byte(seedComments), &comments); err != nil {
+		t.Fatalf("parse seed comments: %v", err)
+	}
+
+	guideModel := model.NewGuideModel(db)
+	if err := guideModel.CreateGuidesTable(); err != nil {
+		t.Fatalf("create guides table: %v", err)
+	}
+	if err := guideModel.Seed(guides); err != nil {
+		t.Fatalf("seed guides: %v", err)
+	}
+	commentModel := model.NewCommentModel(db)
+	if err := commentModel.CreateCommentsTable(); err != nil {
+		t.Fatalf("create comments table: %v", err)
+	}
+	if err := commentModel.Seed(comments); err != nil {
+		t.Fatalf("seed comments: %v", err)
 	}
 
 	svcCtx := &svc.ServiceContext{
-		GuideRepository:   guideRepo,
-		CommentRepository: commentRepo,
+		GuideRepository:   guideModel,
+		CommentRepository: commentModel,
 		Auth:              utils.NewAuth(testSecret),
 		GameCatalogClient: client.NewGameCatalogClient(gameStub.URL, 2*time.Second),
 	}
@@ -121,10 +137,6 @@ func newHandlerTestServer(t *testing.T) (string, func(int64, string) string) {
 		return signed
 	}
 	return base, sign
-}
-
-func writeFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 // do 便捷请求：携带可选 Bearer 令牌，返回状态码与响应体 JSON。

@@ -19,7 +19,7 @@ func TestRun_LoadConfigError(t *testing.T) {
 }
 
 // TestRun_StartsContentService 完整装配链：加载临时配置 → NewServiceContext
-// （数据文件缺失 → 种子回退）→ 注册路由 → 认证中间件 → 服务器可接受请求。
+// （SQLite 建库建表 + 种子）→ 注册路由 → 认证中间件 → 服务器可接受请求。
 // 注：run() 阻塞于 server.Start()，测试放行 goroutine 后由进程退出回收。
 func TestRun_StartsContentService(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -33,9 +33,8 @@ func TestRun_StartsContentService(t *testing.T) {
 	content := `Name: content-service-test
 Host: 127.0.0.1
 Port: ` + strconv.Itoa(port) + `
-DataSource:
-  GuidesFile: ` + filepath.Join(t.TempDir(), "guides.json") + `
-  CommentsFile: ` + filepath.Join(t.TempDir(), "comments.json") + `
+MySQL:
+  DataSource: "file:` + filepath.Join(t.TempDir(), "content.db") + `"
 Auth:
   JWTSecret: run-integration-secret
 Services:

@@ -8,10 +8,10 @@ import "github.com/zeromicro/go-zero/rest"
 type Config struct {
 	rest.RestConf
 
-	// DataSource 配置攻略和评论数据文件
-	DataSource struct {
-		GuidesFile   string `json:",default=data/guides.json"`
-		CommentsFile string `json:",default=data/comments.json"`
+	// MySQL 内容服务数据库。DSN 含 file: 或 .db 时走 SQLite（开发/测试），
+	// 否则按 MySQL 连接（生产）；默认本地 SQLite 文件，零配置可跑。
+	MySQL struct {
+		DataSource string `json:",env=DATASOURCE,default=file:data/content.db"`
 	}
 
 	// JWT 配置

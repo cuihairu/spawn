@@ -2,9 +2,6 @@ package logic
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/tappi/tappi/services/content-service/internal/svc"
@@ -16,43 +13,18 @@ import (
 func TestGuideVisibilityAndOwnership(t *testing.T) {
 	t.Parallel()
 
-	tmpDir := t.TempDir()
-	guidesFile := filepath.Join(tmpDir, "guides.json")
-	commentsFile := filepath.Join(tmpDir, "comments.json")
-
-	guides := []*model.Guide{
-		{Id: 1, GameId: "g1", GameTitle: "G1", Title: "draft", Content: "c", AuthorId: 1, AuthorName: "u1", IsPublished: false, CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
-		{Id: 2, GameId: "g1", GameTitle: "G1", Title: "pub1", Content: "c", AuthorId: 1, AuthorName: "u1", IsPublished: true, CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
-		{Id: 3, GameId: "g2", GameTitle: "G2", Title: "pub2", Content: "c", AuthorId: 2, AuthorName: "u2", IsPublished: true, CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
-		{Id: 4, GameId: "g1", GameTitle: "G1", Title: "draft2", Content: "c", AuthorId: 1, AuthorName: "u1", IsPublished: false, CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
-	}
-	buf, err := json.Marshal(guides)
-	if err != nil {
-		t.Fatalf("marshal guides: %v", err)
-	}
-	if err := os.WriteFile(guidesFile, buf, 0o644); err != nil {
-		t.Fatalf("write guides file: %v", err)
-	}
-	comments := []*model.Comment{
-		{Id: 1, TargetType: "guide", TargetId: 2, UserId: 1, UserName: "u1", Content: "c1", CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
-		{Id: 2, TargetType: "guide", TargetId: 4, UserId: 2, UserName: "u2", Content: "leak", CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
-	}
-	commentBuf, err := json.Marshal(comments)
-	if err != nil {
-		t.Fatalf("marshal comments: %v", err)
-	}
-	if err := os.WriteFile(commentsFile, commentBuf, 0o644); err != nil {
-		t.Fatalf("write comments file: %v", err)
-	}
-
-	guideRepo, err := model.NewGuideRepository(guidesFile)
-	if err != nil {
-		t.Fatalf("new guide repo: %v", err)
-	}
-	commentRepo, err := model.NewCommentRepository(commentsFile)
-	if err != nil {
-		t.Fatalf("new comment repo: %v", err)
-	}
+	guideRepo, commentRepo := seedContentStores(t,
+		[]*model.Guide{
+			{Id: 1, GameId: "g1", GameTitle: "G1", Title: "draft", Content: "c", AuthorId: 1, AuthorName: "u1", IsPublished: false, CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
+			{Id: 2, GameId: "g1", GameTitle: "G1", Title: "pub1", Content: "c", AuthorId: 1, AuthorName: "u1", IsPublished: true, CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
+			{Id: 3, GameId: "g2", GameTitle: "G2", Title: "pub2", Content: "c", AuthorId: 2, AuthorName: "u2", IsPublished: true, CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
+			{Id: 4, GameId: "g1", GameTitle: "G1", Title: "draft2", Content: "c", AuthorId: 1, AuthorName: "u1", IsPublished: false, CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
+		},
+		[]*model.Comment{
+			{Id: 1, TargetType: "guide", TargetId: 2, UserId: 1, UserName: "u1", Content: "c1", CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
+			{Id: 2, TargetType: "guide", TargetId: 4, UserId: 2, UserName: "u2", Content: "leak", CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z"},
+		},
+	)
 
 	svcCtx := &svc.ServiceContext{
 		GuideRepository:   guideRepo,
