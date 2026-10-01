@@ -1,12 +1,15 @@
 package logic
 
 import (
+	"database/sql"
+	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
+
+	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 	"github.com/tappi/tappi/services/game-catalog/internal/types"
@@ -29,17 +32,28 @@ const sampleGamesJSON = `[
 
 var trendingOrder = []string{"g-rpg-1", "g-rpg-2", "g-fps-1", "g-act-1", "g-rpg-3", "g-fps-2", "g-act-2", "g-puz-1"}
 
-// newLogicSvcCtx 用样本数据文件构造仅含 GameRepository 的 ServiceContext
-// （logic 层不触达 Config/Auth）。
+// newLogicSvcCtx 用临时文件 SQLite 装载样本数据，构造仅含 GameRepository 的
+// ServiceContext（logic 层不触达 Config/Auth）。用文件库而非 :memory:：
+// 并发用例下连接池多连接共享同一份数据，避免各连独立空库。
 func newLogicSvcCtx(t *testing.T) *svc.ServiceContext {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "games.json")
-	if err := writeFile(path, sampleGamesJSON); err != nil {
-		t.Fatalf("write sample games: %v", err)
-	}
-	repo, err := model.NewGameRepository(path)
+	dsn := "file:" + filepath.Join(t.TempDir(), "games.db")
+	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
-		t.Fatalf("NewGameRepository: %v", err)
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	repo := model.NewGameModel(db)
+	if err := repo.CreateGamesTable(); err != nil {
+		t.Fatalf("CreateGamesTable: %v", err)
+	}
+	var games []*model.Game
+	if err := json.Unmarshal([]byte(sampleGamesJSON), &games); err != nil {
+		t.Fatalf("parse sample games: %v", err)
+	}
+	if err := repo.Seed(games); err != nil {
+		t.Fatalf("Seed: %v", err)
 	}
 	return &svc.ServiceContext{GameRepository: repo}
 }
@@ -62,10 +76,6 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
-}
-
-func writeFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 // asAPIError 断言 err 为 logic 层 apiError 并返回 (code, message)。

@@ -8,9 +8,6 @@ import (
 	"strconv"
 	"testing"
 	"time"
-
-	"github.com/tappi/tappi/services/game-catalog/internal/config"
-	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 )
 
 // TestRun_LoadConfigError 配置文件不存在 → run 返回错误（不再 panic）。
@@ -37,8 +34,8 @@ func TestRun_StartsGameService(t *testing.T) {
 	content := `Name: game-catalog-test
 Host: 127.0.0.1
 Port: ` + strconv.Itoa(port) + `
-DataSource:
-  File: ` + filepath.Join(t.TempDir(), "games.json") + `
+MySQL:
+  DataSource: "file:` + filepath.Join(t.TempDir(), "games.db") + `"
 Auth:
   JWTSecret: run-integration-secret
 `
@@ -78,25 +75,4 @@ Auth:
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list status = %d, want 200", resp.StatusCode)
 	}
-}
-
-// TestNewServiceContextBadDataSource 数据文件存在但内容非法 JSON →
-// NewServiceContext 以 panic 终止（与生产行为一致，启动期快速失败）。
-func TestNewServiceContextBadDataSource(t *testing.T) {
-	dir := t.TempDir()
-	bad := filepath.Join(dir, "games.json")
-	if err := os.WriteFile(bad, []byte("{invalid json"), 0o644); err != nil {
-		t.Fatalf("write bad data file: %v", err)
-	}
-
-	var c config.Config
-	c.DataSource.File = bad
-	c.Auth.JWTSecret = "panic-test-secret"
-
-	defer func() {
-		if recover() == nil {
-			t.Fatal("bad game data file must panic in NewServiceContext")
-		}
-	}()
-	svc.NewServiceContext(c)
 }

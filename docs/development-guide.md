@@ -323,7 +323,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 | 顺序 | 服务 | 理由 | 状态 |
 |------|------|------|------|
 | 1 | user-service | 模型层已有 MySQL/SQLite 双驱动（本节先例），只缺缓存；登录/注册是全仓最热 DB 路径，缓存收益直接 | ✅ 本切片已落地 |
-| 2 | game-catalog | 现为 JSON 文件仓库，按 user-service 模式迁 MySQL；其读路径已在内存（无 DB I/O），缓存收益低于 user-service，故排第二 | 待做 |
+| 2 | game-catalog | 原 JSON 文件仓库，按 user-service 模式迁 SQLite/MySQL 双驱动 + 读缓存；目录量为数百行，过滤/排序/推荐语义保留在应用侧 | ✅ 本切片已落地 |
 | 3 | community、content-service | 同为文件仓库，按 game-catalog 跑通的模式跟进 | 待做 |
 
 - user-service-rpc 为 goctl 生成层，不手改、不纳入切片。
@@ -363,6 +363,22 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
   - `services/user-service/model/usermodel.go` —— 读缓存与失效点接入；
   - 单测 `internal/cache/ttlcache_test.go`（命中/过期/LRU 淘汰/禁用/并发）；
   - 集成测试 `model/usercache_test.go`（关库命中、更新失效、无负缓存、值副本隔离）。
+- **game-catalog 切片交付物（2026-10-02）**：
+  - `services/game-catalog/model/gamemodel.go` —— JSON 文件仓迁 `GameModel`
+    （games 表，数组列 JSON 文本编码；`GameStore` 接口五方法签名不变，
+    logic 层零改动）；
+  - `services/game-catalog/internal/cache/ttlcache.go` —— 上列泛型缓存的
+    模块内同构副本（含单测）；
+  - `svc.NewServiceContext` 驱动探测（`file:`/`.db` → SQLite）/`ensureSQLiteDir`/
+    Ping 快速失败/建表 + `SeedIfEmpty`（空表写入内嵌 8 款种子目录，
+    替代原 `data/games.json`，种子内嵌进二进制）；
+  - 读路径语义保持：`List`/`Featured`/`Recommend` 每次全量读取后应用侧过滤排序
+    （数百行量级 + 与原内存仓语义一致，SQL 不下推）；跨方言确定性以
+    `ORDER BY id` 为基线，并列趋势分的排序回退到 id 序（与原插入序的次序
+    漂移见台账）；List 的 `Limit=0` 返回 0 行等模型层语义不变（logic 层
+    兜底 20 与原先一致）；
+  - Dockerfile 改 CGO 构建 + debian:bookworm-slim 运行时（go-sqlite3 需 cgo），
+    `DATASOURCE` 默认 `file:/app/data/games.db`。
 
 ### 5. 覆盖率台账刷新与 user-service-rpc 测试落地（2026-09-30）
 
@@ -374,7 +390,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 |------|-------|------|
 | api-gateway | 98.2% | 本轮收口（原 96.3%） |
 | user-service | 97.7% | 本轮独立复核确认天花板（派发 97.2% → 现 97.7%） |
-| game-catalog | 97.6% | 本轮收口（原 95.7%） |
+| game-catalog | 97.5% | DB 切片轮重测（原内存仓收口 97.6%；迁 DB 新增模型/缓存代码后同口径复测） |
 | community | 99.2% | 本轮收口（原 91.5%，手写面最大缺口） |
 | content-service | 98.2% | 本轮收口（原 88.8% → 94.2% → 98.2%） |
 | user-service-rpc | 79.2%（含生成代码）/ **91.7%（手写面）** | 见下 |
@@ -614,6 +630,39 @@ community 剩余 7 块全部按台账口径登记（不硬造用例）：
 - `utils/auth.go:40/44`：jwt/v5 在 Parse 阶段已完成 exp 与签名校验，
   err==nil 蕴含 token.Valid，两分支为死代码（与 user-service/content-service
   同款既有登记）。
+
+**game-catalog 数据库切片轮（2026-10-02，97.6% → 97.5%，功能切片）**：「下一步」
+第 2 项第二切片落地——JSON 文件仓迁 SQLite/MySQL 双驱动 `GameModel` + 进程内读
+缓存（设计决策见「数据库集成 → 4」），非覆盖率专项轮；覆盖率按同口径重测并登记。
+- 语义保持：`GameStore` 五方法签名不变，logic 层与第七轮的 `repoerror_test.go`
+  故障注入测试零改动通过；缓存值副本隔离、无负缓存、Create 统一失效点，
+  与 user-service 切片同款；
+- 新增测试：模型层（SeedIfEmpty 填充与空表跳过、缓存关库命中、值副本隔离、
+  文件库持久化重开、过滤/排序/分页钳制、推荐题材池与轮转确定性、关库错误
+  传播（列表读静默零值、单条读写显式报错）、Seed 主键冲突传播、数组列损坏
+  JSON ×3 列与空串列与数值列脏数据、同分 tie-break、offset>0 且 limit<0 的
+  窗口倒挂防御钳制）；svc 层（SQLite 文件库建表种子、内存库带参 DSN 跳过
+  目录创建、Open 急切解析 panic、Ping 不可达 panic——实测
+  `user:pw@tcp(127.0.0.1:3306)x` 会在 Open 期 ParseDSN 即失败（缺 "/dbname"
+  分隔），并不触达 Ping，前序 user-service 巡检第三轮对该 DSN 的描述据此
+  修正理解：Open-panic 与 Ping-panic 是两个分支，各自需不同 DSN 形态）；
+  handler 层（列表类 query `limit=abc` 类型不匹配 → `httpx.Parse` 失败 400
+  ×3——字段全 optional/default 的正常路径 Parse 恒成功，类型不匹配是唯一
+  可达 Parse 失败入口，与 getgamedetail 缺 pathvar 同口径）；
+- 删除：`model/gamerepository*.go`、`data/games.json`。第七轮台账所引
+  `model/gamerepository.go:290`（defaultSeedGames panic）现平移至
+  `model/gamemodel.go:458`，登记不变；
+- 剩余缺口登记（DB 切片后重测，全量 15 块 / 16 句，均不可达或外部依赖口径）：
+  1. `game.go` main stderr+exit ×2（全仓既定）；
+  2. handler `httpx.ErrorCtx` 逻辑错误分支 ×3：listgames/getfeaturedgames/
+     getrecommendations 三个 logic 恒 envelope+nil error（逐一核对，与第七轮
+     登记同款；getgamedetail/creategame 的对应分支既有覆盖）；
+  3. `svc/servicecontext.go` 建表 panic 与种子 panic ×2 —— SQLite 路径 Ping
+     通过后建表恒成，MySQL 在线但建表/种子失败需真实 MySQL 故障注入，
+     CI（SQLite-only）口径不可达；
+  4. `model/gamemodel.go` all 的 rows.Err —— 需驱动级遍历中断注入；
+  5. `model/gamemodel.go:458` defaultSeedGames panic —— 编译期内嵌常量；
+  6. `utils/auth.go:43/47` jwt/v5 死分支（全仓同款既有登记）。
 
 ## 部署
 
@@ -909,8 +958,10 @@ CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/�
 2. 添加数据库模型和缓存 ⚙️ 部分完成：设计决策已落档（见上文「数据库集成 →
    设计决策：数据库模型与缓存」——落地顺序 user-service → game-catalog →
    community/content、DSN 双驱动部署形态、进程内 TTL+LRU 缓存选型）；
-   首个切片 user-service 已落地（模型层读缓存 + 单测/集成测试，
-   全模块 build + `-race` 门禁通过）；game-catalog 起的后续切片待做
+   user-service 与 game-catalog 两切片已落地（模型层读缓存 + 单测/集成测试，
+   全模块 build + `-race` 门禁通过；game-catalog 的 JSON 文件仓已迁
+   SQLite/MySQL 双驱动，交付物见「数据库集成 → 4」）；community/content
+   后续切片待做
 3. ~~实现服务间通信~~ ✅ 已完成（通路审计 + 补齐客户端契约测试）：
 
    | 通路 | 实现位置 | 契约测试 |

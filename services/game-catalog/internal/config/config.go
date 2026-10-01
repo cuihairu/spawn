@@ -8,9 +8,10 @@ import "github.com/zeromicro/go-zero/rest"
 type Config struct {
 	rest.RestConf
 
-	// DataSource 配置了游戏数据文件或外部数据源
-	DataSource struct {
-		File string `json:",default=data/games.json"`
+	// MySQL 游戏目录数据库。DSN 含 file: 或 .db 时走 SQLite（开发/测试），
+	// 否则按 MySQL 连接（生产）；默认本地 SQLite 文件，零配置可跑。
+	MySQL struct {
+		DataSource string `json:",env=DATASOURCE,default=file:data/games.db"`
 	}
 
 	// Auth JWT 校验配置（与 user-service 共享密钥，令牌由 user-service 签发）

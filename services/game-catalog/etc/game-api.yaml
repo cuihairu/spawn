@@ -2,8 +2,10 @@ Name: game-catalog-api
 Host: 0.0.0.0
 Port: 8890
 
-DataSource:
-  File: "data/games.json"
+# 游戏目录数据库：DSN 含 file:/.db 走 SQLite（默认本地文件，零配置），
+# 生产用 MySQL 连接串 + DATASOURCE 环境变量覆盖。空表启动时自动写入内嵌种子。
+MySQL:
+  DataSource: "file:data/games.db"
 
 # JWT 校验密钥（与 user-service 共享；生产环境用 JWT_SECRET 环境变量覆盖）
 Auth:

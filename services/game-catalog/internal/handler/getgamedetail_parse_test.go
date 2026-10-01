@@ -18,7 +18,7 @@ func TestGetGameDetailHandler_ParseFailure(t *testing.T) {
 	httpx.SetErrorHandlerCtx(logic.ErrorHandler)
 
 	var c config.Config
-	c.DataSource.File = filepath.Join(t.TempDir(), "games.json")
+	c.MySQL.DataSource = "file:" + filepath.Join(t.TempDir(), "games.db")
 	svcCtx := svc.NewServiceContext(c)
 
 	req := httptest.NewRequest(http.MethodGet, "/games/anything", nil) // 未注入 pathvar

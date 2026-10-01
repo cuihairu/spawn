@@ -3,12 +3,15 @@ module github.com/tappi/tappi/services/game-catalog
 go 1.25.4
 
 require (
+	github.com/go-sql-driver/mysql v1.9.3
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
+	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/zeromicro/go-zero v1.9.3
 )
 
 require (
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

@@ -41,7 +41,7 @@ func newAuthedTestServer(t *testing.T) (string, func(claims utils.JWTClaims) str
 
 	var c config.Config
 	c.Port = port
-	c.DataSource.File = t.TempDir() + "/games.json"
+	c.MySQL.DataSource = "file:" + t.TempDir() + "/games.db"
 	c.Auth.JWTSecret = testJWTSecret
 
 	svcCtx := svc.NewServiceContext(c)
