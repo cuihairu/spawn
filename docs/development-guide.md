@@ -373,7 +373,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 | 模块 | 覆盖率 | 备注 |
 |------|-------|------|
 | api-gateway | 98.2% | 本轮收口（原 96.3%） |
-| user-service | 97.7% | 本轮验证天花板（原 97.7%，上轮 97.2% → 97.7%） |
+| user-service | 97.7% | 本轮独立复核确认天花板（派发 97.2% → 现 97.7%） |
 | game-catalog | 97.6% | 本轮收口（原 95.7%） |
 | community | 99.2% | 本轮收口（原 91.5%，手写面最大缺口） |
 | content-service | 98.2% | 本轮收口（原 88.8% → 94.2% → 98.2%） |
@@ -438,7 +438,7 @@ usermodel:90（原 :77，mattn/go-sqlite3 LastInsertId 恒 (id, nil)；行号随
 插入平移）+ main ×2、handler envelope ×5。
 
 
-**user-service 覆盖率天花板验证轮（本轮，97.7% → 97.7%）**：复测全模块覆盖率快照（台账口径），
+**user-service 覆盖率天花板验证轮（次日第十轮，97.7% → 97.7%）**：复测全模块覆盖率快照（台账口径），
 仍为 97.7%。本轮新增 1 例单测：
 - `model/usermodel_test.go` 追加 Create 分支（关库触发 Exec 错误 → 500 "创建用户失败"），
   覆盖 `usermodel.go:85` Exec 错误分支；
@@ -454,6 +454,34 @@ usermodel:90（原 :77，mattn/go-sqlite3 LastInsertId 恒 (id, nil)；行号随
 6. `user.go:23` main stderr+exit —— 全仓既定不可达约定。
 剩余 11 块即上述全量不可达集。手写面最低可推进项现为 user-service-rpc（91.7%，protoc
 缺口维持不碰）。
+
+**user-service 覆盖率独立复核轮（次日第十一轮，97.7% → 97.7%）**：任务派发读数 97.2%，
+复测时模块已由任务间落地的两笔提交推进至 97.7%（`0be40ed` UserStore 接口化 + refetch
+故障注入、`191eda0` 关库 Exec 分支 + 天花板登记），按铁律不重写、在其上叠加。本轮逐块
+读源码对剩余 11 块 / 14 句（总 601 句）做独立复核——不照抄台账结论，全部 11 块证实
+为真不可达而非「不可注入」误判（content-service 第六轮教训）：
+1. `user.go:24/25` main stderr+exit ×2 —— 全仓既定约定；run() 错误路径已单独覆盖，
+   user.go 其余块 100%；
+2. `handler/*` envelope 空错分支 ×5 —— 逐行核对 getuserinfo / getuserrecommendations /
+   register / updateuserinfo / user 五个 logic，全部仅 `return &types.ApiResponse{...}, nil`，
+   结构上无非 nil error 出口（login 的 logic 真返错误，其 handler 分支已 100%）；
+3. `loginlogic.go:57` GenerateToken 失败 —— 读 jwt/v5 **v5.3.0** `hmac.go` 源码：`Sign`
+   仅当 key 非 `[]byte` 时返回 `ErrInvalidKeyType`，本包 `jwtSecret` 恒为 `[]byte`
+   （空 secret 亦然），无空 key 拒绝分支；`SHA256.Available()` 由既有签发/登录绿测反证；
+4. `registerlogic.go:89` HashPassword 失败 —— bcrypt `ErrPasswordTooLong` 需 >72 字节，
+   `ValidatePassword` 上限 50 字节且先于加密执行（registerlogic.go:47 → :87 顺序核对）；
+   错误路径本身由 `utils.TestHashPassword_TooLong` 覆盖；
+5. `usermodel.go:90`（原 :77，随接口插入平移）LastInsertId 失败 —— **补强前序登记的
+   单驱动论证**：本仓为双驱动装配（`servicecontext.go:37` sqlite3 / `:40` mysql），
+   逐一核对 mattn/go-sqlite3 v1.14.32 `return r.id, nil`、go-sql-driver/mysql v1.9.3
+   `result.go` `return res.insertIds[...], nil`，均字面恒 nil error；`database/sql`
+   `driverResult.LastInsertId` 仅加锁转发；本仓无 sqlmock 依赖，不为其引入（不硬造）；
+6. `utils/auth.go:69` ParseToken「无效的令牌」—— jwt/v5 `ParseWithClaims` err==nil 时
+   claims 类型恒为 `*JWTClaims` 且 `token.Valid` 必真，断言后置分支不可入。
+另更正前序记录：`191eda0` 提交信息「372 stmts」系与 game-catalog 总句数混淆，
+user-service 实测 601 句（587/601 = 97.7%，未覆盖 14 句 / 11 块）。快照已刷新
+（`services/cov_user-service.out`，本地不入库）。升至 98.0% 需再盖 2 句，而 14 句已全证死，
+97.7% 为该模块硬顶；手写面最低可推进项维持 user-service-rpc（91.7%，protoc 缺口不碰）。
 
 **content-service 收口轮（同日第四轮，88.8% → 94.2%）**：已补测试——
 - logic 层：五个 401 分支（createcomment/createguide/deletecomment/updateguide/
