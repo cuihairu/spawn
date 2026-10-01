@@ -372,7 +372,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 
 | 模块 | 覆盖率 | 备注 |
 |------|-------|------|
-| api-gateway | 96.3% | |
+| api-gateway | 98.2% | 本轮收口（原 96.3%） |
 | user-service | 97.2% | 重测确认（旧快照 15.8% 系滞后） |
 | game-catalog | 97.6% | 本轮收口（原 95.7%） |
 | community | 99.2% | 本轮收口（原 91.5%，手写面最大缺口） |
@@ -491,6 +491,30 @@ game-catalog 剩余 8 块（372 语句中 9 句）登记不可达（不硬造用
   `defaultSeedGames` 的 unmarshal panic 生产不可达；
 - `utils/auth.go:43/47`：jwt/v5 Parse 阶段已完成 exp 与签名校验，
   err==nil 蕴含 token.Valid，两分支为死代码（全仓同款既有登记）。
+
+**api-gateway 收口轮（次日第八轮，96.3% → 98.2%）**：按台账口径重跑快照
+（原 10 未覆盖语句 / 8 块），逐块分诊后 4 块补测、4 块登记。已补测试——
+- integration 层：两个 client 构造器不校验 baseURL，配置值携带控制字符时
+  `http.NewRequestWithContext` 内部 `url.Parse` 失败，GetFeatured / Login /
+  GetRecommendations 的构造请求错误分支 ×3 由此触达（不经网络，
+  `internal/integration/client_malformed_url_test.go`）；
+- proxy 层：`serveHTTP` 的请求构造错误分支 → 502 bad gateway——真 http
+  服务器在协议解析层即拒绝非法方法 token，handler 永远收不到，故白盒直调
+  注入敌意方法（与既有 `TestCopyHeaderDeletesHopByHop` 同款直测口径，
+  `internal/proxy/upstream_badrequest_test.go`）。
+
+api-gateway 剩余 4 块（5 句）登记不可达（不硬造用例）：
+- `gateway.go` main stderr+exit ×2（全仓既定）；
+- `internal/integration/user_client.go:52`：`json.Marshal(LoginPayload)`
+  仅两字符串字段，Marshal 对任意字符串（含非法 UTF-8 会替换而非报错）
+  恒成功，分支死代码；
+- `internal/proxy/upstream.go:117`：`Ping` 的构造请求错误分支——baseURL
+  在 `NewUpstream` 已通过 Parse 与 scheme/host 校验，`Parse(String()+"/health")`
+  恒成功，构造器不变量。
+
+风险登记（仅登记不动手）：2026-10-01 push 响应提示 GitHub 对默认分支报
+164 个 dependabot 告警（13 critical / 72 high / 47 moderate / 32 low），
+详见仓库 security/dependabot 页；按任务约束本轮不处置。
 
 **community 收口轮（同日第五轮，91.5% → 99.2%）**：按台账口径重跑快照确认
 community 为手写面最大缺口（77 个未覆盖块），逐块分诊后 70 块补测、7 块登记。
