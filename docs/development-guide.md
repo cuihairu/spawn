@@ -977,6 +977,68 @@ Prometheus:
   Port: <未占用端口>
 ```
 
+接入观测栈（指标 + 日志）还需两步：`deploy/prometheus/prometheus.yml`
+的 `tappi-services` job 下加一条带 `service` 标签的 target；根
+`docker-compose.yaml` 补发布该服务的 `/metrics` 端口（如 `9091:9091`）。
+
+### 设计决策：监控集成与日志收集（「下一步」第 4 项）
+
+> 2026-10-02 拍板并落地。选型按仓库现状与部署形态（docker compose、
+> 无 K8s、无云厂商依赖，见「CI 流水线」一节结论）取同量级最轻方案。
+
+| 行 | 项 | 选型 | 理由 | 状态 |
+|----|----|------|------|------|
+| 1 | 指标采集面 | Prometheus 静态抓取（`deploy/prometheus/prometheus.yml`，`tappi-services` job 六 target 9091–9096，带 `service` 标签） | 六服务的 go-zero agent `/metrics` 端点早已全量暴露（上表端口即约定），指标面只缺「抓取配置」即闭环；静态抓配零服务发现设施，单实例假定下最简 | ✅ |
+| 2 | 日志结构化 | go-zero logx `Log.Encoding: json`（六服务 `etc/*.yaml` 增 `Log` 块，`ServiceName` 标识来源，stdout console 模式） | logx 是仓内既有日志栈，JSON 单行天然可机器解析；容器 stdout 即日志流，零代码改动（`ServiceConf.Log` 为 go-zero 内建配置键） | ✅ |
+| 3 | 集中收集与可视化 | docker compose 轻量观测栈：Prometheus + Promtail + Loki + Grafana（`deploy/docker-compose.monitoring.yaml`） | 仓内部署形态即 docker compose；Promtail 文件抓取容器 json-file 日志 + Loki 单二进制文件存储，是 ELK（JVM 重）之外同量级最轻组合；Grafana 一处查指标与日志，数据源 provisioning 免手工配置 | ✅ |
+
+**交付物**：
+
+- `deploy/prometheus/prometheus.yml` —— 静态抓取六服务 `/metrics`；
+  目标经 `host.docker.internal`（`extra_hosts: host-gateway`）指向宿主
+  已发布端口，宿主机裸跑与根 compose 两种运行方式同样可达
+  （user-service-rpc 不在根 compose——依赖 etcd 按设计独立内网部署，
+  宿主机单独启动后可见）；
+- `deploy/loki/loki-config.yaml` —— Loki 单二进制本地模式（TSDB +
+  文件系统存储 + 单副本 inmemory 环）；`reject_old_samples: false`
+  兼容容器历史日志；
+- `deploy/promtail/promtail-config.yaml` —— 抓取
+  `/var/lib/docker/containers`（只读挂载），管道：`docker` stage 剥
+  json-file 包装 → 解析 go-zero JSON 行的 `level`/`content` → `level`
+  提升为标签 → `content` 作为输出行；非 JSON 行原样保留；
+- `deploy/grafana/provisioning/datasources/datasources.yml` ——
+  Prometheus（默认）+ Loki 数据源自动装配；
+- `deploy/docker-compose.monitoring.yaml` —— 四容器编排
+  （Prometheus 9090 / Loki 3100 / Grafana 3000 / Promtail 无外部端口），
+  数据卷持久化 Loki/Grafana/positions；
+- 根 `docker-compose.yaml` —— 五服务补发布 `/metrics` 端口
+  （9091–9095，注释「deploy/ 观测栈抓取」）；
+- 六服务 `etc/*.yaml` —— `Log` 块（`ServiceName`/`Mode: console`/
+  `Encoding: json`/`Level: info`）。
+
+**启动与验证**：
+
+```bash
+# 1. 起业务面（二选一：宿主机 go run，或根 compose）
+docker compose up -d --build
+# 2. 起观测面
+docker compose -f deploy/docker-compose.monitoring.yaml up -d
+# 3. 验证
+curl localhost:9090/api/v1/targets        # 六 target up
+curl localhost:3000                        # Grafana（Prometheus/Loki 已装配）
+# Grafana Explore 选 Loki，按 {job="docker", level="error"} 过滤服务日志
+```
+
+**假设与边界**：
+
+- 镜像按 tag 固定（prom/prometheus v2.53.0、grafana/loki 与 promtail
+  3.1.0、grafana/grafana 11.1.0）；仓库当前无镜像仓库凭据，不做镜像
+  发布；
+- Promtail 需读 `/var/lib/docker/containers`：Linux 下运行观测栈的
+  用户需在 docker 组或以 root 运行（compose 注释已注明）；
+- 追踪（tracing）暂不接线：go-zero 内建 OTel 已具备，当前无跨服务
+  时延排查需求，待出现再评估 exporter 选型，避免引入未用设施。
+
 ## 认证与授权（JWT）
 
 ### 现状总览（6 个服务）
@@ -1097,7 +1159,15 @@ CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/�
 
    全部 HTTP 通路的端点/参数/响应契约均已对照服务端真实路由核实
    （曾修复 content-service 客户端路径不一致问题，见 ENHANCEMENT.md）。
-4. 集成监控和日志收集
+4. ~~集成监控和日志收集~~ ✅ 已完成（见上文「监控与指标（Prometheus）→
+   设计决策：监控集成与日志收集」）：指标采集面（Prometheus 静态抓取
+   `deploy/prometheus/prometheus.yml` 六 target，根 compose 补发布
+   /metrics 端口 9091–9095）、日志结构化（六服务 `etc/*.yaml` 增 logx
+   `Log.Encoding: json` + ServiceName）、集中收集与可视化
+   （`deploy/docker-compose.monitoring.yaml`：Promtail 抓容器 JSON 日志
+   → Loki → Grafana 统一查指标与日志，数据源 provisioning 免配置）。
+   设计决策表三行（采集/结构化/集中收集）均已勾选，交付物与启动验证
+   命令见该节。
 5. ~~配置 CI/CD 流水线~~ ✅ CI 部分已完成（`.github/workflows/ci.yml`，见上文「CI 流水线」）：
    push/PR 触发 gofmt + 全模块 build + `go test -race` 门禁，模块列表动态读取 go.work；
    CD 部分（部署流水线）因无部署目标暂缓。

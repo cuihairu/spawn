@@ -1,0 +1,61 @@
+# Tappi 轻量观测栈（「下一步」第 4 项：监控集成与日志收集）。
+#
+# 启动：docker compose -f deploy/docker-compose.monitoring.yaml up -d
+# 入口：Grafana http://localhost:3000（Prometheus + Loki 数据源已自动装配）
+#
+# 指标：Prometheus 按 deploy/prometheus/prometheus.yml 静态抓取六服务
+#       /metrics（经 host.docker.internal，见该文件头注）。
+# 日志：六服务 go-zero logx 以 JSON 单行输出 stdout → Docker json-file
+#       → Promtail 文件抓取 → Loki 存储 → Grafana 查询。
+# 前置：Promtail 需读取 /var/lib/docker/containers（Linux 下需 docker 组权限）。
+
+version: "3.9"
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.1.0
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.1.0
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    volumes:
+      - ./promtail/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - promtail-positions:/positions
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+    restart: unless-stopped
+
+volumes:
+  loki-data:
+  grafana-data:
+  promtail-positions:

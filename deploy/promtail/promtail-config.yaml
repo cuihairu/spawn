@@ -1,0 +1,36 @@
+# Promtail 抓取 Docker json-file 容器日志 → 推送 Loki。
+#
+# 前置：需能读取 /var/lib/docker/containers（compose 中已只读挂载；
+# Linux 上运行栈的进程需在 docker 组或以 root 运行）。
+# 管道：先剥 docker json-file 包装（docker stage），再按 go-zero logx
+# JSON 输出解析 level/content 并把 level 提升为标签；非 JSON 行
+# （如启动期 plain 输出）原样保留整行。
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /positions/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker-containers
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker
+          __path__: /var/lib/docker/containers/*/*.log
+    pipeline_stages:
+      - docker: {}
+      - json:
+          expressions:
+            level: level
+            content: content
+      - labels:
+          level:
+      - output:
+          source: content

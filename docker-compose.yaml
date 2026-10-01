@@ -16,6 +16,7 @@ services:
       - community
     ports:
       - "8800:8800"
+      - "9095:9095" # /metrics（deploy/ 观测栈抓取）
     restart: unless-stopped
 
   game-catalog:
@@ -23,6 +24,7 @@ services:
       context: ./services/game-catalog
     ports:
       - "8890:8890"
+      - "9092:9092" # /metrics（deploy/ 观测栈抓取）
     restart: unless-stopped
 
   content-service:
@@ -34,6 +36,7 @@ services:
       GAMECATALOG_TIMEOUT: "5000"
     ports:
       - "8891:8891"
+      - "9093:9093" # /metrics（deploy/ 观测栈抓取）
     restart: unless-stopped
 
   user-service:
@@ -48,6 +51,7 @@ services:
       - game-catalog
     ports:
       - "8888:8888"
+      - "9091:9091" # /metrics（deploy/ 观测栈抓取）
     restart: unless-stopped
 
   community:
@@ -57,6 +61,7 @@ services:
       JWT_SECRET: tappi-user-service-jwt-secret-key-2024
     ports:
       - "8892:8892"
+      - "9094:9094" # /metrics（deploy/ 观测栈抓取）
     restart: unless-stopped
 
   web-client:

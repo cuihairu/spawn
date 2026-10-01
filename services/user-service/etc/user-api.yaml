@@ -20,3 +20,11 @@ Services:
 Prometheus:
   Host: 0.0.0.0
   Port: 9091
+
+# 结构化日志（go-zero logx）：JSON 单行输出到容器 stdout，
+# 由 deploy/docker-compose.monitoring.yaml 的 Promtail 集中收集进 Loki
+Log:
+  ServiceName: user-api
+  Mode: console
+  Encoding: json
+  Level: info
