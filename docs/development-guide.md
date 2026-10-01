@@ -616,6 +616,9 @@ api-gateway 剩余 4 块（5 句）登记不可达（不硬造用例）：
 
 风险登记（仅登记不动手）：2026-10-01 push 响应提示 GitHub 对默认分支报
 164 个 dependabot 告警（13 critical / 72 high / 47 moderate / 32 low），
+2026-10-02 push 复测为 168 个（13 critical / 74 high / 49 moderate / 32 low，
+波动来自依赖图刷新，非本仓改动引入——两个 DB 切片新增 mysql/sqlite3 驱动
+各带少量间接依赖），
 详见仓库 security/dependabot 页；按任务约束本轮不处置。
 
 **community 收口轮（同日第五轮，91.5% → 99.2%）**：按台账口径重跑快照确认
