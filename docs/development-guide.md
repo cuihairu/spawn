@@ -375,7 +375,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 | api-gateway | 96.3% | |
 | user-service | 97.2% | 重测确认（旧快照 15.8% 系滞后） |
 | game-catalog | 95.7% | |
-| community | 91.5% | |
+| community | 99.2% | 本轮收口（原 91.5%，手写面最大缺口） |
 | content-service | 94.2% | 本轮补测（原 88.8%，全仓最大缺口） |
 | user-service-rpc | 79.2%（含生成代码）/ **91.7%（手写面）** | 见下 |
 
@@ -445,6 +445,38 @@ content-service 剩余 43 块全部按台账口径登记（不硬造用例）：
   err==nil 蕴含 token.Valid，两分支为死代码；
 - `client/gamecatalog.go:157`（重试循环编译完整性兜底，源码注释自述）、
   `gamecatalog.go:176` 与 `metrics.go:90`（错误类别 switch 穷举后的 default）。
+
+**community 收口轮（同日第五轮，91.5% → 99.2%）**：按台账口径重跑快照确认
+community 为手写面最大缺口（77 个未覆盖块），逐块分诊后 70 块补测、7 块登记。
+已补测试——
+- model 层（`internal/model/errorbranches_test.go`）：persist 五个故障分支
+  （无目录前缀直返 nil、空文件、父路径为普通文件的 MkdirAll 失败、chan 不可
+  序列化的 marshal 失败、临时路径被目录占用的 WriteFile 失败）；follow 仓储
+  种子 JSON 装载的两组填充循环、重复关注/无关系集/目标缺失的六个 false 返回、
+  保存与列举时 ≥2 元素集合的排序比较器；topic 仓储空数组种子回落默认话题、
+  null 元素在建索引与列表跳过、Create 落盘失败、List 的 offset/limit/越界
+  三处钳制、不存在话题的两种计数自增哨兵错误；post 仓储空数组种子、null
+  元素与状态/类型过滤的三个 continue、列表三处钳制、Hot 的 null 跳过与
+  limit<=0 回落、Update 的 Images 增量字段及 Update/Create/Like/Share 的
+  落盘失败四分支、hotScore 的 CreatedAt 解析失败与 decay=4 / decay=8 分桶；
+- logic 层：topic 包分页钳制 ×3、GetTopic 空请求 400、GetFollowingTopics 的
+  401 与已删话题 continue、follow/unfollow topic 的 401+400、CreateTopic 的
+  401/空请求/空名称/落盘失败（`internal/logic/topic/errorbranches_test.go`）；
+  follow 包 FollowUser/UnfollowUser 的 401、user_id 缺失 400、自取关 400
+  （`internal/logic/follow/errorbranches_test.go`）；post 包 CreatePost 的
+  落盘失败（`internal/logic/post/create_save_error_test.go`）；
+- handler 层：逻辑可报错的三个 handler（create_topic/unfollow_user/
+  get_following_topics）在请求上下文缺 user_id 时 401 走 `httpx.ErrorCtx`
+  分支（`internal/handler/errorbranch_test.go`）。
+
+community 剩余 7 块全部按台账口径登记（不硬造用例）：
+- `community.go:24-27`（main 的 run 错误 stderr+exit 两块，全仓既定；run()
+  自身的错误返回已由 `community_test.go` 的 LoadConfigError 覆盖）；
+- handler `httpx.ErrorCtx` 空错分支 ×3：get_topics/get_posts/get_hot_posts
+  三个 logic 无任何非 nil error 返回（纯查询 + 分页钳制，逐一核对）；
+- `utils/auth.go:40/44`：jwt/v5 在 Parse 阶段已完成 exp 与签名校验，
+  err==nil 蕴含 token.Valid，两分支为死代码（与 user-service/content-service
+  同款既有登记）。
 
 ## 部署
 
