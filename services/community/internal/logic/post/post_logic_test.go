@@ -14,16 +14,13 @@ import (
 )
 
 // newTestServiceContext 为逻辑层单测构造真实服务上下文：
-// 仓储全部落在 t.TempDir()，缺文件时自动播种（话题 1/2、帖子 1/2），不 mock 真实契约。
+// SQLite 文件库落在 t.TempDir()，空表自动播种（话题 1/2、帖子 1/2），不 mock 真实契约。
 func newTestServiceContext(t *testing.T) *svc.ServiceContext {
 	t.Helper()
 
-	dir := t.TempDir()
 	var c config.Config
 	c.Auth.JWTSecret = "test-jwt-secret"
-	c.DataSource.TopicsFile = filepath.Join(dir, "topics.json")
-	c.DataSource.PostsFile = filepath.Join(dir, "posts.json")
-	c.DataSource.FollowsFile = filepath.Join(dir, "follows.json")
+	c.MySQL.DataSource = "file:" + filepath.Join(t.TempDir(), "community.db")
 
 	return svc.NewServiceContext(c)
 }

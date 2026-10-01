@@ -1,29 +1,20 @@
-FROM golang:1.25.4-alpine AS builder
+# syntax=docker/dockerfile:1.9
 
-LABEL stage=gobuilder
-
-ENV CGO_ENABLED 0
-ENV GOPROXY https://goproxy.cn,direct
-
-WORKDIR /build
-
-COPY go.mod .
-COPY go.sum .
+FROM golang:1.22 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
 RUN go mod download
-
 COPY . .
-RUN go build -ldflags="-s -w" -o /app/community community.go
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o /bin/community community.go
 
-FROM alpine
-
-RUN apk update --no-cache && apk add --no-cache ca-certificates tzdata
-ENV TZ Asia/Shanghai
-
+# 运行时含 glibc 与 sqlite3（CGO 驱动 mattn/go-sqlite3 需要）
+FROM debian:bookworm-slim
+ENV TZ=Asia/Shanghai
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata sqlite3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-
-COPY --from=builder /app/community /app/community
-COPY etc /app/etc
-
+COPY --from=builder /bin/community /usr/local/bin/community
+COPY etc ./etc
+RUN mkdir -p /app/data
+ENV DATASOURCE=file:/app/data/community.db
 EXPOSE 8892
-CMD ["./community"]
-
+ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]

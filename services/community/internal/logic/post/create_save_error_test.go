@@ -1,23 +1,33 @@
 package post
 
 import (
-	"os"
+	"errors"
 	"testing"
 
+	"github.com/tappi/tappi/services/community/internal/model"
 	"github.com/tappi/tappi/services/community/internal/types"
 )
 
-// TestCreatePost_SaveError 帖子落盘失败（临时路径被同名目录占用）→
-// CreatePost 原样返回仓储错误。话题存在性检查在此之前已通过。
+// failingPostStore 仅 Create 投毒的故障注入仓储（其余方法在用例链路中不可达，
+// 嵌入接口即可满足 PostStore）。
+type failingPostStore struct {
+	model.PostStore
+	createErr error
+}
+
+func (s failingPostStore) Create(int64, int64, string, *types.CreatePostReq) (*types.Post, error) {
+	return nil, s.createErr
+}
+
+// TestCreatePost_SaveError 帖子写入失败（仓储层故障注入）→ CreatePost 原样
+// 返回仓储错误。话题存在性检查在此之前已通过（TopicRepo 保持真实实现）。
 func TestCreatePost_SaveError(t *testing.T) {
 	svcCtx := newTestServiceContext(t)
-	if err := os.MkdirAll(svcCtx.Config.DataSource.PostsFile+".tmp", 0o755); err != nil {
-		t.Fatalf("mkdir tmp blocker: %v", err)
-	}
+	svcCtx.PostRepo = failingPostStore{createErr: errors.New("disk on fire")}
 
 	_, err := NewCreatePostLogic(authContext(1001, "tester"), svcCtx).
 		CreatePost(&types.CreatePostReq{TopicId: 1, Title: "t", Content: "c"})
 	if err == nil {
-		t.Fatal("expected CreatePost to fail when posts persistence fails")
+		t.Fatal("expected CreatePost to fail when post persistence fails")
 	}
 }

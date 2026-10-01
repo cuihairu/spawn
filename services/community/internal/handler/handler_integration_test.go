@@ -26,13 +26,10 @@ func newTestServiceContext(t *testing.T) (*svc.ServiceContext, string) {
 	t.Helper()
 
 	secret := "test-jwt-secret"
-	dir := t.TempDir()
 
 	var c config.Config
 	c.Auth.JWTSecret = secret
-	c.DataSource.TopicsFile = filepath.Join(dir, "topics.json")
-	c.DataSource.PostsFile = filepath.Join(dir, "posts.json")
-	c.DataSource.FollowsFile = filepath.Join(dir, "follows.json")
+	c.MySQL.DataSource = "file:" + filepath.Join(t.TempDir(), "community.db")
 
 	return svc.NewServiceContext(c), secret
 }

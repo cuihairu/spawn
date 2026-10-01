@@ -34,10 +34,8 @@ func TestRun_StartsCommunityService(t *testing.T) {
 	content := `Name: community-test
 Host: 127.0.0.1
 Port: ` + strconv.Itoa(port) + `
-DataSource:
-  TopicsFile: ` + filepath.Join(dir, "topics.json") + `
-  PostsFile: ` + filepath.Join(dir, "posts.json") + `
-  FollowsFile: ` + filepath.Join(dir, "follows.json") + `
+MySQL:
+  DataSource: file:` + filepath.Join(dir, "community.db") + `
 Auth:
   JWTSecret: run-integration-secret
 `

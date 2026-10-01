@@ -12,16 +12,13 @@ import (
 	"github.com/tappi/tappi/services/community/internal/types"
 )
 
-// newFollowSvcCtx 构造逻辑层单测服务上下文：仓储全部落在 t.TempDir()。
+// newFollowSvcCtx 构造逻辑层单测服务上下文：SQLite 文件库落在 t.TempDir()。
 func newFollowSvcCtx(t *testing.T) *svc.ServiceContext {
 	t.Helper()
 
-	dir := t.TempDir()
 	var c config.Config
 	c.Auth.JWTSecret = "follow-branch-secret"
-	c.DataSource.TopicsFile = filepath.Join(dir, "topics.json")
-	c.DataSource.PostsFile = filepath.Join(dir, "posts.json")
-	c.DataSource.FollowsFile = filepath.Join(dir, "follows.json")
+	c.MySQL.DataSource = "file:" + filepath.Join(t.TempDir(), "community.db")
 
 	return svc.NewServiceContext(c)
 }

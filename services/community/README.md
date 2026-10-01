@@ -12,8 +12,8 @@ Community Service 是 Tappi 社区平台的核心服务之一，提供帖子发�
 3. 配置文件创建
 4. Handler 和 Routes 生成
 5. JWT 认证中间件（受保护接口需要 `Authorization: Bearer <token>`）
-6. 基于内存的仓储层（Post/Topic/Follow，带种子数据）
-7. JSON 文件持久化存储（topics/posts/follows，重启后可恢复）
+6. SQLite/MySQL 双驱动仓储层（Post/Topic/Follow，表结构见 `internal/model`；空表启动自动写入内嵌种子）
+7. 进程内 TTL+LRU 读缓存（话题/帖子单查；关注关系为写多读少不缓存）
 8. 统一错误码与错误响应结构（`code` + `message`）
 9. 业务逻辑层（发帖/改帖/删帖/列表/热门、话题创建/关注/取关/关注列表、用户关注/取关）
 10. 基础单元/集成测试（仓储 + 认证/关注链路）
@@ -160,10 +160,10 @@ Host: 0.0.0.0
 Port: 8892              # 社区服务端口
 Timeout: 30000
 
-DataSource:
-  TopicsFile: "data/topics.json"
-  PostsFile: "data/posts.json"
-  FollowsFile: "data/follows.json"
+# 社区数据库：DSN 含 file:/.db 走 SQLite（默认本地文件，零配置），
+# 生产用 MySQL 连接串 + DATASOURCE 环境变量覆盖。空表启动时自动写入内嵌种子。
+MySQL:
+  DataSource: "file:data/community.db"
 
 Auth:
   JWTSecret: your-secret-key-change-in-production
@@ -211,35 +211,40 @@ curl http://localhost:8892/api/v1/posts/hot?limit=10
 
 ## Docker 支持
 
-`Dockerfile`:
+`Dockerfile`（CGO 构建，运行时含 sqlite3；数据落 `/app/data/community.db`）：
 ```dockerfile
-FROM golang:1.21-alpine AS builder
-WORKDIR /app
-COPY . .
+FROM golang:1.22 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
 RUN go mod download
-RUN go build -o community community.go
+COPY . .
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o /bin/community community.go
 
-FROM alpine:latest
+FROM debian:bookworm-slim
+ENV TZ=Asia/Shanghai
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata sqlite3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY --from=builder /app/community .
-COPY --from=builder /app/etc ./etc
+COPY --from=builder /bin/community /usr/local/bin/community
+COPY etc ./etc
+RUN mkdir -p /app/data
+ENV DATASOURCE=file:/app/data/community.db
 EXPOSE 8892
-CMD ["./community", "-f", "etc/community-api.yaml"]
+ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]
 ```
 
 ## 性能指标
 
-预期性能（内存存储）：
+预期性能（SQLite 本地文件 + 进程内缓存）：
 - 创建帖子：< 10ms
 - 查询列表：< 5ms
-- 获取详情：< 3ms
-- 点赞操作：< 2ms
+- 获取详情（缓存命中）：< 1ms
+- 点赞操作：< 5ms
 
 ## 未来规划
 
 ### 短期（1-2周）
 - [x] 完成所有 Logic 实现
-- [ ] 添加数据持久化（MySQL/PostgreSQL）
+- [x] 数据持久化（SQLite/MySQL 双驱动 + 进程内读缓存）
 - [x] 实现完整的关注系统
 - [x] 添加单元测试
 
@@ -257,7 +262,7 @@ CMD ["./community", "-f", "etc/community-api.yaml"]
 
 ## 开发注意事项
 
-1. **线程安全**：所有内存存储操作必须使用 sync.RWMutex
+1. **线程安全**：仓储层并发安全由数据库与连接池钳制（`SetMaxOpenConns(1)`，规避 SQLite 写锁冲突）保证；进程内缓存自身并发安全
 2. **数据验证**：严格验证用户输入，防止XSS和注入攻击
 3. **性能优化**：对热点数据使用缓存
 4. **错误处理**：统一的错误码和错误信息
@@ -282,6 +287,6 @@ CMD ["./community", "-f", "etc/community-api.yaml"]
 
 ---
 
-**当前版本**: v1.0 (基础框架)
-**最后更新**: 2025-12-12
-**维护状态**: ✅ MVP 可用（内存存储）
+**当前版本**: v1.1 (SQLite/MySQL 双驱动持久化)
+**最后更新**: 2026-10-02
+**维护状态**: ✅ MVP 可用（SQLite 默认 / MySQL 生产）
