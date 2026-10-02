@@ -30,3 +30,9 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# JS workspace (pnpm hoisted 布局，根 node_modules)
+node_modules/
+
+# Claude Code session settings
+.claude/

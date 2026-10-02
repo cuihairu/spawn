@@ -1,7 +1,7 @@
 # spawn 手机版本计划（mobile-app）
 
-> 状态：**待拍板**（2026-10-02 起草）。本文档为计划稿，拍板通过后按里程碑实施；
-> 拍板意见直接批注于本文并更新状态行为「已拍板」。
+> 状态：**已拍板，实施中**（2026-10-02 定稿，M0 首批开工）。
+> 实施进度批注于各里程碑行内；变更记录追加在「拍板记录」表。
 >
 > 关联：总体目录规划见根 `README.md`（`apps/mobile-app` 占位）；
 > 后端能力与部署形态见 `docs/development-guide.md`。
@@ -77,7 +77,7 @@
 
 | 期 | 内容 | 验收标准 | 周期 |
 |----|------|---------|------|
-| **M0 工程骨架** | Expo 脚手架落 `apps/mobile-app`、pnpm workspace 接入、TS strict、ESLint 对齐 web-client、导航框架（底部 Tab：游戏/社区/我的）、CI 接入现有 gofmt/build 门禁旁路（lint + tsc） | Android 模拟器跑通空壳 App，三 Tab 可切换，CI 绿 | 1 周 |
+| **M0 工程骨架** | Expo 脚手架落 `apps/mobile-app`、pnpm workspace 接入、TS strict、ESLint 对齐 web-client、导航框架（底部 Tab：游戏/社区/我的）、CI 接入现有 gofmt/build 门禁旁路（lint + tsc） | Android 模拟器跑通空壳 App，三 Tab 可切换，CI 绿 | 1 周 | ✅ 2026-10-02 首批落地（环境无模拟器，以 `tsc` + `eslint` + `expo export --platform android` 产物走查替代真机验收，真机回归并入 M1） |
 | **M1 浏览 + 账号** | 登录/注册（含 JWT SecureStore 与 401 跳转）、游戏库列表/搜索/详情、榜单页 | 真机登录 → 浏览 → 搜索 → 详情全链路；token 重启存活 | 2 周 |
 | **M2 内容 + 社区** | 攻略阅读 + 评论、帖子流/话题/发帖/点赞；下拉刷新 + 触底分页 | 真机完成「看攻略→评论」「看帖→点赞→发帖」闭环 | 2–3 周 |
 | **M3 关系 + 收尾** | 关注/关注流、个人中心、本地推送、深链分享卡；Android 出 release 包（EAS 或本地 gradle） | Android 可安装包走完全部已上功能；iOS TestFlight 侧载验证 | 2 周 |
@@ -93,4 +93,4 @@
 
 | 日期 | 决议 | 批注 |
 |------|------|------|
-| — | 待拍板 | — |
+| 2026-10-02 | 按推荐定稿：Android P0 / iOS P1；功能面按第 2 节切分；React Native（Expo）+ TypeScript；里程碑 M0–M3 共约 7–8 周 | 用户授权免审直接拍板；M0 同日开工。Flutter 备选否决理由维持有效 |
