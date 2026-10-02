@@ -25,7 +25,9 @@ const CommunityPage = ({ token, userId }: Props) => {
   const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [mode, setMode] = useState<'latest' | 'hot' | 'mine'>('latest')
+  const [selectedMode, setSelectedMode] = useState<'latest' | 'hot' | 'mine'>('latest')
+  // 未登录时「我的」不可用，渲染期推导回退到最新（替代原 effect 内的同步 setState）.
+  const mode = selectedMode === 'mine' && (!token || !userId) ? 'latest' : selectedMode
   const [following, setFollowing] = useState<Set<number>>(new Set())
 
   const [topicDraft, setTopicDraft] = useState({ name: '', description: '' })
@@ -92,18 +94,15 @@ const CommunityPage = ({ token, userId }: Props) => {
   }, [activeTopicId, mode, userId])
 
   useEffect(() => {
-    loadTopics()
-    loadFollowing()
+    // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState.
+    queueMicrotask(() => {
+      loadTopics()
+      loadFollowing()
+    })
   }, [loadTopics, loadFollowing])
 
   useEffect(() => {
-    if (mode === 'mine' && (!token || !userId)) {
-      setMode('latest')
-    }
-  }, [mode, token, userId])
-
-  useEffect(() => {
-    loadPosts()
+    queueMicrotask(loadPosts)
   }, [loadPosts])
 
   const handleCreateTopic = async () => {
@@ -125,7 +124,7 @@ const CommunityPage = ({ token, userId }: Props) => {
       setTopics((prev) => [created, ...prev])
       setActiveTopicId(created.id)
       setTopicDraft({ name: '', description: '' })
-      setMode('latest')
+      setSelectedMode('latest')
       setPosts([])
     } catch (err) {
       setError((err as Error).message || '创建话题失败')
@@ -194,7 +193,7 @@ const CommunityPage = ({ token, userId }: Props) => {
         token,
       )
       setPostDraft({ title: '', content: '', tags: '' })
-      setMode('mine')
+      setSelectedMode('mine')
       setPosts((prev) => [created, ...prev.filter((item) => item.id !== created.id)])
       updateTopicStats(activeTopicId, (topic) => ({
         ...topic,
@@ -245,12 +244,12 @@ const CommunityPage = ({ token, userId }: Props) => {
                   tabIndex={0}
                   onClick={() => {
                     setActiveTopicId(topic.id)
-                    setMode('latest')
+                    setSelectedMode('latest')
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       setActiveTopicId(topic.id)
-                      setMode('latest')
+                      setSelectedMode('latest')
                     }
                   }}
                 >
@@ -308,7 +307,7 @@ const CommunityPage = ({ token, userId }: Props) => {
             <div className="inline-actions">
               <select
                 value={mode}
-                onChange={(e) => setMode(e.target.value as 'latest' | 'hot' | 'mine')}
+                onChange={(e) => setSelectedMode(e.target.value as 'latest' | 'hot' | 'mine')}
               >
                 <option value="latest">最新</option>
                 <option value="hot">热门</option>
@@ -328,7 +327,7 @@ const CommunityPage = ({ token, userId }: Props) => {
                 {mode === 'mine' ? '你还没有发布帖子' : '暂无帖子'}
               </div>
               {mode === 'mine' ? (
-                <button type="button" className="secondary-btn" onClick={() => setMode('latest')}>
+                <button type="button" className="secondary-btn" onClick={() => setSelectedMode('latest')}>
                   去当前话题看看
                 </button>
               ) : null}

@@ -36,10 +36,17 @@ const GuideDetailPage = ({ token, userId }: Props) => {
     [token],
   )
 
+  // 切换攻略时在渲染期重置点赞态（adjust-state-during-render）.
+  const [likedForId, setLikedForId] = useState<string | undefined>(id)
+  if (id !== likedForId) {
+    setLikedForId(id)
+    setLiked(false)
+  }
+
   useEffect(() => {
     if (!id) return
-    setLiked(false)
-    loadGuide(Number(id))
+    // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState.
+    queueMicrotask(() => loadGuide(Number(id)))
   }, [id, loadGuide])
 
   const handleLike = async () => {

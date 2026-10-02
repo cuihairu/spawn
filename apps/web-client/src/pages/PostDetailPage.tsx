@@ -40,17 +40,20 @@ const PostDetailPage = ({ token, userId }: Props) => {
 
   useEffect(() => {
     if (!id) return
-    load(Number(id))
+    // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState.
+    queueMicrotask(() => load(Number(id)))
   }, [id, load])
 
-  useEffect(() => {
-    if (!post) return
+  // post 到达或变化时在渲染期同步编辑草稿（adjust-state-during-render）.
+  const [draftFor, setDraftFor] = useState<Post | null>(null)
+  if (post && post !== draftFor) {
+    setDraftFor(post)
     setDraft({
       title: post.title,
       content: post.content,
       tags: (post.tags ?? []).join(', '),
     })
-  }, [post])
+  }
 
   const formatDate = (dateStr: string) =>
     new Date(dateStr).toLocaleString('zh-CN', {

@@ -34,7 +34,8 @@ const GuidesPage = ({ token, userId }: Props) => {
   }, [filter, token, userId])
 
   useEffect(() => {
-    loadGuides()
+    // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState.
+    queueMicrotask(loadGuides)
   }, [loadGuides])
 
   const formatDate = (dateStr: string) => {

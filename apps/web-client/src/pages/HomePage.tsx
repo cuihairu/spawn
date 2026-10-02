@@ -71,14 +71,16 @@ const HomePage = ({ auth, onAuthChange }: Props) => {
     return `欢迎回来，${auth.user.nickname || auth.user.username}`
   }, [auth])
 
-  useEffect(() => {
-    if (!userId || !token) {
-      setRecommendations([])
-      return
-    }
+  // 未登录时通过渲染期派生隐藏推荐（替代原 effect 内的同步清空 setState）.
+  const shownRecommendations = userId && token ? recommendations : []
 
-    setRecommendations([])
-    hydrateRecommendations(userId, token)
+  useEffect(() => {
+    if (!userId || !token) return
+    // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState.
+    queueMicrotask(() => {
+      setRecommendations([])
+      hydrateRecommendations(userId, token)
+    })
   }, [hydrateRecommendations, token, userId])
 
   return (
@@ -173,14 +175,14 @@ const HomePage = ({ auth, onAuthChange }: Props) => {
             <span className="secondary-text">登录后可体验跨服务推荐链路</span>
           )}
         </div>
-        {recommendations.length === 0 ? (
+        {shownRecommendations.length === 0 ? (
           <div className="empty-state">
             <p>暂无数据</p>
             <small>登录用户后自动回传推荐结果</small>
           </div>
         ) : (
           <div className="game-grid">
-            {recommendations.map((game) => (
+            {shownRecommendations.map((game) => (
               <GameCard key={`reco-${game.id}`} game={game} highlight />
             ))}
           </div>

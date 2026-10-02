@@ -4,6 +4,7 @@
   "scripts": {
     "mobile:typecheck": "pnpm --dir apps/mobile-app exec tsc --noEmit",
     "mobile:lint": "pnpm --dir apps/mobile-app exec eslint .",
-    "web:typecheck": "pnpm --dir apps/web-client exec tsc -b"
+    "web:typecheck": "pnpm --dir apps/web-client exec tsc -b",
+    "web:lint": "pnpm --dir apps/web-client exec eslint ."
   }
 }

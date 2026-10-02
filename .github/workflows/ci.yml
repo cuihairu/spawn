@@ -62,7 +62,7 @@ jobs:
           exit $status
 
   mobile:
-    name: mobile-app lint + typecheck
+    name: web + mobile lint + typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -78,8 +78,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck (tsc --noEmit)
+      - name: Web typecheck (tsc -b)
+        run: pnpm web:typecheck
+
+      - name: Web lint (eslint)
+        run: pnpm web:lint
+
+      - name: Mobile typecheck (tsc --noEmit)
         run: pnpm mobile:typecheck
 
-      - name: Lint (eslint)
+      - name: Mobile lint (eslint)
         run: pnpm mobile:lint

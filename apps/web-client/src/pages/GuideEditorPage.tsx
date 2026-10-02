@@ -53,7 +53,8 @@ const GuideEditorPage = ({ token, userId }: Props) => {
 
   useEffect(() => {
     if (!isEditMode || !id) return
-    loadGuide(Number(id))
+    // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState.
+    queueMicrotask(() => loadGuide(Number(id)))
   }, [id, isEditMode, loadGuide])
 
   const handleSubmit = async (e: React.FormEvent, shouldPublish = false) => {

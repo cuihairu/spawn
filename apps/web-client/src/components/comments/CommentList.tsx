@@ -23,6 +23,16 @@ const CommentList = ({ targetType, targetId, currentUserId, token, onCountChange
   const [replyToId, setReplyToId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // When switching targets, reset composing state during render to avoid replying
+  // to the wrong entity (adjust-state-during-render, 同步 setState 不进 effect).
+  const targetKey = `${targetType}:${targetId}`
+  const [prevTargetKey, setPrevTargetKey] = useState(targetKey)
+  if (targetKey !== prevTargetKey) {
+    setPrevTargetKey(targetKey)
+    setNewComment('')
+    setReplyToId(null)
+  }
+
   const loadComments = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -38,10 +48,8 @@ const CommentList = ({ targetType, targetId, currentUserId, token, onCountChange
   }, [onCountChange, targetType, targetId])
 
   useEffect(() => {
-    // When switching targets, reset composing state to avoid replying to the wrong entity.
-    setNewComment('')
-    setReplyToId(null)
-    loadComments()
+    // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState.
+    queueMicrotask(loadComments)
   }, [loadComments])
 
   const handleSubmit = async (e: React.FormEvent) => {
