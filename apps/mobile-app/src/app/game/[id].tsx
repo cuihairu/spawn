@@ -3,13 +3,14 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { router, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { fetchGameById, type Game } from '../../api/client';
+import { fetchGameById, fetchGuides, type Game, type Guide } from '../../api/client';
 import { colors } from '../../constants/colors';
 
 // 游戏详情（Stack 动态路由 /game/[id]）：GET /games/:id（返回 { game } 包裹）。
 export default function GameDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [game, setGame] = useState<Game | null>(null);
+  const [guides, setGuides] = useState<Guide[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,10 +28,25 @@ export default function GameDetailScreen() {
     });
   }, [id]);
 
+  // 攻略区（M2）：独立微任务加载，失败静默不阻塞游戏详情
+  const loadGuides = useCallback(() => {
+    if (!id) return;
+    void (async () => {
+      const result = await fetchGuides({ gameId: id, page: 1, pageSize: 3 });
+      setGuides(result.guides);
+    })().catch(() => {
+      // 攻略区是增值信息，加载失败不打扰主内容
+    });
+  }, [id]);
+
   // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState（与 web-client 同款纪律）。
   useEffect(() => {
     queueMicrotask(load);
   }, [load]);
+
+  useEffect(() => {
+    queueMicrotask(loadGuides);
+  }, [loadGuides]);
 
   return (
     <View style={styles.container}>
@@ -119,6 +135,36 @@ export default function GameDetailScreen() {
               </View>
             </View>
           ) : null}
+
+          <View style={styles.section}>
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>攻略</Text>
+              <Pressable
+                hitSlop={8}
+                onPress={() =>
+                  router.push({ pathname: '/guides', params: { game_id: id, title: game.title } })
+                }>
+                <Text style={styles.moreLink}>全部攻略 ›</Text>
+              </Pressable>
+            </View>
+            {guides.length > 0 ? (
+              guides.map((guide) => (
+                <Pressable
+                  key={guide.id}
+                  onPress={() => router.push(`/guide/${guide.id}`)}
+                  style={styles.guideRow}>
+                  <Text style={styles.guideTitle} numberOfLines={1}>
+                    {guide.title}
+                  </Text>
+                  <Text style={styles.guideMeta} numberOfLines={1}>
+                    {guide.author_name} · {guide.views} 次阅读
+                  </Text>
+                </Pressable>
+              ))
+            ) : (
+              <Text style={styles.guideEmpty}>暂无攻略，去社区看看大家的讨论</Text>
+            )}
+          </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>热度</Text>
@@ -233,6 +279,31 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     fontWeight: '600',
+  },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  moreLink: {
+    color: colors.primary,
+    fontSize: 13,
+  },
+  guideRow: {
+    gap: 2,
+    paddingVertical: 4,
+  },
+  guideTitle: {
+    color: colors.text,
+    fontSize: 14,
+  },
+  guideMeta: {
+    color: colors.textMuted,
+    fontSize: 12,
+  },
+  guideEmpty: {
+    color: colors.textMuted,
+    fontSize: 13,
   },
   desc: {
     color: colors.textMuted,

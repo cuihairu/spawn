@@ -5,6 +5,8 @@ import { Platform } from 'react-native';
 const host = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 export const USER_SERVICE_URL = `http://${host}:8888`;
 export const GAME_SERVICE_URL = `http://${host}:8890`;
+export const CONTENT_SERVICE_URL = `http://${host}:8891`;
+export const COMMUNITY_SERVICE_URL = `http://${host}:8892`;
 
 export interface UserInfo {
   id: number;
@@ -115,11 +117,20 @@ interface ApiResponseEnvelope<T> {
 }
 
 // 业务信封请求：code != 200 视为失败并抛 ApiError（信封 code 兼作 status）。
-async function requestEnvelope<T>(url: string, init?: RequestInit): Promise<T> {
-  const payload = await request<ApiResponseEnvelope<T>>(url, init);
+async function requestEnvelopeFull<T extends ApiResponseEnvelope<unknown>>(
+  url: string,
+  init?: RequestInit,
+): Promise<T> {
+  const payload = await request<T>(url, init);
   if (payload.code !== 200) {
     throw new ApiError(payload.message || `请求失败(${payload.code})`, payload.code);
   }
+  return payload;
+}
+
+// 只要 data 字段的信封请求（详情接口）。
+async function requestEnvelope<T>(url: string, init?: RequestInit): Promise<T> {
+  const payload = await requestEnvelopeFull<ApiResponseEnvelope<T>>(url, init);
   return payload.data as T;
 }
 
@@ -176,4 +187,217 @@ export async function fetchGameById(id: string): Promise<Game> {
 export async function fetchFeaturedGames(limit = 20): Promise<Game[]> {
   const payload = await request<{ games: Game[] }>(`${GAME_SERVICE_URL}/games/featured?limit=${limit}`);
   return payload.games ?? [];
+}
+
+// ========== 内容服务（:8891）：攻略 + 评论 ==========
+// 契约见 services/content-service/content.api：HTTP 200 + {code,message,data} 信封，
+// code != 200 为业务失败（如攻略不存在 code 404）；列表带 total/page，分页用 page/page_size。
+
+export interface Guide {
+  id: number;
+  game_id: string;
+  game_title: string;
+  title: string;
+  content: string;
+  summary: string;
+  cover_image?: string;
+  author_id: number;
+  author_name: string;
+  tags?: string[];
+  views: number;
+  likes: number;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GuideListResult {
+  guides: Guide[];
+  total: number;
+  page: number;
+}
+
+export interface GuidesQuery {
+  gameId?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+interface GuideListEnvelope extends ApiResponseEnvelope<Guide[]> {
+  total: number;
+  page: number;
+}
+
+export async function fetchGuides(query: GuidesQuery = {}): Promise<GuideListResult> {
+  const params = new URLSearchParams();
+  params.set('page', String(query.page ?? 1));
+  params.set('page_size', String(query.pageSize ?? 20));
+  if (query.gameId) params.set('game_id', query.gameId);
+  const payload = await requestEnvelopeFull<GuideListEnvelope>(
+    `${CONTENT_SERVICE_URL}/api/v1/guides?${params.toString()}`,
+  );
+  return { guides: payload.data ?? [], total: payload.total, page: payload.page };
+}
+
+export async function fetchGuideById(id: number): Promise<Guide> {
+  return requestEnvelope<Guide>(`${CONTENT_SERVICE_URL}/api/v1/guides/${id}`);
+}
+
+export interface Comment {
+  id: number;
+  target_type: string;
+  target_id: number;
+  user_id: number;
+  user_name: string;
+  content: string;
+  likes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CommentListResult {
+  comments: Comment[];
+  total: number;
+}
+
+interface CommentListEnvelope extends ApiResponseEnvelope<Comment[]> {
+  total: number;
+  page: number;
+}
+
+export async function fetchComments(targetId: number, page = 1, pageSize = 20): Promise<CommentListResult> {
+  const params = new URLSearchParams();
+  params.set('target_type', 'guide');
+  params.set('target_id', String(targetId));
+  params.set('page', String(page));
+  params.set('page_size', String(pageSize));
+  const payload = await requestEnvelopeFull<CommentListEnvelope>(
+    `${CONTENT_SERVICE_URL}/api/v1/comments?${params.toString()}`,
+  );
+  return { comments: payload.data ?? [], total: payload.total };
+}
+
+// 发表评论（需 Bearer；未登录/过期走 401 统一处理）。回复层级（parent_id）首期不启用。
+export async function createComment(targetId: number, content: string, token: string): Promise<Comment> {
+  return requestEnvelope<Comment>(`${CONTENT_SERVICE_URL}/api/v1/comments`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ target_type: 'guide', target_id: targetId, content }),
+  });
+}
+
+// ========== 社区服务（:8892）：话题 + 帖子 ==========
+// 契约见 services/community/community.api：GET 返回裸 {posts|topics, total}（HTTP 状态即成败）；
+// 点赞/分享返回 {code:0,message:"ok"}，计数单调累加（无取消接口）。
+
+export interface Topic {
+  id: number;
+  name: string;
+  description: string;
+  icon?: string;
+  cover_image?: string;
+  post_count: number;
+  follower_count: number;
+  is_official: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Post {
+  id: number;
+  topic_id: number;
+  author_id: number;
+  author_name?: string;
+  title: string;
+  content: string;
+  images?: string[];
+  type: string;
+  tags?: string[];
+  view_count: number;
+  like_count: number;
+  comment_count: number;
+  share_count: number;
+  is_pinned: boolean;
+  is_hot: boolean;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PostListResult {
+  posts: Post[];
+  total: number;
+}
+
+export async function fetchTopics(limit = 20, offset = 0): Promise<Topic[]> {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  const payload = await request<{ topics: Topic[]; total: number }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/topics?${params.toString()}`,
+  );
+  return payload.topics ?? [];
+}
+
+export interface PostsQuery {
+  topicId?: number;
+  authorId?: number;
+  hot?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export async function fetchPosts(query: PostsQuery = {}): Promise<PostListResult> {
+  const params = new URLSearchParams();
+  if (query.topicId) params.set('topic_id', String(query.topicId));
+  if (query.authorId) params.set('author_id', String(query.authorId));
+  params.set('limit', String(query.limit ?? 20));
+  params.set('offset', String(query.offset ?? 0));
+  const path = query.hot ? '/posts/hot' : '/posts';
+  const payload = await request<{ posts: Post[]; total: number }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1${path}?${params.toString()}`,
+  );
+  return { posts: payload.posts ?? [], total: payload.total ?? 0 };
+}
+
+export async function fetchPostById(id: number): Promise<Post> {
+  const payload = await request<{ post: Post }>(`${COMMUNITY_SERVICE_URL}/api/v1/posts/${id}`);
+  return payload.post;
+}
+
+export interface CreatePostPayload {
+  topicId: number;
+  title: string;
+  content: string;
+}
+
+export async function createPost(payload: CreatePostPayload, token: string): Promise<Post> {
+  const result = await request<{ post: Post }>(`${COMMUNITY_SERVICE_URL}/api/v1/posts`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      topic_id: payload.topicId,
+      title: payload.title,
+      content: payload.content,
+      type: 'discussion',
+    }),
+  });
+  return result.post;
+}
+
+// 点赞/分享：空对象体（LikePostReq/SharePostReq 只有路径参数），成功 {code:0}。
+export async function likePost(id: number, token: string): Promise<void> {
+  await request(`${COMMUNITY_SERVICE_URL}/api/v1/posts/${id}/like`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({}),
+  });
+}
+
+export async function sharePost(id: number, token: string): Promise<void> {
+  await request(`${COMMUNITY_SERVICE_URL}/api/v1/posts/${id}/share`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({}),
+  });
 }

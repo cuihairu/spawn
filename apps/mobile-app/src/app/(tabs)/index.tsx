@@ -17,7 +17,7 @@ import { colors } from '../../constants/colors';
 
 const PAGE_SIZE = 20;
 
-// 游戏库 Tab：关键词搜索 + 按热度分页浏览，顶栏入口进榜单页。
+// 游戏库 Tab：关键词搜索 + 按热度分页浏览，顶栏入口进榜单页/攻略广场。
 export default function GamesScreen() {
   const [keywordInput, setKeywordInput] = useState('');
   const [keyword, setKeyword] = useState(''); // 提交后的搜索词，空串 = 全量热度榜
@@ -101,11 +101,18 @@ export default function GamesScreen() {
             <Text style={styles.searchBtnText}>搜索</Text>
           </Pressable>
         </View>
-        <Pressable style={styles.rankEntry} onPress={() => router.push('/rankings')}>
-          <Ionicons name="flame" size={16} color={colors.primary} />
-          <Text style={styles.rankEntryText}>热门榜单</Text>
-          <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
-        </Pressable>
+        <View style={styles.entryRow}>
+          <Pressable style={[styles.rankEntry, styles.entryCell]} onPress={() => router.push('/rankings')}>
+            <Ionicons name="flame" size={16} color={colors.primary} />
+            <Text style={styles.rankEntryText}>热门榜单</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+          </Pressable>
+          <Pressable style={[styles.rankEntry, styles.entryCell]} onPress={() => router.push('/guides')}>
+            <Ionicons name="book" size={16} color={colors.primary} />
+            <Text style={styles.rankEntryText}>攻略</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+          </Pressable>
+        </View>
       </View>
 
       {keyword ? (
@@ -127,7 +134,11 @@ export default function GamesScreen() {
         onEndReached={loadMore}
         onEndReachedThreshold={0.4}
         ListEmptyComponent={
-          loading ? null : (
+          loading ? (
+            <View style={styles.empty}>
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          ) : (
             <View style={styles.empty}>
               <Text style={styles.emptyText}>{error ?? '没有找到相关游戏'}</Text>
               {error ? (
@@ -222,6 +233,13 @@ const styles = StyleSheet.create({
     color: '#1a1105',
     fontSize: 14,
     fontWeight: '600',
+  },
+  entryRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  entryCell: {
+    flex: 1,
   },
   rankEntry: {
     flexDirection: 'row',

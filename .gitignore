@@ -37,5 +37,8 @@ node_modules/
 # 服务本地运行时数据（game-catalog 默认 DSN file:data/games.db）
 services/game-catalog/data/
 
+# Expo 本地状态（误从仓根跑 expo CLI 时会生成在根目录）
+.expo/
+
 # Claude Code session settings
 .claude/

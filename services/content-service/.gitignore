@@ -17,8 +17,8 @@ go.work
 # Compiled binary
 content
 
-# Data files (if you want to keep them local)
-data/*.json
+# Data files (local runtime DB, e.g. file:data/content.db)
+data/
 
 # IDE specific files
 .idea/
