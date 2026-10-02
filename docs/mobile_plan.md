@@ -78,7 +78,7 @@
 | 期 | 内容 | 验收标准 | 周期 |
 |----|------|---------|------|
 | **M0 工程骨架** | Expo 脚手架落 `apps/mobile-app`、pnpm workspace 接入、TS strict、ESLint 对齐 web-client、导航框架（底部 Tab：游戏/社区/我的）、CI 接入现有 gofmt/build 门禁旁路（lint + tsc） | Android 模拟器跑通空壳 App，三 Tab 可切换，CI 绿 | 1 周 | ✅ 2026-10-02 首批落地（环境无模拟器，以 `tsc` + `eslint` + `expo export --platform android` 产物走查替代真机验收，真机回归并入 M1） |
-| **M1 浏览 + 账号** | 登录/注册（含 JWT SecureStore 与 401 跳转）、游戏库列表/搜索/详情、榜单页 | 真机登录 → 浏览 → 搜索 → 详情全链路；token 重启存活 | 2 周 |
+| **M1 浏览 + 账号** | 登录/注册（含 JWT SecureStore 与 401 跳转）、游戏库列表/搜索/详情、榜单页 | 真机登录 → 浏览 → 搜索 → 详情全链路；token 重启存活 | 2 周 | ✅ 2026-10-03 功能落地（环境无模拟器/真机：后端契约走查用本地双服务 + curl 全链路验证；App 侧以 `tsc` + `eslint` + `expo export --platform android` 产物走查替代；token 重启存活依赖 SecureStore 真机行为，M0+M1 真机回归顺延至下一有设备批次） |
 | **M2 内容 + 社区** | 攻略阅读 + 评论、帖子流/话题/发帖/点赞；下拉刷新 + 触底分页 | 真机完成「看攻略→评论」「看帖→点赞→发帖」闭环 | 2–3 周 |
 | **M3 关系 + 收尾** | 关注/关注流、个人中心、本地推送、深链分享卡；Android 出 release 包（EAS 或本地 gradle） | Android 可安装包走完全部已上功能；iOS TestFlight 侧载验证 | 2 周 |
 | **M4（增量，另立项）** | data-panel 落地后的战绩面板；api-gateway BFF 化后统一切网关 | — | 不在本计划内 |
