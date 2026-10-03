@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
@@ -13,6 +12,8 @@ import { router } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import {
+  fetchFollowedPosts,
+  fetchFollowingTopics,
   fetchPosts,
   fetchTopics,
   likePost,
@@ -26,20 +27,23 @@ import { colors } from '../../constants/colors';
 
 const PAGE_SIZE = 20;
 
-type FeedMode = 'latest' | 'hot';
+type FeedMode = 'latest' | 'hot' | 'follow';
 
-// 社区 Tab（M2）：话题圈子筛选 + 最新/热门双模式帖子流，下拉刷新 + 触底分页；
-// 卡片内点赞/分享（后端计数单调累加，成功即 +1，失败回滚）；发帖走 /compose。
+// 社区 Tab（M2 帖子流 + M3 关注）：话题圈子筛选 + 最新/热门/关注三模式，
+// 下拉刷新 + 触底分页；卡片内点赞/分享（计数单调累加，成功即 +1，失败回滚）；
+// 关注模式需登录（未登录给登录引导空态），话题条上标 ★ 已关注圈子，
+// 尾部「圈子管理」进关注/取关页；发帖走 /compose。
 export default function CommunityScreen() {
   const { token } = useAuth();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [topicId, setTopicId] = useState<number | null>(null); // null = 全部圈子
   const [mode, setMode] = useState<FeedMode>('latest');
+  const [followedTopicIds, setFollowedTopicIds] = useState<Set<number>>(new Set());
   const [posts, setPosts] = useState<Post[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // 筛选切换/发帖返回/详情页互动后自增，驱动流重载
+  // 筛选切换/发帖返回/关注关系变化后自增，驱动流重载
   const [nonce, setNonce] = useState(0);
 
   // 话题条一次性加载（失败不阻塞帖子流）
@@ -52,28 +56,45 @@ export default function CommunityScreen() {
     });
   }, []);
 
-  // 发帖成功/详情页点赞分享后广播，触发流刷新
+  // 发帖成功/关注关系变化后广播，触发流刷新
   useEffect(() => onPostsChanged(() => setNonce((n) => n + 1)), []);
 
   // 首屏与筛选切换：发起加载推迟到微任务，effect 同步栈内不 setState（M1 同款纪律）
   const load = useCallback(() => {
     setLoading(true);
     void (async () => {
-      const result = await fetchPosts({
-        topicId: topicId ?? undefined,
-        hot: mode === 'hot',
-        limit: PAGE_SIZE,
-        offset: 0,
-      });
+      // 关注模式需登录；未登录按空集处理，空态由 ListEmptyComponent 呈现
+      const result =
+        mode === 'follow'
+          ? token
+            ? await fetchFollowedPosts(token, PAGE_SIZE, 0)
+            : { posts: [] as Post[], total: 0 }
+          : await fetchPosts({
+              topicId: topicId ?? undefined,
+              hot: mode === 'hot',
+              limit: PAGE_SIZE,
+              offset: 0,
+            });
       setPosts(result.posts);
       setTotal(result.total);
       setError(null);
+      // 关注标记与流一并刷新（未登录清空；失败不阻塞流展示）
+      if (token) {
+        try {
+          const followed = await fetchFollowingTopics(token);
+          setFollowedTopicIds(new Set(followed.map((t) => t.id)));
+        } catch {
+          // 标记是辅助信息，静默降级
+        }
+      } else {
+        setFollowedTopicIds(new Set());
+      }
     })().catch((err: unknown) => {
       setError(err instanceof Error ? err.message : '加载帖子失败');
     }).finally(() => {
       setLoading(false);
     });
-  }, [topicId, mode]);
+  }, [topicId, mode, token]);
 
   useEffect(() => {
     queueMicrotask(load);
@@ -89,12 +110,15 @@ export default function CommunityScreen() {
     if (loading || posts.length >= total) return;
     setLoading(true);
     void (async () => {
-      const result = await fetchPosts({
-        topicId: topicId ?? undefined,
-        hot: mode === 'hot',
-        limit: PAGE_SIZE,
-        offset: posts.length,
-      });
+      const result =
+        mode === 'follow'
+          ? await fetchFollowedPosts(token as string, PAGE_SIZE, posts.length)
+          : await fetchPosts({
+              topicId: topicId ?? undefined,
+              hot: mode === 'hot',
+              limit: PAGE_SIZE,
+              offset: posts.length,
+            });
       setPosts((prev) => [...prev, ...result.posts]);
       setTotal(result.total);
     })().catch((err: unknown) => {
@@ -135,6 +159,41 @@ export default function CommunityScreen() {
 
   const topicName = (id: number) => topics.find((t) => t.id === id)?.name ?? '话题';
 
+  const renderEmpty = () => {
+    if (loading) return null;
+    if (mode === 'follow' && !token) {
+      return (
+        <View style={styles.empty}>
+          <Text style={styles.emptyText}>登录后才能看到你关注的内容</Text>
+          <Pressable style={styles.retryBtn} onPress={() => router.push('/login')}>
+            <Text style={styles.retryText}>去登录</Text>
+          </Pressable>
+        </View>
+      );
+    }
+    if (mode === 'follow' && !error) {
+      return (
+        <View style={styles.empty}>
+          <Text style={styles.emptyText}>还没有关注的内容</Text>
+          <Text style={styles.emptyHint}>去圈子页关注感兴趣的话题，或在帖子详情关注作者</Text>
+          <Pressable style={styles.retryBtn} onPress={() => router.push('/topics')}>
+            <Text style={styles.retryText}>去逛圈子</Text>
+          </Pressable>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.empty}>
+        <Text style={styles.emptyText}>{error ?? '这个圈子还没有帖子'}</Text>
+        {error ? (
+          <Pressable style={styles.retryBtn} onPress={refresh}>
+            <Text style={styles.retryText}>重试</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -163,10 +222,13 @@ export default function CommunityScreen() {
             style={[styles.topicChip, topicId === topic.id && styles.topicChipActive]}
             onPress={() => setTopicId(topic.id)}>
             <Text style={[styles.topicChipText, topicId === topic.id && styles.topicChipTextActive]}>
-              {topic.name}
+              {followedTopicIds.has(topic.id) ? `★ ${topic.name}` : topic.name}
             </Text>
           </Pressable>
         ))}
+        <Pressable style={styles.topicManage} onPress={() => router.push('/topics')}>
+          <Text style={styles.topicManageText}>圈子管理 ›</Text>
+        </Pressable>
       </ScrollView>
 
       <View style={styles.modeRow}>
@@ -179,6 +241,11 @@ export default function CommunityScreen() {
           style={[styles.modeBtn, mode === 'hot' && styles.modeBtnActive]}
           onPress={() => setMode('hot')}>
           <Text style={[styles.modeText, mode === 'hot' && styles.modeTextActive]}>热门</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.modeBtn, mode === 'follow' && styles.modeBtnActive]}
+          onPress={() => setMode('follow')}>
+          <Text style={[styles.modeText, mode === 'follow' && styles.modeTextActive]}>关注</Text>
         </Pressable>
         <Text style={styles.totalText}>共 {total} 帖</Text>
       </View>
@@ -193,22 +260,7 @@ export default function CommunityScreen() {
         }
         onEndReached={loadMore}
         onEndReachedThreshold={0.4}
-        ListEmptyComponent={
-          loading ? (
-            <View style={styles.empty}>
-              <ActivityIndicator color={colors.primary} />
-            </View>
-          ) : (
-            <View style={styles.empty}>
-              <Text style={styles.emptyText}>{error ?? '这个圈子还没有帖子'}</Text>
-              {error ? (
-                <Pressable style={styles.retryBtn} onPress={refresh}>
-                  <Text style={styles.retryText}>重试</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          )
-        }
+        ListEmptyComponent={renderEmpty}
         ListFooterComponent={
           loading && posts.length > 0 ? (
             <View style={styles.footer}>
@@ -318,6 +370,13 @@ const styles = StyleSheet.create({
   topicChipTextActive: {
     color: '#1a1105',
     fontWeight: '600',
+  },
+  topicManage: {
+    justifyContent: 'center',
+  },
+  topicManageText: {
+    color: colors.primary,
+    fontSize: 13,
   },
   modeRow: {
     flexDirection: 'row',
@@ -441,12 +500,18 @@ const styles = StyleSheet.create({
   },
   empty: {
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     paddingVertical: 48,
+    paddingHorizontal: 24,
   },
   emptyText: {
     color: colors.textMuted,
     fontSize: 14,
+  },
+  emptyHint: {
+    color: colors.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
   },
   retryBtn: {
     borderWidth: 1,

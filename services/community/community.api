@@ -104,6 +104,11 @@ type (
 	FollowUserReq {
 		UserId int64 `path:"user_id"`
 	}
+	// 关注流（M3）：关注话题 ∪ 关注作者的帖子
+	GetFollowedPostsReq {
+		Limit  int64 `form:"limit,optional,default=20"`
+		Offset int64 `form:"offset,optional,default=0"`
+	}
 	// 响应
 	PostResp {
 		Post Post `json:"post"`
@@ -121,6 +126,9 @@ type (
 	}
 	FollowingResp {
 		Topics []Topic `json:"topics"`
+	}
+	FollowingUsersResp {
+		UserIds []int64 `json:"user_ids"` // community 不持有用户资料，仅回 id
 	}
 	CommonResp {
 		Code    int64  `json:"code"`
@@ -148,6 +156,9 @@ service community-api {
 
 	@handler SharePost
 	post /posts/:id/share (SharePostReq) returns (CommonResp)
+
+	@handler GetFollowedPosts
+	get /posts/followed (GetFollowedPostsReq) returns (PostsResp)
 }
 
 @server (
@@ -207,5 +218,8 @@ service community-api {
 
 	@handler UnfollowUser
 	delete /users/:user_id/follow (FollowUserReq) returns (CommonResp)
+
+	@handler GetFollowingUsers
+	get /users/following returns (FollowingUsersResp)
 }
 

@@ -22,6 +22,7 @@ type FollowStore interface {
 	FollowTopic(userId, topicId int64) bool
 	UnfollowTopic(userId, topicId int64) bool
 	ListFollowingTopicIds(userId int64) []int64
+	ListFollowingUserIds(userId int64) []int64
 	FollowUser(userId, targetUserId int64) bool
 	UnfollowUser(userId, targetUserId int64) bool
 }
@@ -154,4 +155,30 @@ func (m *FollowModel) FollowUser(userId, targetUserId int64) bool {
 // UnfollowUser 取消关注用户：本无关系返回 false。
 func (m *FollowModel) UnfollowUser(userId, targetUserId int64) bool {
 	return m.deleteFollow(userId, "user", targetUserId)
+}
+
+// ListFollowingUserIds 列出用户关注的用户 id，升序（M3 关注流：帖子作者
+// 命中集合即进关注流；排序口径与 ListFollowingTopicIds 一致）。
+func (m *FollowModel) ListFollowingUserIds(userId int64) []int64 {
+	rows, err := m.db.Query(
+		`SELECT target_id FROM follows WHERE user_id = ? AND target_type = 'user' ORDER BY target_id`,
+		userId,
+	)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil
+	}
+	return out
 }

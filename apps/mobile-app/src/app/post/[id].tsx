@@ -10,22 +10,46 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { fetchPostById, likePost, sharePost, type Post } from '../../api/client';
+import {
+  fetchFollowingUserIds,
+  fetchPostById,
+  followUser,
+  likePost,
+  sharePost,
+  unfollowUser,
+  type Post,
+} from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { emitPostsChanged } from '../../lib/postsBus';
 import { colors } from '../../constants/colors';
 
-// 帖子详情（Stack /post/[id]）：正文 + 计数展示 + 点赞/分享（成功后广播社区流刷新）。
+// 帖子详情（Stack /post/[id]）：正文 + 计数展示 + 点赞/分享 + 关注作者
+//（成功后广播社区流刷新；关注状态取自 GET /users/following + 会话内乐观切换）。
 // 后端无帖子评论接口，comment_count 仅作展示。
 export default function PostDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const postId = Number(id);
   const [post, setPost] = useState<Post | null>(null);
+  const [followingIds, setFollowingIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // 已关注用户集合（仅登录时拉取；失败按空集降级——按钮显示「关注」）
+  useEffect(() => {
+    if (!token) {
+      queueMicrotask(() => setFollowingIds(new Set()));
+      return;
+    }
+    void (async () => {
+      const ids = await fetchFollowingUserIds(token);
+      setFollowingIds(new Set(ids));
+    })().catch(() => {
+      // 状态标记是辅助信息，静默降级
+    });
+  }, [token]);
 
   const load = useCallback(() => {
     if (!Number.isFinite(postId)) return;
@@ -73,6 +97,41 @@ export default function PostDetailScreen() {
       .catch((err: unknown) => {
         setPost((prev) => (prev ? { ...prev, share_count: prev.share_count - 1 } : prev));
         setActionError(err instanceof Error ? err.message : '分享失败');
+      });
+  };
+
+  const onFollowAuthor = () => {
+    if (!post) return;
+    const authorId = post.author_id;
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+    const wasFollowed = followingIds.has(authorId);
+    // 乐观切换，失败回滚
+    setFollowingIds((prev) => {
+      const next = new Set(prev);
+      if (wasFollowed) {
+        next.delete(authorId);
+      } else {
+        next.add(authorId);
+      }
+      return next;
+    });
+    const action = wasFollowed ? unfollowUser(authorId, token) : followUser(authorId, token);
+    void action
+      .then(() => emitPostsChanged())
+      .catch((err: unknown) => {
+        setFollowingIds((prev) => {
+          const rollback = new Set(prev);
+          if (wasFollowed) {
+            rollback.add(authorId);
+          } else {
+            rollback.delete(authorId);
+          }
+          return rollback;
+        });
+        setActionError(err instanceof Error ? err.message : wasFollowed ? '取消关注失败' : '关注失败');
       });
   };
 
@@ -133,10 +192,25 @@ export default function PostDetailScreen() {
             <Text style={styles.typeBadge}>{post.type}</Text>
           </View>
           <Text style={styles.title}>{post.title}</Text>
-          <View style={styles.metaRow}>
-            <Text style={styles.metaText}>{post.author_name ?? `用户${post.author_id}`}</Text>
-            <Text style={styles.metaDot}>·</Text>
-            <Text style={styles.metaText}>{post.created_at.slice(0, 10)}</Text>
+          <View style={styles.authorRow}>
+            <View style={styles.authorAvatar}>
+              <Text style={styles.authorInitial}>
+                {(post.author_name ?? `用户${post.author_id}`).slice(0, 1)}
+              </Text>
+            </View>
+            <View style={styles.authorMain}>
+              <Text style={styles.authorName}>{post.author_name ?? `用户${post.author_id}`}</Text>
+              <Text style={styles.authorDate}>{post.created_at.slice(0, 10)}</Text>
+            </View>
+            {user?.id !== post.author_id ? (
+              <Pressable
+                style={[styles.followBtn, followingIds.has(post.author_id) && styles.followBtnActive]}
+                onPress={onFollowAuthor}>
+                <Text style={[styles.followText, followingIds.has(post.author_id) && styles.followTextActive]}>
+                  {followingIds.has(post.author_id) ? '已关注' : '+ 关注'}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
           {post.tags?.length ? (
             <View style={styles.tagRow}>
@@ -276,18 +350,57 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 28,
   },
-  metaRow: {
+  authorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 10,
   },
-  metaText: {
+  authorAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  authorInitial: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  authorMain: {
+    flex: 1,
+    gap: 2,
+  },
+  authorName: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  authorDate: {
     color: colors.textMuted,
-    fontSize: 13,
+    fontSize: 12,
   },
-  metaDot: {
-    color: colors.border,
+  followBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  followBtnActive: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  followText: {
+    color: '#1a1105',
     fontSize: 13,
+    fontWeight: '600',
+  },
+  followTextActive: {
+    color: colors.textMuted,
   },
   tagRow: {
     flexDirection: 'row',

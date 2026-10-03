@@ -40,6 +40,15 @@ type FollowingResp struct {
 	Topics []Topic `json:"topics"`
 }
 
+type FollowingUsersResp struct {
+	UserIds []int64 `json:"user_ids"`
+}
+
+type GetFollowedPostsReq struct {
+	Limit  int64 `form:"limit,optional,default=20"`
+	Offset int64 `form:"offset,optional,default=0"`
+}
+
 type GetPostReq struct {
 	Id int64 `path:"id"`
 }

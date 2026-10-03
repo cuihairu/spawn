@@ -401,3 +401,63 @@ export async function sharePost(id: number, token: string): Promise<void> {
     body: JSON.stringify({}),
   });
 }
+
+// ========== 关注关系 + 关注流（M3，均需 Bearer） ==========
+
+// 关注流：关注话题 ∪ 关注作者的帖子，created_at 倒序，limit/offset 分页；
+// 无任何关注 → 空列表 + total 0（空态由界面呈现）。
+export async function fetchFollowedPosts(token: string, limit = 20, offset = 0): Promise<PostListResult> {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  const payload = await request<{ posts: Post[]; total: number }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/posts/followed?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  return { posts: payload.posts ?? [], total: payload.total ?? 0 };
+}
+
+export async function fetchFollowingTopics(token: string): Promise<Topic[]> {
+  const payload = await request<{ topics: Topic[] }>(`${COMMUNITY_SERVICE_URL}/api/v1/topics/following`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return payload.topics ?? [];
+}
+
+// 已关注用户 id 列表（community 不持有用户资料，名字由帖子 author_name 自带）
+export async function fetchFollowingUserIds(token: string): Promise<number[]> {
+  const payload = await request<{ user_ids: number[] }>(`${COMMUNITY_SERVICE_URL}/api/v1/users/following`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return payload.user_ids ?? [];
+}
+
+export async function followTopic(topicId: number, token: string): Promise<void> {
+  await request(`${COMMUNITY_SERVICE_URL}/api/v1/topics/${topicId}/follow`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({}),
+  });
+}
+
+export async function unfollowTopic(topicId: number, token: string): Promise<void> {
+  await request(`${COMMUNITY_SERVICE_URL}/api/v1/topics/${topicId}/follow`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function followUser(userId: number, token: string): Promise<void> {
+  await request(`${COMMUNITY_SERVICE_URL}/api/v1/users/${userId}/follow`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({}),
+  });
+}
+
+export async function unfollowUser(userId: number, token: string): Promise<void> {
+  await request(`${COMMUNITY_SERVICE_URL}/api/v1/users/${userId}/follow`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}

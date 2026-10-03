@@ -98,7 +98,7 @@ func decode(t *testing.T, payload []byte) map[string]interface{} {
 	return m
 }
 
-// TestAllRoutesReachable 遍历 RegisterHandlers 注册的全部 16 条路由，
+// TestAllRoutesReachable 遍历 RegisterHandlers 注册的全部 18 条路由，
 // 每条至少一条 2xx/4xx 用例，断言无任何 500。
 func TestAllRoutesReachable(t *testing.T) {
 	base, alice, bob := startRouteTestServer(t)
@@ -176,6 +176,12 @@ func TestAllRoutesReachable(t *testing.T) {
 		t.Fatalf("GET /posts/hot status=%d, want 200 (static beats :id)", status)
 	}
 
+	// GET /posts/followed（M3 关注流）：匿名 401 —— 若误落到公开组
+	// GET /posts/:id 会回 404，401 同时证明静态段优先与认证组归属
+	if status, _ = call(t, http.MethodGet, base+"/api/v1/posts/followed", "", ""); status != 401 {
+		t.Fatalf("GET /posts/followed anonymous status=%d, want 401 (auth group + static beats :id)", status)
+	}
+
 	// --- 认证写：posts（作者/非作者）---
 	if status, _ = call(t, http.MethodPut, base+"/api/v1/posts/"+postId, bob,
 		`{"title":"hacked"}`); status != 403 {
@@ -208,6 +214,62 @@ func TestAllRoutesReachable(t *testing.T) {
 	}
 	if status, _ = call(t, http.MethodDelete, base+"/api/v1/users/200/follow", alice, ""); status != 200 {
 		t.Fatalf("DELETE /users/:id/follow status=%d, want 200", status)
+	}
+
+	// --- M3 关注流 + 已关注用户列表 ---
+	if status, _ = call(t, http.MethodGet, base+"/api/v1/users/following", "", ""); status != 401 {
+		t.Fatalf("GET /users/following anonymous status=%d, want 401", status)
+	}
+	if status, payload = call(t, http.MethodGet, base+"/api/v1/users/following", alice, ""); status != 200 {
+		t.Fatalf("GET /users/following status=%d body=%s", status, payload)
+	} else if _, ok := decode(t, payload)["user_ids"]; !ok {
+		t.Fatalf("GET /users/following body must carry user_ids, got %s", payload)
+	}
+
+	// alice 关注 bob + 话题 1（种子帖所在）→ 已关注列表含 200、关注流非空且分页可用
+	if status, _ = call(t, http.MethodPost, base+"/api/v1/users/200/follow", alice, ""); status != 200 {
+		t.Fatalf("POST /users/:id/follow (re-follow) status=%d", status)
+	}
+	if status, payload = call(t, http.MethodGet, base+"/api/v1/users/following", alice, ""); status != 200 {
+		t.Fatalf("GET /users/following status=%d", status)
+	} else {
+		ids := decode(t, payload)["user_ids"].([]interface{})
+		if len(ids) != 1 || ids[0].(float64) != 200 {
+			t.Fatalf("user_ids want [200], got %s", payload)
+		}
+	}
+	if status, _ = call(t, http.MethodPost, base+"/api/v1/topics/1/follow", alice, ""); status != 200 {
+		t.Fatalf("POST /topics/1/follow status=%d", status)
+	}
+	if status, payload = call(t, http.MethodGet, base+"/api/v1/posts/followed?limit=1&offset=0", alice, ""); status != 200 {
+		t.Fatalf("GET /posts/followed status=%d body=%s", status, payload)
+	} else {
+		body := decode(t, payload)
+		if total, _ := body["total"].(float64); total < 1 {
+			t.Fatalf("followed feed of topic-1 follower must be non-empty, got %s", payload)
+		}
+		if posts, _ := body["posts"].([]interface{}); len(posts) != 1 {
+			t.Fatalf("limit=1 must cap page at 1 item, got %s", payload)
+		}
+	}
+	// 空态：bob 未关注任何 → 空列表 + total 0
+	if status, payload = call(t, http.MethodGet, base+"/api/v1/posts/followed", bob, ""); status != 200 {
+		t.Fatalf("GET /posts/followed (empty) status=%d", status)
+	} else {
+		body := decode(t, payload)
+		if total, _ := body["total"].(float64); total != 0 {
+			t.Fatalf("empty follow set must yield total 0, got %s", payload)
+		}
+		if posts, _ := body["posts"].([]interface{}); len(posts) != 0 {
+			t.Fatalf("empty follow set must yield [] posts, got %s", payload)
+		}
+	}
+	// 收尾取关，恢复现场
+	if status, _ = call(t, http.MethodDelete, base+"/api/v1/users/200/follow", alice, ""); status != 200 {
+		t.Fatalf("DELETE /users/:id/follow cleanup status=%d", status)
+	}
+	if status, _ = call(t, http.MethodDelete, base+"/api/v1/topics/1/follow", alice, ""); status != 200 {
+		t.Fatalf("DELETE /topics/:id/follow cleanup status=%d", status)
 	}
 
 	// --- 认证写：delete post（作者收尾）---

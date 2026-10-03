@@ -29,6 +29,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/users/:user_id/follow",
 					Handler: follow.UnfollowUserHandler(serverCtx),
 				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/users/following",
+					Handler: follow.GetFollowingUsersHandler(serverCtx),
+				},
 			}...,
 		),
 		rest.WithPrefix("/api/v1"),
@@ -62,6 +67,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodPost,
 					Path:    "/posts/:id/share",
 					Handler: post.SharePostHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/posts/followed",
+					Handler: post.GetFollowedPostsHandler(serverCtx),
 				},
 			}...,
 		),

@@ -656,3 +656,61 @@ func TestPostModel_PersistsAcrossReopen(t *testing.T) {
 		t.Fatalf("reopened total = %d, want 1", total)
 	}
 }
+
+func TestPostModel_ListByFollow(t *testing.T) {
+	m := newPostModel(t, true)
+	// 种子：post 1 → topic 1 / author 1001，post 2 → topic 2 / author 1002
+
+	// 话题命中
+	posts, total := m.ListByFollow([]int64{1}, nil, 20, 0)
+	if total != 1 || len(posts) != 1 || posts[0].Id != 1 {
+		t.Fatalf("topic follow: want [1]/total 1, got %v total=%d", ids(posts), total)
+	}
+	// 作者命中
+	posts, total = m.ListByFollow(nil, []int64{1002}, 20, 0)
+	if total != 1 || len(posts) != 1 || posts[0].Id != 2 {
+		t.Fatalf("author follow: want [2]/total 1, got %v total=%d", ids(posts), total)
+	}
+	// 并集去重 + 新帖在前（created_at 倒序）
+	created, err := m.Create(1, 1001, "alice", &types.CreatePostReq{Title: "new", Content: "body"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	posts, total = m.ListByFollow([]int64{1}, []int64{1002}, 20, 0)
+	if total != 3 || len(posts) != 3 || posts[0].Id != created.Id {
+		t.Fatalf("union: want newest-first 3 posts, got %v total=%d", ids(posts), total)
+	}
+	// 分页：limit/offset 窗口 + total 全量
+	posts, total = m.ListByFollow([]int64{1, 2}, []int64{1002}, 1, 1)
+	if total != 3 || len(posts) != 1 {
+		t.Fatalf("pagination window: want 1 item total=3, got %v total=%d", ids(posts), total)
+	}
+	// 越界 offset → 空窗但 total 不变
+	if posts, total = m.ListByFollow([]int64{1, 2}, nil, 20, 99); total != 3 || len(posts) != 0 {
+		t.Fatalf("beyond-end offset: want empty/total 3, got %v total=%d", ids(posts), total)
+	}
+	// 钳制默认：limit<=0 → 20，offset<0 → 0
+	if posts, _ = m.ListByFollow([]int64{1, 2}, nil, 0, -5); len(posts) != 3 {
+		t.Fatalf("clamped defaults: want 3 items, got %v", ids(posts))
+	}
+	// 空关注集 → 空结果
+	if posts, total = m.ListByFollow(nil, nil, 20, 0); total != 0 || len(posts) != 0 {
+		t.Fatalf("empty follows: want empty/0, got %v total=%d", ids(posts), total)
+	}
+	// 软删帖不进关注流
+	if err := m.Delete(created.Id, 1001); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if posts, total = m.ListByFollow([]int64{1}, nil, 20, 0); total != 1 || posts[0].Id != 1 {
+		t.Fatalf("soft-deleted must be excluded, got %v total=%d", ids(posts), total)
+	}
+}
+
+// ids 提取帖子 id 序列，便于失败信息可读。
+func ids(posts []types.Post) []int64 {
+	out := make([]int64, 0, len(posts))
+	for _, p := range posts {
+		out = append(out, p.Id)
+	}
+	return out
+}

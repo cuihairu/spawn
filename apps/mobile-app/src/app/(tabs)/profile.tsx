@@ -93,7 +93,7 @@ export default function ProfileScreen() {
       <Pressable style={styles.logoutBtn} onPress={() => void signOut()}>
         <Text style={styles.logoutText}>退出登录</Text>
       </Pressable>
-      <Text style={styles.hint}>M2/M3 将接入：我的帖子 · 我的攻略 · 关注列表</Text>
+      <Text style={styles.hint}>关注圈子/作者已上线（社区 Tab）；M3 后续：我的帖子 · 我的攻略</Text>
     </View>
   );
 }

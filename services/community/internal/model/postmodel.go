@@ -41,6 +41,7 @@ type PostStore interface {
 	Like(id int64) (*types.Post, error)
 	Share(id int64) (*types.Post, error)
 	List(filter PostListFilter) ([]types.Post, int64)
+	ListByFollow(topicIds, authorIds []int64, limit, offset int64) ([]types.Post, int64)
 	Hot(limit int64) []types.Post
 }
 
@@ -444,6 +445,65 @@ func (m *PostModel) List(filter PostListFilter) ([]types.Post, int64) {
 		start = len(filtered)
 	}
 	end := start + int(filter.Limit)
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+
+	return filtered[start:end], total
+}
+
+// ListByFollow 关注流查询（M3）：帖子属于关注话题或关注作者（并集去重），
+// 仅 published，按 created_at 倒序（同期 id 倒序稳定排序）；分页钳制与
+// List 一致（offset<0 → 0、limit<=0 → 20）。空关注集 → 空结果（空态由
+// 调用方呈现）。读失败返回 nil（与 List 的空集降级一致）。
+func (m *PostModel) ListByFollow(topicIds, authorIds []int64, limit, offset int64) ([]types.Post, int64) {
+	posts := m.allVisible()
+	if posts == nil {
+		return nil, 0
+	}
+
+	topicSet := make(map[int64]struct{}, len(topicIds))
+	for _, id := range topicIds {
+		topicSet[id] = struct{}{}
+	}
+	authorSet := make(map[int64]struct{}, len(authorIds))
+	for _, id := range authorIds {
+		authorSet[id] = struct{}{}
+	}
+
+	var filtered []types.Post
+	for _, p := range posts {
+		if p.Status != "published" {
+			continue
+		}
+		_, inTopic := topicSet[p.TopicId]
+		_, inAuthor := authorSet[p.AuthorId]
+		if !inTopic && !inAuthor {
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+
+	sort.SliceStable(filtered, func(i, j int) bool {
+		if filtered[i].CreatedAt != filtered[j].CreatedAt {
+			return filtered[i].CreatedAt > filtered[j].CreatedAt
+		}
+		return filtered[i].Id > filtered[j].Id
+	})
+
+	total := int64(len(filtered))
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	start := int(offset)
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+	end := start + int(limit)
 	if end > len(filtered) {
 		end = len(filtered)
 	}

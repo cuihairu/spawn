@@ -224,3 +224,38 @@ func TestFollowModel_PersistsAcrossReopen(t *testing.T) {
 		t.Fatal("unfollow after reopen must return true")
 	}
 }
+
+func TestFollowModel_ListFollowingUserIds(t *testing.T) {
+	m := newFollowModel(t)
+
+	if ids := m.ListFollowingUserIds(7); len(ids) != 0 {
+		t.Fatalf("empty follows must yield empty list, got %v", ids)
+	}
+
+	// 用户关注与话题关注同表混存：只回 target_type='user' 的行，升序去重
+	if !m.FollowUser(7, 42) || !m.FollowUser(7, 5) || !m.FollowTopic(7, 3) {
+		t.Fatal("seed follows failed")
+	}
+	ids := m.ListFollowingUserIds(7)
+	if len(ids) != 2 || ids[0] != 5 || ids[1] != 42 {
+		t.Fatalf("want ascending [5 42] without topic rows, got %v", ids)
+	}
+
+	if !m.UnfollowUser(7, 42) {
+		t.Fatal("unfollow existing relation must return true")
+	}
+	if ids = m.ListFollowingUserIds(7); len(ids) != 1 || ids[0] != 5 {
+		t.Fatalf("want [5] after unfollow, got %v", ids)
+	}
+
+	// 用户隔离：他人关注不串号
+	if !m.FollowUser(8, 42) {
+		t.Fatal("other user follow failed")
+	}
+	if ids = m.ListFollowingUserIds(7); len(ids) != 1 || ids[0] != 5 {
+		t.Fatalf("user 7 list must be unaffected, got %v", ids)
+	}
+	if ids = m.ListFollowingUserIds(8); len(ids) != 1 || ids[0] != 42 {
+		t.Fatalf("user 8 want [42], got %v", ids)
+	}
+}
