@@ -219,6 +219,7 @@ export interface GuideListResult {
 
 export interface GuidesQuery {
   gameId?: string;
+  authorId?: number;
   page?: number;
   pageSize?: number;
 }
@@ -228,19 +229,29 @@ interface GuideListEnvelope extends ApiResponseEnvelope<Guide[]> {
   page: number;
 }
 
-export async function fetchGuides(query: GuidesQuery = {}): Promise<GuideListResult> {
+export async function fetchGuides(
+  query: GuidesQuery = {},
+  token?: string | null,
+): Promise<GuideListResult> {
   const params = new URLSearchParams();
   params.set('page', String(query.page ?? 1));
   params.set('page_size', String(query.pageSize ?? 20));
   if (query.gameId) params.set('game_id', query.gameId);
+  // author_id 过滤：我的攻略（个人中心）；带 token 时中间件可选鉴权注入
+  // ctx，作者查自己可见草稿（content-service ListGuidesLogic 契约）
+  if (query.authorId) params.set('author_id', String(query.authorId));
   const payload = await requestEnvelopeFull<GuideListEnvelope>(
     `${CONTENT_SERVICE_URL}/api/v1/guides?${params.toString()}`,
+    token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,
   );
   return { guides: payload.data ?? [], total: payload.total, page: payload.page };
 }
 
-export async function fetchGuideById(id: number): Promise<Guide> {
-  return requestEnvelope<Guide>(`${CONTENT_SERVICE_URL}/api/v1/guides/${id}`);
+export async function fetchGuideById(id: number, token?: string | null): Promise<Guide> {
+  // 可选鉴权：草稿详情仅作者本人（带 Bearer）可读，公开详情匿名可读
+  return requestEnvelope<Guide>(`${CONTENT_SERVICE_URL}/api/v1/guides/${id}`, {
+    ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+  });
 }
 
 export interface Comment {

@@ -46,7 +46,7 @@ export default function GuideDetailScreen() {
     setLoading(true);
     void (async () => {
       const [detail, commentPage] = await Promise.all([
-        fetchGuideById(guideId),
+        fetchGuideById(guideId, token),
         fetchComments(guideId, 1, PAGE_SIZE),
       ]);
       setGuide(detail);
@@ -58,7 +58,7 @@ export default function GuideDetailScreen() {
     }).finally(() => {
       setLoading(false);
     });
-  }, [guideId]);
+  }, [guideId, token]);
 
   useEffect(() => {
     queueMicrotask(load);

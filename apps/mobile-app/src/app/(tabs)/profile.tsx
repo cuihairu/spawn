@@ -3,16 +3,24 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { router } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { fetchCurrentUser } from '../../api/client';
+import { fetchCurrentUser, fetchGuides, fetchPosts, type Guide, type Post } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { colors } from '../../constants/colors';
 
+const PAGE_SIZE = 10; // 个人中心列表只展示前 10 条，超出用 total 提示
+
 // 我的 Tab：未登录给登录入口；已登录展示资料（GET /users/:id 带 Bearer，
-// 顺带验证 401 跳转链路）+ 退出登录。
+// 顺带验证 401 跳转链路）+ 我的帖子/我的攻略（M3 个人中心切片）+ 退出登录。
 export default function ProfileScreen() {
   const { token, user, ready, signOut } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [myPosts, setMyPosts] = useState<Post[]>([]);
+  const [postTotal, setPostTotal] = useState(0);
+  const [myGuides, setMyGuides] = useState<Guide[]>([]);
+  const [guideTotal, setGuideTotal] = useState(0);
+  const [sectionsLoading, setSectionsLoading] = useState(false);
+  const [sectionsError, setSectionsError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     if (!token || !user) return;
@@ -32,6 +40,43 @@ export default function ProfileScreen() {
   useEffect(() => {
     queueMicrotask(refresh);
   }, [refresh]);
+
+  // 我的帖子（community GET /posts?author_id=）+ 我的攻略（content-service
+  // GET /guides?author_id= 带 Bearer——作者查自己可见草稿，中间件可选鉴权）。
+  // 失败只降级区块展示，不阻塞资料卡。
+  const loadSections = useCallback(() => {
+    if (!token || !user) return;
+    setSectionsLoading(true);
+    void (async () => {
+      const [posts, guides] = await Promise.all([
+        fetchPosts({ authorId: user.id, limit: PAGE_SIZE }),
+        fetchGuides({ authorId: user.id, pageSize: PAGE_SIZE }, token),
+      ]);
+      setMyPosts(posts.posts);
+      setPostTotal(posts.total);
+      setMyGuides(guides.guides);
+      setGuideTotal(guides.total);
+      setSectionsError(null);
+    })().catch((err: unknown) => {
+      setSectionsError(err instanceof Error ? err.message : '加载我的内容失败');
+    }).finally(() => {
+      setSectionsLoading(false);
+    });
+  }, [token, user]);
+
+  useEffect(() => {
+    if (!token || !user) {
+      // 退出登录后清空（同步置态须绕开 effect 直达栈，M1 起的纪律）
+      queueMicrotask(() => {
+        setMyPosts([]);
+        setPostTotal(0);
+        setMyGuides([]);
+        setGuideTotal(0);
+      });
+      return;
+    }
+    queueMicrotask(loadSections);
+  }, [loadSections, token, user]);
 
   if (!ready) {
     return (
@@ -90,10 +135,79 @@ export default function ProfileScreen() {
         </Pressable>
       </View>
 
+      <View style={styles.section}>
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>我的帖子</Text>
+          <Text style={styles.sectionMeta}>
+            {postTotal > PAGE_SIZE
+              ? `共 ${postTotal} 篇 · 显示前 ${PAGE_SIZE}`
+              : postTotal > 0
+                ? `共 ${postTotal} 篇`
+                : ''}
+          </Text>
+        </View>
+        {sectionsLoading && myPosts.length === 0 ? (
+          <Text style={styles.sectionEmpty}>加载中...</Text>
+        ) : myPosts.length === 0 ? (
+          <Pressable onPress={() => router.push('/compose')}>
+            <Text style={styles.sectionEmptyLink}>还没有发过帖子，去社区发一篇 ›</Text>
+          </Pressable>
+        ) : (
+          myPosts.map((post) => (
+            <Pressable
+              key={post.id}
+              style={styles.row}
+              onPress={() => router.push(`/post/${post.id}`)}>
+              <Text style={styles.rowTitle} numberOfLines={1}>
+                {post.title}
+              </Text>
+              <Text style={styles.rowMeta}>{post.created_at.slice(0, 10)}</Text>
+            </Pressable>
+          ))
+        )}
+      </View>
+
+      <View style={styles.section}>
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>我的攻略</Text>
+          <Text style={styles.sectionMeta}>
+            {guideTotal > PAGE_SIZE
+              ? `共 ${guideTotal} 篇 · 显示前 ${PAGE_SIZE}`
+              : guideTotal > 0
+                ? `共 ${guideTotal} 篇`
+                : ''}
+          </Text>
+        </View>
+        {sectionsLoading && myGuides.length === 0 ? (
+          <Text style={styles.sectionEmpty}>加载中...</Text>
+        ) : myGuides.length === 0 ? (
+          <Text style={styles.sectionEmpty}>还没有写过攻略（创作入口在 Web 端）</Text>
+        ) : (
+          myGuides.map((guide) => (
+            <Pressable
+              key={guide.id}
+              style={styles.row}
+              onPress={() => router.push(`/guide/${guide.id}`)}>
+              <Text style={styles.rowTitle} numberOfLines={1}>
+                {guide.title}
+              </Text>
+              {!guide.is_published ? <Text style={styles.rowBadge}>草稿</Text> : null}
+              <Text style={styles.rowMeta}>{guide.created_at.slice(0, 10)}</Text>
+            </Pressable>
+          ))
+        )}
+      </View>
+
+      {sectionsError ? (
+        <Text style={styles.error} accessibilityRole="alert">
+          {sectionsError}
+        </Text>
+      ) : null}
+
       <Pressable style={styles.logoutBtn} onPress={() => void signOut()}>
         <Text style={styles.logoutText}>退出登录</Text>
       </Pressable>
-      <Text style={styles.hint}>关注圈子/作者已上线（社区 Tab）；M3 后续：我的帖子 · 我的攻略</Text>
+      <Text style={styles.hint}>我的帖子/我的攻略已上线；M3 后续：我的点赞 · 本地推送 · 深链分享</Text>
     </View>
   );
 }
@@ -199,6 +313,63 @@ const styles = StyleSheet.create({
   refreshText: {
     color: colors.text,
     fontSize: 13,
+  },
+  section: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 8,
+  },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  sectionMeta: {
+    color: colors.textMuted,
+    fontSize: 12,
+  },
+  sectionEmpty: {
+    color: colors.textMuted,
+    fontSize: 13,
+  },
+  sectionEmptyLink: {
+    color: colors.primary,
+    fontSize: 13,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 8,
+  },
+  rowTitle: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 13,
+  },
+  rowBadge: {
+    color: colors.primary,
+    fontSize: 10,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    overflow: 'hidden',
+  },
+  rowMeta: {
+    color: colors.textMuted,
+    fontSize: 12,
   },
   logoutBtn: {
     backgroundColor: colors.card,
