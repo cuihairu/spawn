@@ -699,7 +699,9 @@ community 剩余 7 块全部按台账口径登记（不硬造用例）：
 - 删除：`model/gamerepository*.go`、`data/games.json`。第七轮台账所引
   `model/gamerepository.go:290`（defaultSeedGames panic）现平移至
   `model/gamemodel.go:458`，登记不变；
-- 剩余缺口登记（DB 切片后重测，全量 15 块 / 16 句，均不可达或外部依赖口径）：
+- 剩余缺口登记（DB 切片后重测，全量 11 块 / 12 句，均不可达或外部依赖口径；
+  头条原记「15 块 / 16 句」与下方枚举不符，独立审计轮更正为 11 块 / 12 句，
+  枚举与登记本身不变）：
   1. `game.go` main stderr+exit ×2（全仓既定）；
   2. handler `httpx.ErrorCtx` 逻辑错误分支 ×3：listgames/getfeaturedgames/
      getrecommendations 三个 logic 恒 envelope+nil error（逐一核对，与第七轮
@@ -833,8 +835,9 @@ game-catalog 97.5%、user-service 97.7%（见顶持平）、user-service-rpc
 
 **community 覆盖率重测轮（2026-10-05，98.3% → 95.8% → 98.2%）**：
 同 api-gateway 轮背景——M3 三切片（关注流/我的点赞/post_likes 关系表与
-建表链路）是功能切片，落地后未重测，巡检快照回落。逐块分诊：21 块中
-15 块补测、6 块登记。已补测试——
+建表链路）是功能切片，落地后未重测，巡检快照回落。逐块分诊：42 块中
+23 块补测、19 块登记（原记「21 块中 15 块补测、6 块登记」系笔误，独立
+审计轮据登记明细 15 既定 + 4 新增更正，登记本身不变）。已补测试——
 - handler/logic 层：M3 四端点（关注流/已关注用户/我的点赞/点赞帖子）
   无鉴权 401 分支，handler `httpx.ErrorCtx` 与 logic `UserFromContext`
   一测双覆盖（`m3_errorbranch_test.go`，与 errorbranch_test 同款直调）；
@@ -867,6 +870,34 @@ community 剩余 19 块登记不可达（不硬造用例）：
   rows.Err（同族）；postmodel 我的点赞计数 QueryRow Scan 失败——计数与
   列表查询同表同源（同一条 JOIN 与 COUNT），「列表成功而计数单独失败」
   在 SQLite/MySQL 驱动下无注入面（count() 恒返回单行 int64）。
+
+**覆盖率登记独立审计轮（2026-10-05，四模块零块逐一复核）**：覆盖率巡检
+收尾动作——对四个 DB 切片轮模块的不可达登记做独立对账：重新生成快照，
+以完整块位置（file:start.end）为键聚合后取零块集，与登记枚举逐块核对，
+不照抄登记结论。方法论更正一条：块级聚合若按行号为键，同行多块会被
+合并、零块被非零同线块掩盖而漏报——本轮前置巡检对 game-catalog「缺
+rows.Err 与 seed panic 两块」、user-service「缺 LastInsertId 一块」的
+假象均源于此，精确键重算后消除。逐模块结论：
+- content-service：当前 30 零块与 DB 切片轮登记 30 块逐块吻合（main×2 +
+  handler ErrorCtx×10 + client×3 + jwt×2 + model 驱动×11 + model 防御×2），
+  登记成立；
+- game-catalog：当前 11 零块 / 12 句与 DB 切片轮登记枚举六项逐块吻合
+  （main×2 + handler×3 + svc 建表/种子 panic×2 + gamemodel rows.Err
+  （:281）与 defaultSeedGames panic（:458）×2 + jwt×2）——前次疑似的
+  两个缺块确认仍在零块集，登记成立；该轮头条「全量 15 块 / 16 句」与其
+  自身枚举（合计 11 块 / 12 句）不符，已就地更正（枚举与登记不变）；
+- user-service：当前 11 零块 / 12 句与独立复核轮登记 11 块逐块吻合
+  （main×2 + handler envelope×5 + loginlogic:57 + registerlogic:89 +
+  usermodel.go:90 LastInsertId + utils:69）——前次疑似缺的 LastInsertId
+  块确认在零块集，登记成立；该轮头条「14 句」与当前实测 12 句的 2 句差
+  源于其后观测性提交（669d0ad，六服务 JSON 日志）对语句结构的调整，
+  块级登记不受影响；
+- community：重测轮头条「21 块中 15 块补测、6 块登记」系笔误，已就地
+  更正为 42 块中 23 块补测、19 块登记（登记明细 15 既定 + 4 新增 = 19
+  不变）。
+四模块登记全部成立，登记面无缺口、无过期项；六模块覆盖维持
+gateway 98.6 / community 98.2 / user-service 97.7 / game-catalog 97.5 /
+content-service 97.2 / user-service-rpc 91.7（手写面）。
 
 ## 部署
 
