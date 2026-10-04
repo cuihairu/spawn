@@ -4,6 +4,18 @@
   <p>游戏社区平台：攻略、榜单与社区</p>
 </div>
 
+## 下载与安装
+
+[nightly 滚动 Release](https://github.com/cuihairu/spawn/releases/tag/nightly)（每日自动构建，tag 固定 `nightly`，清旧传新）提供现成产物：
+
+| 产物 | 内容 |
+| --- | --- |
+| `spawn-<服务名>-linux-amd64` ×6 | 六个后端服务二进制（CGO 构建，内嵌 SQLite 驱动），下载后 `chmod +x` 直接运行，配置在仓库各服务 `etc/` 目录，`DATASOURCE` 注入 MySQL 连接串可切换存储 |
+| `spawn-web-client-linux-amd64.tar.gz` | Web 主站静态产物，解压后任意静态服务器可托管 |
+| `SHA256SUMS.txt` | 全部资产校验和，同目录 `sha256sum -c SHA256SUMS.txt` 核对 |
+
+移动端 APK 与服务容器镜像不在 nightly 交付面（Android 出包依赖本地 gradle 流程；镜像按 `services/*/Dockerfile` 自行构建）。正式版本尚未发布；文档站见 <https://cuihairu.github.io/spawn/>。
+
 ## Monorepo 目录规划
 
 ```

@@ -1,0 +1,100 @@
+name: nightly
+
+on:
+  schedule:
+    # 每日 UTC 18:37（北京时间次日 02:37）
+    - cron: '37 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 后端产物：六个服务 linux-amd64 二进制。CGO 开启（mattn/go-sqlite3 需要，
+      # runner 自带 gcc），数据源默认 SQLite 文件库，生产经 DATASOURCE 切 MySQL。
+      - name: Build service binaries (linux-amd64)
+        run: |
+          mkdir -p dist
+          build_service () {
+            local dir="$1" main="$2" name="$3"
+            echo "build $name"
+            (cd "services/$dir" && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -o "../../dist/spawn-$name-linux-amd64" "$main.go")
+          }
+          build_service api-gateway gateway api-gateway
+          build_service community community community
+          build_service content-service content content-service
+          build_service game-catalog game game-catalog
+          build_service user-service user user-service
+          build_service user-service-rpc user user-service-rpc
+          ls -lh dist
+
+      # 前端产物：web-client 静态站点包（tsc + vite，产物为纯静态文件）。
+      - name: Build web-client bundle
+        run: |
+          pnpm --dir apps/web-client run build
+          mv apps/web-client/dist dist/spawn-web-client
+          tar -C dist -czf dist/spawn-web-client-linux-amd64.tar.gz spawn-web-client
+          rm -rf dist/spawn-web-client
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist
+          sha256sum spawn-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      # 滚动 nightly：tag 固定为 nightly，删旧 Release 与 tag 后重建，
+      # Actions artifacts 不作为交付面，Release 资产为准。
+      - name: Roll nightly release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
+          git push origin :refs/tags/nightly 2>/dev/null || true
+
+          DATE=$(date -u +%Y%m%d)
+          {
+            echo "Nightly 滚动构建 @ ${DATE}，commit ${GITHUB_SHA}。"
+            echo
+            echo "## 产物清单"
+            echo
+            echo "- \`spawn-<服务名>-linux-amd64\` ×6：后端服务二进制（CGO 构建，内嵌 SQLite 驱动）。下载后 \`chmod +x\` 直接运行，配置文件在仓库各服务 \`etc/\` 目录；\`DATASOURCE\` 注入 MySQL 连接串可切换存储。"
+            echo "- \`spawn-web-client-linux-amd64.tar.gz\`：Web 主站静态产物，解压后任意静态服务器可托管。"
+            echo "- \`SHA256SUMS.txt\`：全部资产校验和，下载后于同目录 \`sha256sum -c SHA256SUMS.txt\` 核对。"
+            echo
+            echo "## 口径说明"
+            echo
+            echo "- tag 固定为 \`nightly\`，滚动覆盖，无兼容性与可用性保障，不建议生产使用。"
+            echo "- 移动端 APK 不在本交付面（Android 出包依赖本地 gradle 流程，见开发指南）。"
+            echo "- 服务容器镜像不在此发布，按 \`services/*/Dockerfile\` 自行构建。"
+            echo "- Actions 的 workflow artifacts 为构建中间产物，交付面以本 Release 资产为准。"
+          } > notes.md
+
+          gh release create nightly dist/* \
+            --prerelease \
+            --title "nightly ${DATE}" \
+            --notes-file notes.md \
+            --target "$GITHUB_SHA"
