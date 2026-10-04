@@ -1,6 +1,7 @@
 {
   "name": "spawn",
   "private": true,
+  "packageManager": "pnpm@10.22.0",
   "scripts": {
     "mobile:typecheck": "pnpm --dir apps/mobile-app exec tsc --noEmit",
     "mobile:lint": "pnpm --dir apps/mobile-app exec eslint .",
