@@ -1,8 +1,9 @@
-# Tappi 开发指南
+# spawn 开发指南
 
 ## 项目概述
 
-Tappi 是一个基于 Go-zero 框架的游戏社交平台 monorepo 项目，采用微服务架构，支持多端应用开发。
+spawn 是一个基于 Go-zero 框架的游戏社交平台 monorepo 项目，采用微服务架构，支持多端应用开发
+（仓库原名 tappi，Go module 路径仍为 `github.com/tappi/tappi`，与仓库名解耦，不随改名迁移）。
 
 ## 开发环境准备
 
@@ -27,8 +28,8 @@ export PATH=$PATH:$(go env GOPATH)/bin
 
 ```bash
 # 克隆项目
-git clone git@github.com:cuihairu/tappi.git
-cd tappi
+git clone git@github.com:cuihairu/spawn.git
+cd spawn
 
 # 验证 Go workspace
 go work sync
@@ -40,13 +41,20 @@ go work download
 ## 项目结构
 
 ```
-tappi/
+spawn/
 ├── apps/                 # 面向最终用户的应用
-├── services/             # 微服务
-│   ├── user-service      # 用户服务 API
-│   └── user-service-rpc  # 用户服务 RPC
-├── packages/             # 共享包
-├── platform/             # 基础设施
+│   ├── web-client        # Web 站点（React 19 + Vite：登录/榜单/攻略/评论/社区）
+│   └── mobile-app        # React Native（Expo）客户端（游戏/发现/社区/我的）
+├── services/             # 微服务（以下六个均已落地）
+│   ├── user-service      # 用户服务 API（:8888，JWT 签发方）
+│   ├── user-service-rpc  # 用户服务 RPC（gRPC :8080，集群内部）
+│   ├── game-catalog      # 游戏库、榜单、推荐（:8890）
+│   ├── content-service   # 攻略、评论（:8891）
+│   ├── community         # 帖子、话题、关注、点赞（:8892）
+│   └── api-gateway       # BFF 聚合 + 四路反代（:8800）
+├── packages/             # 共享包（config 已落地；ui-kit/data-models 等为规划）
+├── platform/             # 基础设施（规划）
+├── deploy/               # compose 与观测栈配置
 ├── tools/                # 开发工具
 └── docs/                 # 文档
 ```
@@ -789,26 +797,38 @@ community 剩余 7 块全部按台账口径登记（不硬造用例）：
 
 ### 1. Docker 构建
 
+各服务目录下均有独立 `Dockerfile`，模式一致（以 `services/community/Dockerfile` 为例）：
+**CGO 构建**（SQLite 驱动需要）+ **debian:bookworm-slim 运行时**（含 `sqlite3`）+
+`DATASOURCE` 环境变量注入数据源（默认本地 `file:` SQLite，生产注入 MySQL 连接串）：
+
 ```dockerfile
-# Dockerfile
-FROM golang:1.21-alpine AS builder
-
-WORKDIR /app
+# Dockerfile（摘自 services/community/Dockerfile）
+FROM golang:1.22 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-RUN go work download
-RUN CGO_ENABLED=0 GOOS=linux go build -o service services/user-service/user.go
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o /bin/community community.go
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates tzdata
-WORKDIR /root/
-COPY --from=builder /app/service .
-COPY --from=builder /app/services/user-service/etc ./etc
-
-EXPOSE 8888
-CMD ["./service", "-f", "etc/user-api.yaml"]
+FROM debian:bookworm-slim
+ENV TZ=Asia/Shanghai
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata sqlite3 && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=builder /bin/community /usr/local/bin/community
+COPY etc ./etc
+RUN mkdir -p /app/data
+ENV DATASOURCE=file:/app/data/community.db
+EXPOSE 8892
+ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]
 ```
 
+本地一键拉起全部服务：根目录 `docker compose up --build`；观测栈（Prometheus/Loki/Grafana）
+见 `deploy/docker-compose.monitoring.yaml`。
+
 ### 2. Kubernetes 部署
+
+> 候选形态（未落地）：当前部署方式为根目录 `docker compose up --build`，
+> 仓库尚无 K8s 集群与镜像仓库凭据，下例仅供未来上 K8s 时参考。
 
 ```yaml
 # deployment.yaml
@@ -828,7 +848,7 @@ spec:
     spec:
       containers:
       - name: user-service
-        image: tappi/user-service:latest
+        image: spawn/user-service:latest
         ports:
         - containerPort: 8888
         env:
@@ -1100,11 +1120,13 @@ curl -X POST http://localhost:8890/games \
 ### 2. 调试技巧
 
 ```bash
-# 查看服务日志
-tail -f logs/user-service.log
+# 查看服务日志（go-zero logx 输出到 stdout，JSON 编码；compose 部署时按容器名取）
+docker compose logs -f user-service
 
-# 查看服务注册
-etcdctl get --prefix "" | grep user-service
+# 本地 go run 启动的服务，日志直接打印在终端
+
+# 查看服务注册（仅 user-service-rpc 走 etcd 注册模式时相关）
+etcdctl get --prefix "" | grep user-rpc
 
 # 测试服务连通性
 curl -v http://localhost:8888/health
@@ -1112,11 +1134,16 @@ curl -v http://localhost:8888/health
 
 ## CI 流水线
 
-`.github/workflows/ci.yml`（GitHub Actions）在 push 到 main 与所有 PR 时执行三道门禁：
+`.github/workflows/ci.yml`（GitHub Actions）在 push 到 main 与所有 PR 时执行
+**两个作业、五项门禁**：
 
-1. **gofmt 检查**：`gofmt -l .` 非空即失败；
-2. **全模块构建**：遍历 `go work edit -json` 声明的模块执行 `go build ./...`（新增服务自动纳入，无需改 workflow）；
-3. **全模块测试**：同列表执行 `go test ./... -race -count=1`。
+1. **gate 作业**（Go，Node/Go 环境随 `go-version-file` 走 `go.work`）：
+   - **gofmt 检查**：`gofmt -l .` 非空即失败；
+   - **全模块构建**：遍历 `go work edit -json` 声明的模块执行 `go build ./...`（新增服务自动纳入，无需改 workflow）；
+   - **全模块测试**：同列表执行 `go test ./... -race -count=1`；
+2. **mobile 作业**（前端，pnpm + Node 24）：
+   - **web-client**：`pnpm web:typecheck`（tsc）+ `pnpm web:lint`（eslint）；
+   - **mobile-app**：`pnpm mobile:typecheck`（tsc）+ `pnpm mobile:lint`（eslint）。
 
 Go 版本跟随 `go.work`（`actions/setup-go@v5` 的 `go-version-file`），模块间共享构建缓存。
 等价的本地验证：
@@ -1126,6 +1153,10 @@ gofmt -l .                                        # 应无输出
 for m in $(go work edit -json | jq -r '.Use[].DiskPath'); do
   (cd "$m" && go build ./... && go test ./... -race -count=1) || echo "FAIL: $m"
 done
+
+# 前端两作业（仓库根目录执行）
+pnpm web:typecheck && pnpm web:lint
+pnpm mobile:typecheck && pnpm mobile:lint
 ```
 
 CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/镜像仓库凭据），待部署方案确定后补充。
@@ -1149,9 +1180,11 @@ CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/�
 
    | 通路 | 实现位置 | 契约测试 |
    |------|---------|---------|
-   | api-gateway → user-service | `services/api-gateway/internal/integration/user_client.go`（Login、GetRecommendations，Bearer 透传） | `user_client_test.go`（httptest 断言路径/查询/头/响应解析） |
-   | api-gateway → game-catalog | `services/api-gateway/internal/integration/game_client.go`（GetFeatured） | `game_client_test.go` |
-   | api-gateway → community / content（反向代理） | `internal/proxy` + `internal/{community,content}/routes.go` | `internal/proxy` 上游转发测试（既有） |
+   | api-gateway → user-service | `services/api-gateway/internal/integration/user_client.go`（Login、GetRecommendations，Bearer 透传）；users 反代 `internal/users/routes.go`（POST /auth/register、GET /users/:id） | `user_client_test.go`（httptest 断言路径/查询/头/响应解析）；`users/routes_test.go` |
+   | api-gateway → game-catalog | `services/api-gateway/internal/integration/game_client.go`（GetFeatured）；games 反代 `internal/games/routes.go`（GET /games、GET /games/:id） | `game_client_test.go`；`games/routes_test.go` |
+   | api-gateway → community | 反代 `internal/proxy` + `internal/community/routes.go`（话题/帖子/关注流/我的点赞全量路由）；integration client `community_client.go`（GetPost/ListHotPosts/ListTopics，供聚合与分享卡） | `internal/proxy` 上游转发测试（既有）；`community_client_test.go` |
+   | api-gateway → content | 反代 `internal/content/routes.go`；integration client `content_client.go`（ListGuides） | `content_client_test.go` |
+   | api-gateway 自有聚合 handler | GET /home/feed（精选游戏/热帖/话题/攻略四路并发 + 字段裁剪 + 分组降级）、GET /s/p/:id（分享卡跳板）、POST /auth/login、GET /games/featured、GET /users/:id/recommendations | `logic/homefeedlogic_test.go`、`handler/routes_integration_test.go`（按生产装配全量注册） |
    | content-service → game-catalog | `client/gamecatalog.go`（熔断/重试/指标加持） | `client/*_test.go`（既有，89.7%） |
    | user-service → game-catalog | `internal/integration/gamecatalog_client.go`（GetRecommendations） | `gamecatalog_client_test.go`（新增，97.2%） |
    | 其余服务 → user-service-rpc | `user-service-rpc`（zrpc + etcd） | `user_test.go` 集成测试（run() 起真 zRPC + userclient 端到端 Ping，见「覆盖率台账刷新」一节） |
@@ -1169,10 +1202,11 @@ CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/�
    设计决策表三行（采集/结构化/集中收集）均已勾选，交付物与启动验证
    命令见该节。
 5. ~~配置 CI/CD 流水线~~ ✅ CI 部分已完成（`.github/workflows/ci.yml`，见上文「CI 流水线」）：
-   push/PR 触发 gofmt + 全模块 build + `go test -race` 门禁，模块列表动态读取 go.work；
-   CD 部分（部署流水线）因无部署目标暂缓。
+   push/PR 触发 Go 三道门禁（gofmt + 全模块 build + `go test -race`，模块列表动态读取 go.work）
+   与前端四道门禁（web/mobile 各自 tsc + eslint）；CD 部分（部署流水线）因无部署目标暂缓。
 
 更多详细信息请参考：
 - [Go-zero 官方文档](https://go-zero.dev/)
-- [API 设计指南](./api-design.md)
+- [文档索引](./README.md)
 - [架构文档](./architecture/overview.md)
+- [现状拓扑](./architecture/topology.md)

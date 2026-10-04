@@ -254,8 +254,8 @@ curl http://localhost:8890/games/the-last-of-us-2
 
    **成本（确定发生）**
    - game-catalog 需新增 zrpc 服务端：proto 定义 + goctl 代码生成 + 第二监听端口 + 配置/部署面
-     （Dockerfile、compose、监控端口规划），而其数据后端目前只是单个 JSON 文件的内存仓储，
-     不存在被序列化开销放大的数据库往返；
+     （Dockerfile、compose、监控端口规划），而其数据后端当时是 JSON 文件内存仓储
+     （2026-10-04 对账：现已切 SQLite/MySQL 双驱动，但仍无序列化开销放大的高并发数据库往返场景）；
    - content-service 需新增 gRPC 客户端与服务发现配置（参照 user-service-rpc 需引入 etcd，
      或改用直连 Endpoints 模式）；
    - 既有韧性栈需重构或双轨维护：熔断（`client/breaker.go`）、重试退避（`client/retry.go`）、
@@ -274,7 +274,9 @@ curl http://localhost:8890/games/the-last-of-us-2
 
    **重评触发条件（满足其一再评估）**
    1. game-catalog 迁移到真实数据库且攻略创建链路出现实测瓶颈——第 3 项接入的
-      `content_service_gamecatalog_client_request_duration_seconds` 直方图可直接提供 p99 证据；
+      `content_service_gamecatalog_client_request_duration_seconds` 直方图可直接提供 p99 证据
+      （对账 2026-10-04：game-catalog 已切 SQLite/MySQL 双驱动，前半条件成立；
+      攻略创建链路仍无实测瓶颈，HTTP 通路维持现状）；
    2. 出现多个服务高频消费游戏数据、需要严格契约版本管理；
    3. 服务间调用跨主机/跨机房部署，环回假设失效。
 5. ~~实现用户权限控制（只能修改/删除自己的攻略）~~ ✅ 已完成（见 `internal/logic/permissions_test.go`）

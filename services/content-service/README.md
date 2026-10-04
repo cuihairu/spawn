@@ -203,13 +203,11 @@ DSN 可用环境变量 `DATASOURCE` 覆盖（生产注入 MySQL 连接串）；�
 
 ## 后续改进建议
 
-1. **用户认证集成**
-   - 当前用户ID和用户名是硬编码的
-   - 需要集成JWT中间件从token中获取用户信息
+1. ~~**用户认证集成**~~ ✅ 已完成：`utils/auth.go` + `middleware/auth.go`（GET 公开、写接口需
+   令牌，`user_id`/`username` 注入上下文；可选鉴权支持作者带 Bearer 查自己可见草稿），见 `ENHANCEMENT.md`。
 
-2. **游戏信息集成**
-   - 创建攻略时应该调用game-catalog服务获取游戏名称
-   - 可以增加游戏存在性验证
+2. ~~**游戏信息集成**~~ ✅ 已完成：`client/gamecatalog.go` 创建攻略时调用 game-catalog 取真实
+   游戏标题（熔断/重试/降级语义，失败以 gameId 兜底），见 `ENHANCEMENT.md`。
 
 3. **跨进程缓存**
    - 多实例部署时将进程内 TTL+LRU 缓存替换为 Redis（接入点不变，见 development-guide「数据库集成 → 4」演进触发条件）

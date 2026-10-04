@@ -1,10 +1,29 @@
 # Web Client
 
-基于 React + Vite 的轻量演示前端，用于串联 `user-service` 与 `game-catalog`：
+React 19 + TypeScript + Vite + React Router 7 构建的主站前端，直连四个后端服务
+（可选经 api-gateway 聚合），覆盖登录/榜单、攻略创作与评论、社区浏览与发帖。
 
-- 登录用户账号，直接调用 `user-service` 的认证与推荐接口。
-- 展示游戏目录服务的精选榜单与推荐结果。
-- 对 API 地址进行参数化，可通过 `.env` 或运行环境变量覆盖 `VITE_USER_SERVICE_URL`、`VITE_GAME_SERVICE_URL`。
+## 功能面
+
+- **登录与推荐**：注册/登录（LocalStorage 持久化）、个性化推荐、精选榜单。
+- **攻略与评论**：攻略列表/详情/创建/编辑（草稿/发布）、嵌套评论、点赞——详见 [GUIDE.md](./GUIDE.md)。
+- **社区**：帖子流、帖子详情（发帖/点赞/分享）、话题圈子浏览。
+- 未登录可浏览；写操作需登录（作者可编辑/删除自己的内容）。
+
+## 服务集成与环境变量
+
+直连四服务 + 可选网关，地址均可通过 `.env.local` 覆盖：
+
+```
+VITE_API_GATEWAY_URL=http://localhost:8800     # 配置后登录/推荐/精选优先走网关
+VITE_USER_SERVICE_URL=http://localhost:8888
+VITE_GAME_SERVICE_URL=http://localhost:8890
+VITE_CONTENT_SERVICE_URL=http://localhost:8891
+VITE_COMMUNITY_SERVICE_URL=http://localhost:8892
+```
+
+页面路由：`/`（首页）、`/guides`、`/guides/:id`、`/guides/new`、`/guides/:id/edit`、
+`/community`、`/community/posts/:id`。
 
 ## 开发
 
@@ -14,17 +33,5 @@ npm install
 npm run dev
 ```
 
-默认使用：
-
-- `http://localhost:8888` - 用户服务
-- `http://localhost:8890` - 游戏目录服务
-
-若需要自定义，可在 `.env.local` 中配置：
-
-```
-VITE_USER_SERVICE_URL=http://localhost:8888
-VITE_GAME_SERVICE_URL=http://localhost:8890
-VITE_API_GATEWAY_URL=http://localhost:8800
-```
-
-配置 `VITE_API_GATEWAY_URL` 后，前端将优先通过该网关聚合接口，自动转发登录与推荐请求。
+默认访问 `http://localhost:5173`。相关文档：[GUIDE.md](./GUIDE.md)（攻略与评论使用指南）、
+[COMPLETION_SUMMARY.md](./COMPLETION_SUMMARY.md)（攻略/评论切片交付总结）。

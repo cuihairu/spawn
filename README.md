@@ -62,7 +62,7 @@
 
 ### 下一步建议
 
-1. 移动端 M3 收尾（详见 `docs/mobile_plan.md`）：Android release 包（EAS 或本地 gradle）与真机闭环验证——本地推送、深链分享卡等功能已落地，均待真机回归。
+1. 移动端 M3 收尾（详见 `docs/mobile_plan.md`）：Android release 本地 gradle 出包已落地（2026-10-04：`android.package` 配置 + `build:android:release` 脚本，aapt/apksigner 静态走查通过）；剩真机安装与全功能闭环回归——本地推送、深链分享卡等功能均待真机验证。
 2. api-gateway BFF 第二阶段已落地（2026-10-04）：`GET /home/feed` 列表聚合端点（精选游戏/热帖/话题/攻略一次拉齐，逐组字段裁剪 + 单上游故障降级）+ mobile `fetchHomeFeed` 消费点预留；web-client 保持直连各服务不受影响。后续按需扩更多聚合口径。
 3. `docs/architecture/` 总体架构与数据流文档已补齐（2026-10-04）：`topology.md` 记录现状（服务边界/端口/网关反代路由面/认证数据流/演进路线），`overview.md` 保持愿景层；后续架构变更随切片同步更新现状文档。
 
@@ -78,23 +78,23 @@
 ### 已完成的核心服务
 
 #### 1. Game Catalog Service（`services/game-catalog`）
-使用 go-zero 构建，内置游戏数据仓库、列表筛选、创建接口以及推荐/精选能力。
-- `GET /api/v1/games` - 游戏列表（支持筛选和分页）
-- `GET /api/v1/games/:id` - 游戏详情
-- `GET /api/v1/games/featured` - 精选游戏
-- `GET /api/v1/games/recommendations` - 推荐游戏
+使用 go-zero 构建，SQLite/MySQL 双驱动存储（默认本地 SQLite + 内嵌种子数据）、列表筛选、创建接口（JWT 保护）以及推荐/精选能力。
+- `GET /games` - 游戏列表（支持筛选和分页）
+- `GET /games/:id` - 游戏详情
+- `GET /games/featured` - 精选游戏
+- `GET /games/recommendations` - 推荐游戏
 - 端口：8890
 
 #### 2. User Service（`services/user-service`）
-用户账号、权限、好友、成长体系管理服务。
-- `POST /api/v1/auth/login` - 用户登录
-- `POST /api/v1/auth/register` - 用户注册
+用户账号、权限、好友、成长体系管理服务，JWT 签发方。
+- `POST /auth/login` - 用户登录
+- `POST /auth/register` - 用户注册
 - `GET /users/:id` - 获取用户信息
-- `GET /users/:id/recommendations` - 用户游戏推荐（跨服务调用）
-- 集成JWT认证中间件
+- `GET /users/:id/recommendations` - 用户游戏推荐（跨服务调用 game-catalog）
+- 全局 JWT 校验中间件（白名单注册/登录等公开路径）
 - 端口：8888
 
-#### 3. Content Service（`services/content-service`）✨ 新增
+#### 3. Content Service（`services/content-service`）
 攻略、资讯、CMS、评论管理服务，支持完整的内容创作和社区互动。
 - **攻略管理**：
   - `POST /api/v1/guides` - 创建攻略
@@ -112,16 +112,19 @@
 - 端口：8891
 
 #### 4. API Gateway（`services/api-gateway`）
-统一聚合认证、推荐、榜单接口，对外只暴露统一的API。
-- `POST /auth/login` - 用户登录
+BFF 聚合 + 四路反代的统一接入层，对外只暴露统一的 API（mobile-app 全量调用面经此单地址）。
+- `POST /auth/login` - 用户登录（透传 user-service）
 - `GET /games/featured` - 精选游戏
 - `GET /users/:id/recommendations` - 用户推荐
+- `GET /home/feed` - 首页列表聚合（精选游戏/热帖/话题/攻略四路并发，字段裁剪 + 单上游故障分组降级）
+- `GET /s/p/:id` - 帖子分享卡跳板页（og meta + `spawn://` 深链 + Web 入口）
+- 反代：community（帖子/话题/关注/点赞）、content（攻略/评论）、users（注册/资料）、games（列表/详情）全量路由
 - 端口：8800
 
-#### 5. Web Client（`apps/web-client`）✨ 大幅增强
-React + Vite + React Router 构建的完整前端应用，支持账号登录、跨服务推荐展示、游戏榜单渲染、**攻略浏览与创作、评论互动**。
+#### 5. Web Client（`apps/web-client`）
+React + Vite + React Router 构建的完整前端应用，支持账号登录、跨服务推荐展示、游戏榜单渲染、**攻略浏览与创作、评论互动、社区浏览与发帖**。
 
-**新增核心功能**：
+**核心功能**：
 - **多页面路由**：使用 React Router 实现单页应用多页面导航
 - **攻略列表页**：浏览所有已发布攻略，支持筛选"全部攻略"和"我的攻略"
 - **攻略详情页**：查看完整攻略内容、点赞、阅读统计、标签展示
@@ -131,6 +134,7 @@ React + Vite + React Router 构建的完整前端应用，支持账号登录、�
   - 点赞评论
   - 删除自己的评论
   - 实时评论数统计
+- **社区**：帖子流、帖子详情、话题圈子（直连 community 服务）
 - **权限控制**：未登录用户可浏览，登录后可创建攻略和评论
 - **响应式设计**：暗色主题，适配桌面和移动设备
 
@@ -139,7 +143,7 @@ React + Vite + React Router 构建的完整前端应用，支持账号登录、�
 - **Service-to-Service 调用**：`user-service` 通过 `GameCatalogClient` 拉取游戏推荐，展示跨服务集成能力。
 - **测试补全**：为游戏仓库与用户推荐逻辑新增单元测试，覆盖过滤、推荐稳定性与跨服务失败兜底。
 - **Docker 支持**：`docker-compose.yaml` 一键拉起所有服务，各服务目录下提供独立 `Dockerfile`。
-- **线程安全**：所有服务的内存存储都实现了线程安全的并发控制。
+- **数据持久化**：六服务数据面均已切 SQLite/MySQL 双驱动（DSN 含 `file:` 走 SQLite，生产注入 MySQL 连接串），进程内 TTL+LRU 读缓存，并发安全由数据库连接池与缓存自身保证。
 
 ### 快速体验
 
@@ -151,6 +155,7 @@ docker compose up --build
 go run services/game-catalog/game.go -f services/game-catalog/etc/game-api.yaml
 go run services/user-service/user.go -f services/user-service/etc/user-api.yaml
 go run services/content-service/content.go -f services/content-service/etc/content-api.yaml
+go run services/community/community.go -f services/community/etc/community-api.yaml
 go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
 
 # 前端
@@ -162,8 +167,10 @@ cd apps/web-client && npm install && npm run dev
 | 服务 | 端口 | 描述 | 状态 |
 |------|------|------|------|
 | user-service | 8888 | 用户服务 | ✅ 完成 |
-| api-gateway | 8800 | API网关 | ✅ 完成 |
+| api-gateway | 8800 | API网关（BFF 聚合+反代） | ✅ 完成 |
 | game-catalog | 8890 | 游戏目录服务 | ✅ 完成 |
 | content-service | 8891 | 内容服务（攻略+评论） | ✅ 完成 |
-| community | 8892 | 社区服务（帖子+话题） | ✅ MVP |
+| community | 8892 | 社区服务（帖子/话题/关注/点赞） | ✅ 完成 |
+| user-service-rpc | 8080 (gRPC) | 用户服务 RPC（集群内部） | ✅ 完成 |
 | web-client | 5173 | Web前端 | ✅ 完成 |
+| mobile-app | — | React Native（Expo）客户端 | 🚧 实施中（见 `docs/mobile_plan.md`） |

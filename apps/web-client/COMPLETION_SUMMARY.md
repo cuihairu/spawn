@@ -1,5 +1,9 @@
 # Web Client 前端功能完成总结
 
+> 本文是「攻略 + 评论」切片交付时的总结（历史快照，数据为当时的构建产物）。
+> 当前 web-client 另已包含社区浏览/发帖（`/community`、`/community/posts/:id`）与
+> 网关可选接入，最新功能面见 [README.md](./README.md)。
+
 ## 📋 任务完成情况
 
 ### ✅ 已完成的核心功能
@@ -174,6 +178,7 @@ dist/assets/index-BUcQ64ah.js   246.11 kB │ gzip: 78.06 kB
 - user-service (端口 8888)
 - game-catalog (端口 8890)
 - content-service (端口 8891)
+- community (端口 8892，社区页面所需)
 
 ### 启动前端
 ```bash

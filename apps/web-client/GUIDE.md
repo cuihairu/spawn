@@ -20,6 +20,8 @@ Web Client 现已支持完整的攻略创作和社区互动功能，包括：
 | `/guides/:id` | 攻略详情页 | 无 |
 | `/guides/new` | 创建新攻略 | 需要登录 |
 | `/guides/:id/edit` | 编辑攻略 | 需要登录且是作者 |
+| `/community` | 社区帖子流（本文档范围外，另见 README） | 无 |
+| `/community/posts/:id` | 社区帖子详情 | 发帖/点赞需登录 |
 
 ## 使用流程
 
@@ -117,7 +119,8 @@ Web Client 现已支持完整的攻略创作和社区互动功能，包括：
 VITE_USER_SERVICE_URL=http://localhost:8888
 VITE_GAME_SERVICE_URL=http://localhost:8890
 VITE_CONTENT_SERVICE_URL=http://localhost:8891
-VITE_API_GATEWAY_URL=http://localhost:8800  # 可选，使用网关
+VITE_COMMUNITY_SERVICE_URL=http://localhost:8892
+VITE_API_GATEWAY_URL=http://localhost:8800  # 可选，配置后登录/推荐/精选优先走网关
 ```
 
 ## 快速启动
@@ -164,10 +167,10 @@ Web Client 集成了以下后端服务：
 ### User Service API
 - `POST /auth/login` - 用户登录
 - `POST /auth/register` - 用户注册
+- `GET /users/:id/recommendations` - 获取个性化推荐（user-service 跨服务调用 game-catalog）
 
 ### Game Catalog API
 - `GET /games/featured` - 获取精选游戏
-- `GET /users/:id/recommendations` - 获取个性化推荐
 
 ## 响应式设计
 
@@ -178,7 +181,7 @@ Web Client 集成了以下后端服务：
 
 ## 注意事项
 
-1. **需要后端服务运行**：确保 user-service、game-catalog 和 content-service 都在运行
+1. **需要后端服务运行**：确保 user-service、game-catalog、content-service 与 community（社区页面）都在运行
 2. **登录状态持久化**：登录状态会写入 LocalStorage，刷新页面后仍可继续使用
 3. **草稿功能**：草稿保存后不会在攻略列表中显示，需要发布后才可见
 4. **权限控制**：只有作者可以编辑和删除自己的攻略和评论
