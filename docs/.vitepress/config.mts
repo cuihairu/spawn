@@ -9,9 +9,14 @@ export default defineConfig({
     '游戏社区平台：攻略、榜单与社区的 monorepo 实现，React Web 端、Expo 移动端与 go-zero 微服务。',
   base: '/spawn/',
   head: [
-    ['link', { rel: 'icon', type: 'image/png', href: '/spawn/favicon.png' }]
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/spawn/favicon.svg' }],
+    ['link', { rel: 'icon', type: 'image/png', href: '/spawn/favicon.png' }],
+    ['meta', { name: 'theme-color', content: '#d4237a' }]
   ],
   themeConfig: {
+    // 注意：themeConfig.logo 由 VitePress 自动拼 base，此处不写 /spawn/ 前缀，
+    // 手写会变成 /spawn/spawn/logo.svg。head 里的 favicon 不自动拼，需手写前缀。
+    logo: '/logo.svg',
     nav: [
       { text: '首页', link: '/' },
       { text: '快速上手', link: '/guide/getting-started' },

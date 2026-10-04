@@ -1,19 +1,33 @@
 /* 中文阅读排版与亮暗双套品牌 token。
-   token 命名沿用 VitePress 约定，:root 为亮色，.dark 为暗色，各自成套。 */
+   品牌色取自 logo（#d4237a）：:root 为亮色原色，.dark 整档提亮，
+   token 命名沿用 VitePress 约定，各自成套。 */
 :root {
-  --vp-c-brand-1: #3e63dd;
-  --vp-c-brand-2: #2f52c4;
-  --vp-c-brand-3: #3e63dd;
-  --vp-c-brand-soft: rgba(62, 99, 221, 0.14);
+  --vp-c-brand-1: #d4237a;
+  --vp-c-brand-2: #b01d66;
+  --vp-c-brand-3: #d4237a;
+  --vp-c-brand-soft: rgba(212, 35, 122, 0.14);
+  --vp-button-brand-bg: #d4237a;
+  --vp-button-brand-border: #d4237a;
+  --vp-button-brand-text: #ffffff;
+  --vp-button-brand-hover-bg: #b01d66;
+  --vp-button-brand-hover-border: #b01d66;
+  --vp-button-brand-hover-text: #ffffff;
+  --vp-button-brand-active-bg: #9a1959;
+  --vp-button-brand-active-border: #9a1959;
+  --vp-button-brand-active-text: #ffffff;
   --spawn-content-line-height: 1.75;
   --spawn-paragraph-indent: 2em;
 }
 
 .dark {
-  --vp-c-brand-1: #93b0ff;
-  --vp-c-brand-2: #b3c6ff;
-  --vp-c-brand-3: #3e63dd;
-  --vp-c-brand-soft: rgba(147, 176, 255, 0.16);
+  --vp-c-brand-1: #f06ba6;
+  --vp-c-brand-2: #f796c4;
+  --vp-c-brand-3: #d4237a;
+  --vp-c-brand-soft: rgba(240, 107, 166, 0.18);
+  --vp-button-brand-hover-bg: #e2558f;
+  --vp-button-brand-hover-border: #e2558f;
+  --vp-button-brand-active-bg: #c01e6c;
+  --vp-button-brand-active-border: #c01e6c;
 }
 
 /* 正文行高 1.7-1.8；中文段落首行缩进 2em（列表、引用、代码、卡片除外）。 */
@@ -36,9 +50,9 @@
 /* 首页 hero 标题用品牌色双停渐变，亮暗两套各自成立。 */
 :root {
   --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(120deg, #3e63dd, #7a5af8);
+  --vp-home-hero-name-background: linear-gradient(120deg, #d4237a, #f06ba6);
 }
 
 .dark {
-  --vp-home-hero-name-background: linear-gradient(120deg, #93b0ff, #b3a6ff);
+  --vp-home-hero-name-background: linear-gradient(120deg, #f06ba6, #f796c4);
 }

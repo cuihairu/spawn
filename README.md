@@ -1,4 +1,8 @@
-# spawn
+<div align="center">
+  <img src="docs/public/logo.svg" alt="spawn logo" width="64" />
+  <h1>spawn</h1>
+  <p>游戏社区平台：攻略、榜单与社区</p>
+</div>
 
 ## Monorepo 目录规划
 
