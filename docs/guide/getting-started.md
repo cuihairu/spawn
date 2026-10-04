@@ -1,15 +1,15 @@
 # 快速上手
 
-从零把 spawn 跑起来：一键容器化，或分别启动后端服务与前端应用。
+把 spawn 在本机跑起来有两条路：docker compose 一条命令起全部服务，或者按端分开启动。
 
 ## 环境要求
 
 | 依赖 | 版本 | 说明 |
 | --- | --- | --- |
-| Go | ≥ 1.25 | 各服务 `go.mod` 声明 `go 1.25.4`，根目录 `go.work` 聚合多模块 |
+| Go | ≥ 1.26 | 根目录 `go.work` 声明 `go 1.26.0`（api-gateway 依赖组升级顶高的），聚合六个模块 |
 | Node.js | 24 | 与 CI 一致 |
 | pnpm | 10.22 | 根 `package.json` 以 `packageManager` 钉定 |
-| Docker | 可选 | 一键拉起全部服务与观测栈 |
+| Docker | 可选 | 一条命令起全部服务与观测栈 |
 
 后端工具链（按需）：`goctl`（go-zero 代码生成）、`protoc` 与 `protoc-gen-go`、`protoc-gen-go-grpc`，安装方式见开发指南「Go-zero 开发约定」。
 
@@ -21,7 +21,7 @@ cd spawn
 pnpm install
 ```
 
-## 一键拉起全部服务
+## 用 compose 起全部服务
 
 ```bash
 docker compose up --build
@@ -70,6 +70,6 @@ mobile-app 基于 Expo，`expo start` 起开发服务后按提示在模拟器或
 
 ## 延伸阅读
 
-- [架构总览](/architecture/overview)——平台愿景与服务边界。
-- [现状拓扑](/architecture/topology)——服务边界、端口、网关路由面与认证数据流的现状记录。
-- [开发指南](/development-guide)——环境、配置、数据库、认证、监控、CI 与部署的完整手册。
+- [架构总览](/architecture/overview)，愿景与服务边界。
+- [现状拓扑](/architecture/topology)，端口、路由面、认证数据流的现状。
+- [开发指南](/development-guide)，环境到部署的完整手册。

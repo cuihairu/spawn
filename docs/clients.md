@@ -36,6 +36,6 @@ spawn 的客户端与服务端现状一览。规划中的端只列状态，不�
 | community | `services/community` | 帖子、话题、关注、点赞、关注流 | SQLite / MySQL 双驱动 |
 | user-service-rpc | `services/user-service-rpc` | 用户域 gRPC 内部接口（zrpc + etcd） | 复用 user-service 存储 |
 
-统一口径：业务端口与 `/metrics` 指标端口见[快速上手](/guide/getting-started)的端口表；服务边界、网关路由面与认证数据流的现状记录见[现状拓扑](/architecture/topology)。
+端口表在[快速上手](/guide/getting-started)，服务边界与认证数据流的现状记录在[现状拓扑](/architecture/topology)。
 
 规划中的服务：matchmaking（组队匹配）、realtime-hub（实时推送）、data-panel（战绩数据面板）、crawler-jobs（外部信息抓取）尚未创建，见仓库 README 的目录规划。

@@ -1175,7 +1175,7 @@ curl localhost:3000                        # Grafana（Prometheus/Loki 已装配
 | content-service | 可选校验 | `utils/auth.go` + `middleware/auth.go`（GET 公开、写接口需令牌），已有单测 |
 | community | 按路由校验 | `internal/middleware/auth_middleware.go`（`rest.Middleware`），写路由经 `rest.WithMiddlewares` 挂载，已有集成测试 |
 | api-gateway | 透传 | 转发 `Authorization` 头到上游（`upstream_test.go` 覆盖） |
-| user-service-rpc | ➖ 无需鉴权 | 仅集群内部 gRPC 通信，不直接暴露公网 |
+| user-service-rpc | 无需鉴权 | 仅集群内部 gRPC 通信，不直接暴露公网 |
 | game-catalog | 按路由校验 | `utils/auth.go` + `middleware/auth.go`，`POST /games` 受保护，4 个 GET 路由保持匿名公开（上一批次补齐） |
 
 ### 令牌机制
