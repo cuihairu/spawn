@@ -6,7 +6,7 @@ Community Service 是 spawn 社区平台的核心服务之一，提供帖子发�
 
 ## 当前状态
 
-✅ **已完成**：
+已完成：
 1. API 定义文件 (`community.api`)
 2. 项目结构生成
 3. 配置文件创建
@@ -18,37 +18,37 @@ Community Service 是 spawn 社区平台的核心服务之一，提供帖子发�
 9. 业务逻辑层（发帖/改帖/删帖/列表/热门、话题创建/关注/取关/关注列表、用户关注/取关、关注流、我的点赞）
 10. 基础单元/集成测试（仓储 + 认证/关注链路）
 
-⏳ **待实现**：
+待实现：
 1. 更完整的端到端测试（含服务编排、数据回放等）
 
 ## API 端点
 
 ### 帖子相关
-- `POST /api/v1/posts` - 创建帖子 🔒
+- `POST /api/v1/posts` - 创建帖子（需认证）
 - `GET /api/v1/posts` - 获取帖子列表（支持 `author_id` 筛选）
 - `GET /api/v1/posts/:id` - 获取帖子详情
 - `GET /api/v1/posts/hot` - 获取热门帖子
-- `GET /api/v1/posts/followed` - 关注流（关注的话题/用户的帖子） 🔒
-- `PUT /api/v1/posts/:id` - 更新帖子 🔒
-- `DELETE /api/v1/posts/:id` - 删除帖子 🔒
-- `POST /api/v1/posts/:id/like` - 点赞帖子 🔒（幂等，落 post_likes 关系）
-- `POST /api/v1/posts/:id/share` - 分享帖子 🔒
+- `GET /api/v1/posts/followed` - 关注流（关注的话题/用户的帖子，需认证）
+- `PUT /api/v1/posts/:id` - 更新帖子（需认证）
+- `DELETE /api/v1/posts/:id` - 删除帖子（需认证）
+- `POST /api/v1/posts/:id/like` - 点赞帖子 （需认证，幂等，落 post_likes 关系）
+- `POST /api/v1/posts/:id/share` - 分享帖子（需认证）
 
 ### 话题相关
-- `POST /api/v1/topics` - 创建话题 🔒
+- `POST /api/v1/topics` - 创建话题（需认证）
 - `GET /api/v1/topics` - 获取话题列表
 - `GET /api/v1/topics/:id` - 获取话题详情
-- `GET /api/v1/topics/following` - 获取关注的话题 🔒
-- `POST /api/v1/topics/:topic_id/follow` - 关注话题 🔒
-- `DELETE /api/v1/topics/:topic_id/follow` - 取消关注话题 🔒
+- `GET /api/v1/topics/following` - 获取关注的话题（需认证）
+- `POST /api/v1/topics/:topic_id/follow` - 关注话题（需认证）
+- `DELETE /api/v1/topics/:topic_id/follow` - 取消关注话题（需认证）
 
 ### 用户关注与点赞记录
-- `POST /api/v1/users/:user_id/follow` - 关注用户 🔒
-- `DELETE /api/v1/users/:user_id/follow` - 取消关注用户 🔒
-- `GET /api/v1/users/following` - 关注的用户列表 🔒
-- `GET /api/v1/users/likes` - 我点赞过的帖子（按点赞时间倒序分页） 🔒
+- `POST /api/v1/users/:user_id/follow` - 关注用户（需认证）
+- `DELETE /api/v1/users/:user_id/follow` - 取消关注用户（需认证）
+- `GET /api/v1/users/following` - 关注的用户列表（需认证）
+- `GET /api/v1/users/likes` - 我点赞过的帖子，按点赞时间倒序分页（需认证）
 
-🔒 = 需要认证（已实现）
+标「需认证」的接口要求 `Authorization: Bearer <token>`。
 
 ## 数据模型
 
@@ -250,16 +250,6 @@ ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]
 4. **错误处理**：统一的错误码和错误信息
 5. **日志记录**：记录关键操作和异常情况
 
-## 贡献指南
-
-如需完整实现，请按照以下步骤：
-
-1. Fork 项目
-2. 创建 feature 分支
-3. 实现对应的 Logic 文件
-4. 编写单元测试
-5. 提交 Pull Request
-
 ## 相关文档
 
 - [API 详细文档](./community.api)
@@ -271,4 +261,4 @@ ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]
 
 **当前版本**: v1.2 (SQLite/MySQL 双驱动 + M3 关注流/我的点赞)
 **最后更新**: 2026-10-04
-**维护状态**: ✅ 可用（SQLite 默认 / MySQL 生产）
+**维护状态**: 可用（SQLite 默认 / MySQL 生产）

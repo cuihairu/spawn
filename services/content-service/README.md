@@ -203,10 +203,10 @@ DSN 可用环境变量 `DATASOURCE` 覆盖（生产注入 MySQL 连接串）；�
 
 ## 后续改进建议
 
-1. ~~**用户认证集成**~~ ✅ 已完成：`utils/auth.go` + `middleware/auth.go`（GET 公开、写接口需
+1. ~~**用户认证集成**~~ 已完成：`utils/auth.go` + `middleware/auth.go`（GET 公开、写接口需
    令牌，`user_id`/`username` 注入上下文；可选鉴权支持作者带 Bearer 查自己可见草稿），见 `ENHANCEMENT.md`。
 
-2. ~~**游戏信息集成**~~ ✅ 已完成：`client/gamecatalog.go` 创建攻略时调用 game-catalog 取真实
+2. ~~**游戏信息集成**~~ 已完成：`client/gamecatalog.go` 创建攻略时调用 game-catalog 取真实
    游戏标题（熔断/重试/降级语义，失败以 gameId 兜底），见 `ENHANCEMENT.md`。
 
 3. **跨进程缓存**

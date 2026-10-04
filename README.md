@@ -33,7 +33,8 @@
 └── tests                # 跨服务集成测试与合规测试
 ```
 
-> 目录可随业务演化调整，初期可根据优先级逐步落地。
+> 上树是规划图。落地状态以 `services/README.md`、`apps/README.md` 为准：六服务与 web-client、
+> mobile-app 有代码，matchmaking/realtime-hub/data-panel/crawler-jobs、mini-program、admin-console 尚未创建。
 
 ## 可观测性
 
@@ -62,7 +63,7 @@
 
 ### 下一步建议
 
-1. 移动端 M3 收尾（详见 `docs/mobile_plan.md`）：Android release 本地 gradle 出包已落地（2026-10-04：`android.package` 配置 + `build:android:release` 脚本，aapt/apksigner 静态走查通过）；剩真机安装与全功能闭环回归——本地推送、深链分享卡等功能均待真机验证。
+1. 移动端 M3 收尾（详见 `docs/mobile_plan.md`）：Android release 本地 gradle 出包已落地（2026-10-04：`android.package` 配置 + `build:android:release` 脚本，aapt/apksigner 静态走查通过）；剩真机安装与功能回归，本地推送、深链分享卡都还没在真机上验过。
 2. api-gateway BFF 第二阶段已落地（2026-10-04）：`GET /home/feed` 列表聚合端点（精选游戏/热帖/话题/攻略一次拉齐，逐组字段裁剪 + 单上游故障降级）+ mobile `fetchHomeFeed` 消费点预留；web-client 保持直连各服务不受影响。后续按需扩更多聚合口径。
 3. `docs/architecture/` 总体架构与数据流文档已补齐（2026-10-04）：`topology.md` 记录现状（服务边界/端口/网关反代路由面/认证数据流/演进路线），`overview.md` 保持愿景层；后续架构变更随切片同步更新现状文档。
 
@@ -73,9 +74,7 @@
 - 代码生成：使用 `goctl api new <service>`/`goctl rpc new <service>` 搭建骨架，服务内的 API/RPC 定义通过 `*.api`、`*.proto` 维护，执行 `goctl api go`/`goctl rpc protoc` 生成功能代码。
 - 配置共享：`packages/config` 下提供 `.env.example`、`golangci-lint` 模板、公共 `make` 目标等，服务中可直接引用或通过 `Makefile` include。
 
-## 新增功能概览
-
-### 已完成的核心服务
+## 服务与前端现状
 
 #### 1. Game Catalog Service（`services/game-catalog`）
 使用 go-zero 构建，SQLite/MySQL 双驱动存储（默认本地 SQLite + 内嵌种子数据）、列表筛选、创建接口（JWT 保护）以及推荐/精选能力。
@@ -95,7 +94,7 @@
 - 端口：8888
 
 #### 3. Content Service（`services/content-service`）
-攻略、资讯、CMS、评论管理服务，支持完整的内容创作和社区互动。
+攻略、资讯、评论服务，go-zero 实现，SQLite/MySQL 双驱动存储。
 - **攻略管理**：
   - `POST /api/v1/guides` - 创建攻略
   - `PUT /api/v1/guides/:id` - 更新攻略
@@ -122,28 +121,18 @@ BFF 聚合 + 四路反代的统一接入层，对外只暴露统一的 API（mob
 - 端口：8800
 
 #### 5. Web Client（`apps/web-client`）
-React + Vite + React Router 构建的完整前端应用，支持账号登录、跨服务推荐展示、游戏榜单渲染、**攻略浏览与创作、评论互动、社区浏览与发帖**。
-
-**核心功能**：
-- **多页面路由**：使用 React Router 实现单页应用多页面导航
-- **攻略列表页**：浏览所有已发布攻略，支持筛选"全部攻略"和"我的攻略"
-- **攻略详情页**：查看完整攻略内容、点赞、阅读统计、标签展示
-- **攻略创建/编辑**：富文本编辑器，支持草稿保存和一键发布
-- **评论系统**：
-  - 发表评论和嵌套回复
-  - 点赞评论
-  - 删除自己的评论
-  - 实时评论数统计
-- **社区**：帖子流、帖子详情、话题圈子（直连 community 服务）
-- **权限控制**：未登录用户可浏览，登录后可创建攻略和评论
-- **响应式设计**：暗色主题，适配桌面和移动设备
+React 19 + Vite + React Router 7 前端。七个页面：首页（登录与推荐）、攻略列表、攻略详情、
+攻略创建/编辑、帖子流、帖子详情。攻略支持「全部/我的」筛选和草稿、发布两种保存态；评论支持
+嵌套回复、点赞，作者可删自己的评论；社区页直连 community 服务，帖子可点赞、分享。未登录能浏览，
+写操作要登录。暗色主题，响应式布局。
 
 ### 技术特性
 
-- **Service-to-Service 调用**：`user-service` 通过 `GameCatalogClient` 拉取游戏推荐，展示跨服务集成能力。
-- **测试补全**：为游戏仓库与用户推荐逻辑新增单元测试，覆盖过滤、推荐稳定性与跨服务失败兜底。
-- **Docker 支持**：`docker-compose.yaml` 一键拉起所有服务，各服务目录下提供独立 `Dockerfile`。
-- **数据持久化**：六服务数据面均已切 SQLite/MySQL 双驱动（DSN 含 `file:` 走 SQLite，生产注入 MySQL 连接串），进程内 TTL+LRU 读缓存，并发安全由数据库连接池与缓存自身保证。
+跨服务调用走 HTTP：user-service 经 `GameCatalogClient` 调 game-catalog 拿游戏数据拼推荐，
+失败降级兜底；content-service 调 game-catalog 取游戏标题带熔断、重试和 Prometheus 指标。
+游戏仓库与用户推荐逻辑有单元测试。`docker-compose.yaml` 一条命令拉起全部服务，各服务目录
+有独立 `Dockerfile`。六服务数据面均已切 SQLite/MySQL 双驱动（DSN 含 `file:` 走 SQLite，
+生产注入 MySQL 连接串），进程内 TTL+LRU 读缓存，并发安全由连接池钳制与缓存自身保证。
 
 ### 快速体验
 
@@ -166,11 +155,11 @@ cd apps/web-client && npm install && npm run dev
 
 | 服务 | 端口 | 描述 | 状态 |
 |------|------|------|------|
-| user-service | 8888 | 用户服务 | ✅ 完成 |
-| api-gateway | 8800 | API网关（BFF 聚合+反代） | ✅ 完成 |
-| game-catalog | 8890 | 游戏目录服务 | ✅ 完成 |
-| content-service | 8891 | 内容服务（攻略+评论） | ✅ 完成 |
-| community | 8892 | 社区服务（帖子/话题/关注/点赞） | ✅ 完成 |
-| user-service-rpc | 8080 (gRPC) | 用户服务 RPC（集群内部） | ✅ 完成 |
-| web-client | 5173 | Web前端 | ✅ 完成 |
-| mobile-app | — | React Native（Expo）客户端 | 🚧 实施中（见 `docs/mobile_plan.md`） |
+| user-service | 8888 | 用户服务 | 已完成 |
+| api-gateway | 8800 | API网关（BFF 聚合+反代） | 已完成 |
+| game-catalog | 8890 | 游戏目录服务 | 已完成 |
+| content-service | 8891 | 内容服务（攻略+评论） | 已完成 |
+| community | 8892 | 社区服务（帖子/话题/关注/点赞） | 已完成 |
+| user-service-rpc | 8080 (gRPC) | 用户服务 RPC（集群内部） | 已完成 |
+| web-client | 5173 | Web前端 | 已完成 |
+| mobile-app | — | React Native（Expo）客户端 | 实施中（见 `docs/mobile_plan.md`） |

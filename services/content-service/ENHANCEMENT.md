@@ -225,26 +225,26 @@ curl http://localhost:8890/games/the-last-of-us-2
 
 ## 兼容性
 
-- ✅ 向后兼容：不影响现有 API 接口
-- ✅ 可选降级：跨服务调用失败时使用 gameId
-- ✅ 配置驱动：通过配置文件/环境变量控制行为
+- 向后兼容：不影响现有 API 接口
+- 可选降级：跨服务调用失败时使用 gameId
+- 配置驱动：通过配置文件/环境变量控制行为
 
 ## 下一步建议
 
-1. ~~添加单元测试覆盖认证和跨服务调用逻辑~~ ✅ 已完成：
+1. ~~添加单元测试覆盖认证和跨服务调用逻辑~~ 已完成：
    - `utils/auth_test.go` 覆盖 `ParseToken`/`ValidateToken`/`GetUserIdFromToken`（有效令牌、过期、密钥错误、非 HMAC 签名方法、畸形令牌、密钥隔离）。
    - `client/gamecatalog_test.go` 覆盖 `GetGameById`（裸 `{"game":...}` 响应、旧版 `{code,data}` 包装响应、非 200 状态码、业务错误码、非法 JSON、无法识别的响应体、服务不可达、上下文取消、baseURL 尾斜杠归一化）。
    - 同时修复客户端与 game-catalog 实际契约不一致的问题：请求路径由 `/api/v1/games/:id` 改为 game-catalog 实际路由 `/games/:id`，并兼容裸 `{"game": {...}}` 响应格式（此前跨服务调用始终失败并降级为 gameId）。
-2. ~~实现服务熔断和重试机制~~ ✅ 已完成：
+2. ~~实现服务熔断和重试机制~~ 已完成：
    - `client/breaker.go`：基于连续失败次数的熔断器（closed → open → half-open → closed/open），`Allow/Success/Failure` 状态机，可注入时钟。
    - `client/retry.go`：错误分类（`kindTransient` 网络错误/5xx/429/业务错误码 → 重试+计入熔断；`kindBadRequest` 4xx 与 `kindCanceled` 上下文取消 → 不重试不计入；`kindContract` 解析失败/无法识别响应 → 不重试但计入熔断）与确定性指数退避 `base×2^(n-1)` 封顶 `maxDelay`（无抖动，便于测试）。
    - `GetGameById`：瞬时错误按指数退避重试（默认 3 次尝试、100ms→1s），熔断开启时快速失败（`ErrBreakerOpen`，默认连续失败 3 次、冷却 5s）；失败降级（调用方用 gameId 作标题）语义不变。
    - 测试：`breaker_test.go` 覆盖 open/半开探测成功恢复/探测失败重开/单探测占用/连续失败复位/非法配置钳制；`gamecatalog_test.go` 覆盖重试退避序列与封顶、重试耗尽、4xx/取消/契约异常不重试、熔断打开后快速失败与半开恢复（成功/失败/4xx 探测）。
-3. ~~添加 Prometheus 指标监控跨服务调用~~ ✅ 已完成：
+3. ~~添加 Prometheus 指标监控跨服务调用~~ 已完成：
    - `client/metrics.go`：`content_service_gamecatalog_client_requests_total{result}`（success / breaker_open / transient_error / bad_request / canceled / contract_error）、`retries_total`、`request_duration_seconds`（含重试与退避）、`breaker_state` gauge（0=closed 1=half-open 2=open，经熔断器 `onChange` 回调上报）。
    - 指标注册到默认 registry，随 go-zero Prometheus agent 的 `/metrics` 暴露（`etc/content-api.yaml` 中 `Prometheus.Port: 9093`）；同时为全部 6 个服务补充 `Prometheus` 配置段（端口见 `docs/development-guide.md` 监控章节），go-zero 内置 `http_server_requests_*` / `rpc_server_requests_*` 指标自动生效。
    - 测试（`client/metrics_test.go`，独立 registry 隔离并行用例）：默认 registry 注册断言、按 result 分类的调用计数 delta、熔断打开快速失败计数、重试次数与直方图 SampleCount 采集、熔断状态 gauge 迁移序列（closed→open→half-open→closed）、promhttp 文本格式渲染断言。
-4. ~~考虑实现 gRPC 调用替代 HTTP 以提升性能~~ ✅ 评估完成（结论：**暂不落地，保留 HTTP 通路**）：
+4. ~~考虑实现 gRPC 调用替代 HTTP 以提升性能~~ 评估完成（结论：**暂不落地，保留 HTTP 通路**）：
 
    **收益（预期，当前无法兑现）**
    - protobuf 序列化：Game 对象约 12 个字段、JSON 体积 < 1KB，编码/解码差在环回链路上为微秒级；
@@ -268,7 +268,7 @@ curl http://localhost:8890/games/the-last-of-us-2
      后续每加一个调用方都要选型一次。
 
    **与既有熔断/重试/指标链路的关系**
-   - go-zero zrpc 自带按方法的自适应熔断，能力与自研 breaker 重叠但语义不同（无显式半开观测）；
+   - go-zero zrpc 自带按方法的自适应熔断，能力与本仓自写的 breaker 重叠但语义不同（无显式半开观测）；
      切换后 `breaker_state` gauge、重试退避序列、result 分类指标及对应测试将失去挂载点，
      指标口径会出现断代，PromQL 告警需重写。
 
@@ -279,4 +279,4 @@ curl http://localhost:8890/games/the-last-of-us-2
       攻略创建链路仍无实测瓶颈，HTTP 通路维持现状）；
    2. 出现多个服务高频消费游戏数据、需要严格契约版本管理；
    3. 服务间调用跨主机/跨机房部署，环回假设失效。
-5. ~~实现用户权限控制（只能修改/删除自己的攻略）~~ ✅ 已完成（见 `internal/logic/permissions_test.go`）
+5. ~~实现用户权限控制（只能修改/删除自己的攻略）~~ 已完成（见 `internal/logic/permissions_test.go`）

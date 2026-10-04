@@ -5,4 +5,5 @@
 - `shared-utils`: 工具函数、Hook、数据格式化、埋点 SDK、联机工具。
 - `config`: pnpm workspace、tsconfig、eslint、prettier、commitlint、环境变量模板。
 
-> packages 统一发布 version（例如 via changeset），由 apps 和 services 复用，避免重复造轮子。
+落地状态：只有 `config` 已落地，其余三个是规划条目，目录暂未创建。
+packages 统一发布 version（例如 via changeset），由 apps 和 services 复用，避免重复造轮子。

@@ -9,33 +9,33 @@
 
 ## 系统分层
 
-1. **体验层 (apps/)**：Web、移动、后台、小程序端统一使用设计系统与状态管理，主要通过 GraphQL/BFF 访问后端服务，并与实时通道 (WebSocket/RTC) 交互。
+1. **体验层 (apps/)**：Web、移动、后台、小程序端统一使用设计系统与状态管理，经 BFF/REST 访问后端服务（GraphQL 未实现），并与实时通道 (WebSocket/RTC) 交互。
 2. **业务服务层 (services/)**：按领域拆分微服务，通过服务网关暴露 API，依赖共享数据模型与配置，支持水平扩展。
 3. **数据与实时层**：data-panel、crawler-jobs、实时推送服务等负责抓取、计算与实时同步。
 4. **平台支撑层 (platform/)**：提供基础设施、CI/CD、可观测性，保障部署、运维及弹性。
 
 ## 核心模块
 
-- **User & Social** (`user-service`, `community`, `matchmaking`): 账号、好友、动态、组队、语音/文字沟通。
-- **Content & CMS** (`content-service`, `admin-console`): 攻略/资讯创作、审核、活动配置。
-- **Game Catalog & Discovery** (`game-catalog`, `web-client`): 游戏库、榜单、标签、推荐 feed。
-- **Data Panel** (`data-panel`, `mobile-app`): 战绩抓取、角色/装备统计、玩家档案。
-- **Automation** (`crawler-jobs`, `tools/` scripts): 自动同步外部商店数据、赛事信息、公告。
+- User & Social（`user-service`、`community`、`matchmaking`）：账号、好友、动态、组队、语音/文字沟通。
+- Content & CMS（`content-service`、`admin-console`）：攻略/资讯创作、审核、活动配置。
+- Game Catalog & Discovery（`game-catalog`、`web-client`）：游戏库、榜单、标签、推荐 feed。
+- Data Panel（`data-panel`、`mobile-app`）：战绩抓取、角色/装备统计、玩家档案。
+- Automation（`crawler-jobs`、`tools/` 脚本）：自动同步外部商店数据、赛事信息、公告。
 
 ## 数据流与交互
 
 1. **数据输入**：crawler-jobs 从官方商店/赛事/公告抓取数据，写入数据仓库或缓存；data-panel 通过官方 API 或合作接口获取战绩数据。
 2. **处理**：game-catalog/content-service/community 根据数据模型存储在数据库（例如 Postgres/ElasticSearch），同时触发消息总线 (Kafka/PubSub) 更新榜单和推荐。
 3. **输出**：api-gateway 将聚合后的数据提供给各端；realtime-hub 负责 WebSocket/推送，向移动端发送战绩变化、组队邀请等实时信息。
-4. **反馈**：apps 的用户行为、埋点、战绩上传等通过 shared-utils SDK 上报到数据管道，为推荐和榜单提供闭环。
+4. 反馈：apps 的用户行为、埋点、战绩上传经 shared-utils SDK 上报到数据管道，推荐和榜单再消费这批数据。
 
-## 技术栈建议
+## 技术栈：现状与候选
 
-- **前端**：Next.js/TurboRepo + React Native/Expo + Taro/UniApp（小程序）、Tailwind/设计系统。
-- **后端**：TypeScript (NestJS) 或 Go (Gin/gRPC)，GraphQL 层 + gRPC/REST 服务。
-- **数据库**：PostgreSQL (主)、Redis (缓存)、ElasticSearch (搜索)、ClickHouse/BigQuery (分析)。
-- **消息与实时**：Kafka/NATS、WebSocket、Agora/自建 RTC。
-- **DevOps**: Terraform + Kubernetes + ArgoCD/GitHub Actions，Prometheus/Grafana/Tempo/ Loki 监控链路。
+现状（详见 `topology.md`）：后端 go-zero REST + 少量 gRPC，前端 React/Vite 与 React Native（Expo），
+存储 SQLite/MySQL 双驱动，观测 Prometheus + Promtail/Loki/Grafana，部署 docker compose。
+
+候选（未选型，随演进阶段再定）：小程序端 Taro/UniApp、PostgreSQL 主库、ElasticSearch 搜索、
+Kafka 消息总线、Terraform + Kubernetes。本文其余章节同属愿景口径，与现状冲突时以 `topology.md` 为准。
 
 ## 演进路线
 
