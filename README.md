@@ -64,7 +64,7 @@
 
 1. 移动端 M3 收尾（详见 `docs/mobile_plan.md`）：Android release 包（EAS 或本地 gradle）与真机闭环验证——本地推送、深链分享卡等功能已落地，均待真机回归。
 2. api-gateway BFF 第二阶段已落地（2026-10-04）：`GET /home/feed` 列表聚合端点（精选游戏/热帖/话题/攻略一次拉齐，逐组字段裁剪 + 单上游故障降级）+ mobile `fetchHomeFeed` 消费点预留；web-client 保持直连各服务不受影响。后续按需扩更多聚合口径。
-3. `docs/architecture/` 补充总体架构与数据流文档（服务边界、网关反代拓扑、移动端直连拓扑的现状与演进）。
+3. `docs/architecture/` 总体架构与数据流文档已补齐（2026-10-04）：`topology.md` 记录现状（服务边界/端口/网关反代路由面/认证数据流/演进路线），`overview.md` 保持愿景层；后续架构变更随切片同步更新现状文档。
 
 ### Go-zero 开发约定
 
