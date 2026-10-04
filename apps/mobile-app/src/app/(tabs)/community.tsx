@@ -4,11 +4,13 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import * as Linking from 'expo-linking';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import {
@@ -145,14 +147,25 @@ export default function CommunityScreen() {
     });
   };
 
+  // 分享卡片：拉起系统分享面板并携带 spawn:// 深链（与网关分享卡同链路）；
+  // 真正点了分享才计数（游客分享深链但不计数），失败回滚。
   const onShare = (post: Post) => {
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-    setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, share_count: p.share_count + 1 } : p)));
-    void sharePost(post.id, token).catch((err: unknown) => {
-      setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, share_count: p.share_count - 1 } : p)));
+    const url = Linking.createURL(`/post/${post.id}`);
+    let counted = false;
+    void (async () => {
+      const result = await Share.share({
+        message: `【${post.title}】来看看这篇帖子：${url}`,
+      });
+      if (result.action !== Share.sharedAction || !token) {
+        return; // 取消分享或游客不计数
+      }
+      counted = true;
+      setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, share_count: p.share_count + 1 } : p)));
+      await sharePost(post.id, token);
+    })().catch((err: unknown) => {
+      if (counted) {
+        setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, share_count: p.share_count - 1 } : p)));
+      }
       setError(err instanceof Error ? err.message : '分享失败');
     });
   };

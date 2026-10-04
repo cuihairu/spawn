@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 import { router } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -12,6 +19,11 @@ import {
   type Post,
 } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import {
+  cancelDailyCommunityReminder,
+  isDailyReminderScheduled,
+  scheduleDailyCommunityReminder,
+} from '../../lib/notifications';
 import { colors } from '../../constants/colors';
 
 const PAGE_SIZE = 10; // 个人中心列表只展示前 10 条，超出用 total 提示
@@ -30,6 +42,8 @@ export default function ProfileScreen() {
   const [likedTotal, setLikedTotal] = useState(0);
   const [sectionsLoading, setSectionsLoading] = useState(false);
   const [sectionsError, setSectionsError] = useState<string | null>(null);
+  const [reminderOn, setReminderOn] = useState(false);
+  const [reminderError, setReminderError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     if (!token || !user) return;
@@ -92,6 +106,40 @@ export default function ProfileScreen() {
     }
     queueMicrotask(loadSections);
   }, [loadSections, token, user]);
+
+  // 新帖提醒开关状态恢复：有已排定的本地通知即视为开启（查询失败按关闭降级）
+  useEffect(() => {
+    void (async () => {
+      const scheduled = await isDailyReminderScheduled();
+      setReminderOn(scheduled);
+    })().catch(() => {
+      // 恢复失败保持关闭态，用户再切一次即可
+    });
+  }, []);
+
+  const toggleReminder = (value: boolean) => {
+    if (value) {
+      void (async () => {
+        const id = await scheduleDailyCommunityReminder();
+        if (id) {
+          setReminderOn(true);
+          setReminderError(null);
+        } else {
+          setReminderOn(false);
+          setReminderError('未获得通知权限，请在系统设置中开启后重试');
+        }
+      })().catch((err: unknown) => {
+        setReminderOn(false);
+        setReminderError(err instanceof Error ? err.message : '开启提醒失败');
+      });
+      return;
+    }
+    // 先乐观关，再撤销调度；失败只提示不回弹（无通知比误通知安全）
+    setReminderOn(false);
+    void cancelDailyCommunityReminder().catch((err: unknown) => {
+      setReminderError(err instanceof Error ? err.message : '关闭提醒失败');
+    });
+  };
 
   if (!ready) {
     return (
@@ -249,10 +297,33 @@ export default function ProfileScreen() {
         </Text>
       ) : null}
 
+      <View style={styles.section}>
+        <View style={styles.reminderRow}>
+          <View style={styles.reminderText}>
+            <Text style={styles.sectionTitle}>新帖提醒</Text>
+            <Text style={styles.reminderDesc}>
+              每天 20:05 提醒回社区看看新帖子（本地推送，不依赖网络）
+            </Text>
+          </View>
+          <Switch
+            value={reminderOn}
+            onValueChange={toggleReminder}
+            trackColor={{ true: colors.primary, false: colors.border }}
+            ios_backgroundColor={colors.border}
+            accessibilityLabel="新帖每日提醒开关"
+          />
+        </View>
+        {reminderError ? (
+          <Text style={styles.error} accessibilityRole="alert">
+            {reminderError}
+          </Text>
+        ) : null}
+      </View>
+
       <Pressable style={styles.logoutBtn} onPress={() => void signOut()}>
         <Text style={styles.logoutText}>退出登录</Text>
       </Pressable>
-      <Text style={styles.hint}>我的帖子/攻略/点赞已上线；M3 后续：本地推送 · 深链分享 · Android release 包</Text>
+      <Text style={styles.hint}>本地推送与深链分享已上线；M3 后续：Android release 包与真机闭环</Text>
     </View>
   );
 }
@@ -415,6 +486,20 @@ const styles = StyleSheet.create({
   rowMeta: {
     color: colors.textMuted,
     fontSize: 12,
+  },
+  reminderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  reminderText: {
+    flex: 1,
+    gap: 2,
+  },
+  reminderDesc: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
   },
   logoutBtn: {
     backgroundColor: colors.card,

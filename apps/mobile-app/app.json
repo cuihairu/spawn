@@ -25,7 +25,14 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#f2c14e",
+          "defaultChannel": "community"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

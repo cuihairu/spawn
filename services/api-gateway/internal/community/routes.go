@@ -29,12 +29,15 @@ func RegisterCommunityProxyRoutes(server *rest.Server, serverCtx *svc.ServiceCon
 		{Method: http.MethodGet, Path: "/api/v1/posts", Handler: h},
 		{Method: http.MethodGet, Path: "/api/v1/posts/:id", Handler: h},
 		{Method: http.MethodGet, Path: "/api/v1/posts/hot", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/posts/followed", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/posts", Handler: h},
 		{Method: http.MethodPut, Path: "/api/v1/posts/:id", Handler: h},
 		{Method: http.MethodDelete, Path: "/api/v1/posts/:id", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/posts/:id/like", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/posts/:id/share", Handler: h},
 
+		{Method: http.MethodGet, Path: "/api/v1/users/following", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/users/likes", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/users/:user_id/follow", Handler: h},
 		{Method: http.MethodDelete, Path: "/api/v1/users/:user_id/follow", Handler: h},
 	})

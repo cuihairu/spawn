@@ -39,4 +39,7 @@ service api-gateway {
 
 	@handler UserRecommendationsHandler
 	get /users/:id/recommendations (RecommendationRequest) returns (RecommendationResponse)
+
+	@handler ShareLinkHandler
+	get /s/p/:id
 }

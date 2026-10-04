@@ -62,9 +62,9 @@
 
 ### 下一步建议
 
-1. `docs/architecture/` 中补充总体架构与数据流，确保团队对领域边界达成共识。
-2. 制定 `packages/config/` 的基础工具链（pnpm workspace、tsconfig、eslint、prettier 等），方便后续初始化各 app/service。
-3. 先落地核心服务骨架（user-service、game-catalog、content-service），并在 `tests/` 内准备契约测试样板，保障接口演进。
+1. 移动端 M3 收尾（详见 `docs/mobile_plan.md`）：Android release 包（EAS 或本地 gradle）与真机闭环验证——本地推送、深链分享卡等功能已落地，均待真机回归。
+2. api-gateway BFF 化演进：mobile-app 现直连各服务（与 web-client 同模式），网关扩为完整 BFF 后统一切换（社区/内容反代路由与分享卡跳板页已就位）。
+3. `docs/architecture/` 补充总体架构与数据流文档（服务边界、网关反代拓扑、移动端直连拓扑的现状与演进）。
 
 ### Go-zero 开发约定
 

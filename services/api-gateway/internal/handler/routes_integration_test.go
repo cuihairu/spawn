@@ -69,21 +69,24 @@ func (l *callLog) reset() {
 	l.calls = nil
 }
 
-// upstreamStubs 持有两个真实上游 stub 及其调用记录。
+// upstreamStubs 持有三个真实上游 stub 及其调用记录。
 type upstreamStubs struct {
-	user    *callLog
-	game    *callLog
-	userURL string
-	gameURL string
+	user         *callLog
+	game         *callLog
+	community    *callLog
+	userURL      string
+	gameURL      string
+	communityURL string
 }
 
 // newUpstreamStubs 启动上游 stub，故障开关只依赖请求本身（无共享可变状态，-race 安全）：
 //   - user-service：username=ghost → 401；userId=99 → 500
 //   - game-catalog：limit=9 → 502
+//   - community：POST /api/v1/posts/:id/share → 201；GET /api/v1/posts/0 → 404
 func newUpstreamStubs(t *testing.T) *upstreamStubs {
 	t.Helper()
 
-	stubs := &upstreamStubs{user: &callLog{}, game: &callLog{}}
+	stubs := &upstreamStubs{user: &callLog{}, game: &callLog{}, community: &callLog{}}
 
 	userStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -136,8 +139,29 @@ func newUpstreamStubs(t *testing.T) *upstreamStubs {
 	}))
 	t.Cleanup(gameStub.Close)
 
+	communityStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stubs.community.add(upstreamCall{
+			method: r.Method,
+			path:   r.URL.Path,
+			query:  r.URL.RawQuery,
+		})
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/posts/999":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code":404,"message":"帖子不存在"}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/posts/"):
+			_, _ = w.Write([]byte(`{"post":{"id":1,"title":"分享测试帖","content":"这是一段用于分享卡摘要的正文","author_name":"alice"}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("no such upstream endpoint"))
+		}
+	}))
+	t.Cleanup(communityStub.Close)
+
 	stubs.userURL = userStub.URL
 	stubs.gameURL = gameStub.URL
+	stubs.communityURL = communityStub.URL
 	return stubs
 }
 
@@ -159,6 +183,8 @@ func newGatewayServer(t *testing.T, stubs *upstreamStubs) string {
 	c.Upstreams.UserService.Timeout = 2000
 	c.Upstreams.GameCatalog.BaseURL = stubs.gameURL
 	c.Upstreams.GameCatalog.Timeout = 2000
+	c.Upstreams.Community.BaseURL = stubs.communityURL
+	c.Upstreams.Community.Timeout = 2000
 
 	svcCtx := svc.NewServiceContext(c)
 	server := rest.MustNewServer(c.RestConf)
@@ -183,6 +209,7 @@ func newGatewayServer(t *testing.T, stubs *upstreamStubs) string {
 	}
 	stubs.user.reset()
 	stubs.game.reset()
+	stubs.community.reset()
 	return base
 }
 
@@ -478,9 +505,74 @@ func TestRoutes_UserRecommendationsParseError(t *testing.T) {
 	}
 }
 
+// --- GET /s/p/:id 分享卡 ---
+
+func TestRoutes_ShareLink(t *testing.T) {
+	stubs := newUpstreamStubs(t)
+	base := newGatewayServer(t, stubs)
+
+	got := call(t, http.MethodGet, base+"/s/p/1", "", "")
+	if got.status != http.StatusOK {
+		t.Fatalf("share link status = %d, body = %s", got.status, got.body)
+	}
+	for _, want := range []string{
+		"<!DOCTYPE html>", "分享测试帖", "og:title", "og:type", "og:url",
+		"spawn:///post/1", "/community/posts/1", "在 spawn 中打开", "在浏览器中查看",
+		// html/template 不做 Sprintf 转义：%% 会原样渲染成非法 CSS，锁死这个坑
+		"width: 88%",
+	} {
+		if !strings.Contains(got.body, want) {
+			t.Fatalf("share card 缺 %q, body = %s", want, got.body)
+		}
+	}
+	if !strings.Contains(got.body, "这是一段用于分享卡摘要的正文") {
+		t.Fatalf("share card 缺正文摘要, body = %s", got.body)
+	}
+
+	// 上游契约：只 GET /api/v1/posts/:id，不携带任何 query。
+	sent := stubs.community.last(t)
+	if sent.method != http.MethodGet || sent.path != "/api/v1/posts/1" {
+		t.Fatalf("upstream request = %s %s", sent.method, sent.path)
+	}
+	if sent.query != "" {
+		t.Fatalf("upstream query = %q, want empty", sent.query)
+	}
+}
+
+func TestRoutes_ShareLinkFallback(t *testing.T) {
+	stubs := newUpstreamStubs(t)
+	base := newGatewayServer(t, stubs)
+
+	// 帖子不存在 → 通用卡片兜底，但深链入口保持可用。
+	got := call(t, http.MethodGet, base+"/s/p/999", "", "")
+	if got.status != http.StatusOK {
+		t.Fatalf("fallback status = %d, body = %s", got.status, got.body)
+	}
+	if !strings.Contains(got.body, "在 spawn 里看看这篇帖子") {
+		t.Fatalf("fallback title 缺失, body = %s", got.body)
+	}
+	if !strings.Contains(got.body, "spawn:///post/999") || !strings.Contains(got.body, "/community/posts/999") {
+		t.Fatalf("fallback 深链缺失, body = %s", got.body)
+	}
+}
+
+func TestRoutes_ShareLinkBadID(t *testing.T) {
+	stubs := newUpstreamStubs(t)
+	base := newGatewayServer(t, stubs)
+
+	// 路径参数非法 → 400，且不得打到上游。
+	got := call(t, http.MethodGet, base+"/s/p/abc", "", "")
+	if got.status != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body=%s)", got.status, got.body)
+	}
+	if n := stubs.community.count(t); n != 0 {
+		t.Fatalf("上游被调用 %d 次，parse 失败时不应有调用", n)
+	}
+}
+
 // --- 路由注册本身 ---
 
-// TestRoutes_RegistrationIsExact 校验 RegisterHandlers 注册的路由集合恰好是三条：
+// TestRoutes_RegistrationIsExact 校验 RegisterHandlers 注册的路由集合恰好是四条：
 // 路径存在但方法不符返回 405，路径不存在返回 404，都不会被某条路由兜住，
 // 也不会触达上游，证明没有隐式兜底路由。
 func TestRoutes_RegistrationIsExact(t *testing.T) {
@@ -496,6 +588,7 @@ func TestRoutes_RegistrationIsExact(t *testing.T) {
 		{"登录只注册 POST", http.MethodGet, "/auth/login", http.StatusMethodNotAllowed},
 		{"精选只注册 GET", http.MethodPost, "/games/featured", http.StatusMethodNotAllowed},
 		{"推荐只注册 GET", http.MethodPost, "/users/7/recommendations", http.StatusMethodNotAllowed},
+		{"分享卡只注册 GET", http.MethodPost, "/s/p/1", http.StatusMethodNotAllowed},
 		{"未注册路径", http.MethodGet, "/games", http.StatusNotFound},
 	}
 	for _, tc := range cases {

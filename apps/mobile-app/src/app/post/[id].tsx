@@ -3,11 +3,13 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as Linking from 'expo-linking';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import {
@@ -85,19 +87,34 @@ export default function PostDetailScreen() {
       });
   };
 
+  // 分享：先拉起系统分享面板，携带 spawn:// 深链（独立安装包解析为
+  // spawn:///post/:id，与网关分享卡同一链路）；面板里真正点了分享
+  // （而非划掉）才计数并写后端。游客也能分享深链——只是不计数。
   const onShare = () => {
     if (!post) return;
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-    setPost({ ...post, share_count: post.share_count + 1 });
-    void sharePost(post.id, token)
-      .then(() => emitPostsChanged())
-      .catch((err: unknown) => {
-        setPost((prev) => (prev ? { ...prev, share_count: prev.share_count - 1 } : prev));
-        setActionError(err instanceof Error ? err.message : '分享失败');
+    const url = Linking.createURL(`/post/${post.id}`);
+    let counted = false;
+    void (async () => {
+      const result = await Share.share({
+        message: `【${post.title}】来看看这篇帖子：${url}`,
       });
+      if (result.action !== Share.sharedAction) {
+        return; // 取消分享不得计入 share_count
+      }
+      if (!token) {
+        return;
+      }
+      counted = true;
+      setPost((prev) => (prev ? { ...prev, share_count: prev.share_count + 1 } : prev));
+      await sharePost(post.id, token);
+      emitPostsChanged();
+    })().catch((err: unknown) => {
+      if (counted) {
+        // 计数写后端失败才回滚；分享面板自身失败时不误减
+        setPost((prev) => (prev ? { ...prev, share_count: prev.share_count - 1 } : prev));
+      }
+      setActionError(err instanceof Error ? err.message : '分享失败');
+    });
   };
 
   const onFollowAuthor = () => {
