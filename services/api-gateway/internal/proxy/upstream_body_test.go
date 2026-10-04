@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -109,5 +110,33 @@ func TestUpstream_EmptyBodyPost(t *testing.T) {
 
 	if rr.Code != http.StatusOK || gotTE != "identity" {
 		t.Fatalf("status=%d transfer=%q, want 200 + identity", rr.Code, gotTE)
+	}
+}
+
+// errBody 读即报错：注入 serveHTTP 的请求体读取失败分支
+// （真请求的 Body 由 http 层保证可读，白盒直调触达兜底 502）。
+type errBody struct{}
+
+func (errBody) Read([]byte) (int, error) { return 0, errors.New("read failure") }
+func (errBody) Close() error             { return nil }
+
+func TestUpstream_ReadBodyErrorReturns502(t *testing.T) {
+	up, err := NewUpstream("http://127.0.0.1:1", 0)
+	if err != nil {
+		t.Fatalf("NewUpstream: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/posts", strings.NewReader(`{"x":1}`))
+	req.Body = io.NopCloser(errBody{})
+	rr := httptest.NewRecorder()
+
+	up.Handler()(rr, req)
+
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", rr.Code)
+	}
+	if body := rr.Body.String(); !strings.Contains(body, `"code":502`) ||
+		!strings.Contains(body, "read request body") {
+		t.Fatalf("body = %q", body)
 	}
 }

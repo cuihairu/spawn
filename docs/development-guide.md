@@ -793,6 +793,81 @@ community 剩余 7 块全部按台账口径登记（不硬造用例）：
      follow 幂等写/删），rows.Err ×3（topic List / post allVisible /
      follow List 的驱动级遍历中断，同前两切片口径）。
 
+**api-gateway 覆盖率重测轮（2026-10-05，98.2% → 95.8% → 98.6%）**：
+M3 第四切片（分享卡）与 BFF 一/二阶段（缓冲反代、/home/feed 聚合）是功能
+切片，落地后未重测覆盖率，本轮巡检快照读数回落至 95.8%。按台账口径逐块
+分诊：18 块中 12 块补测、6 块登记。已补测试——
+- integration 层：community/content client 的构造请求错误分支 ×3
+  （ListHotPosts/ListTopics/ListGuides 畸形 baseURL，扩展
+  `client_malformed_url_test.go`——第八轮只覆盖了当时的三个方法）、
+  ListHotPosts 连接失败与非法 JSON、ListTopics 非 200 与非法 JSON、
+  ListGuides 非法 JSON（`community_client_test.go`、`content_client_test.go`）；
+- logic 层：topics 组降级分支——既有 `TestHomeFeedLogicDegradesPerGroup`
+  为证明「健康组不受牵连」固定 topics 成功，新增对偶用例
+  `TestHomeFeedLogicDegradesTopics` 让 topics 失败；`summarizeForFeed`
+  短正文/空正文分支（`TestSummarizeForFeed`，超长截断分支原已覆盖）；
+- handler 层：分享卡 `summary` 的超长截断分支
+  （`sharelink_summary_test.go`，120 rune + 省略号不劈 CJK）；
+- proxy 层：`serveHTTP` 请求体读取失败分支 → 502——真请求的 Body 由
+  http 层保证可读，白盒直调注入 `errBody`（与第八轮非法方法注入同款口径，
+  `upstream_body_test.go`）。
+
+api-gateway 剩余 6 块（5 句 + 1 句）登记不可达（不硬造用例）：
+- `gateway.go` main stderr+exit ×2（全仓既定）；
+- `internal/integration/user_client.go:52`：`json.Marshal(LoginPayload)`
+  恒成功死代码（第八轮既有登记，行号未变）；
+- `internal/proxy/upstream.go:141`：`Ping` 构造请求错误分支（第八轮登记
+  于 :117，BFF 缓冲转发改动使代码位移，判据不变——构造器不变量）；
+- `internal/handler/homefeedhandler.go:24`：`HomeFeed` 恒 `resp, nil`
+  （唯一 return 在函数尾），错误分支不可达——与 community 三个 get
+  handler 的 `httpx.ErrorCtx` 登记同款口径；
+- `internal/handler/sharelinkhandler.go:106`：`tmpl.Execute` 失败分支——
+  模板固定在闭包内 Must 解析、数据为定型 struct，无注入面
+  （源码注释已标「近乎不可能」）。
+
+同轮快照其余读数（台账口径）：community 95.8%（较 DB 切片轮 98.3% 回落，
+M3 关注流/我的点赞切片新增代码未重测，列为下一轮）、content-service 97.2%、
+game-catalog 97.5%、user-service 97.7%（见顶持平）、user-service-rpc
+手写面 91.7% 持平（原始 77.2% 为 pb.go 管线口径，按无捏造用例约定排除，
+波动来自 protoc 生成面）。
+
+**community 覆盖率重测轮（2026-10-05，98.3% → 95.8% → 98.2%）**：
+同 api-gateway 轮背景——M3 三切片（关注流/我的点赞/post_likes 关系表与
+建表链路）是功能切片，落地后未重测，巡检快照回落。逐块分诊：21 块中
+15 块补测、6 块登记。已补测试——
+- handler/logic 层：M3 四端点（关注流/已关注用户/我的点赞/点赞帖子）
+  无鉴权 401 分支，handler `httpx.ErrorCtx` 与 logic `UserFromContext`
+  一测双覆盖（`m3_errorbranch_test.go`，与 errorbranch_test 同款直调）；
+  关注流与我的点赞分页参数非数字 → `httpx.Parse` 400 分支；点赞关系表
+  缺失的桩注入（`nilLikesStore`）触达 logic 层 nil 切片归一分支——真实
+  PostModel 成功路径自身已归一为空切片，nil 仅出现在查询失败降级
+  （`liked_nil_normalize_test.go`）；
+- model 层：`ListFollowingUserIds` 关库 Query 失败与脏行 Scan 失败
+  （ClosedDB 与 ListScanError 两用例各扩用户方向一条断言）；`Like` 在
+  post_likes 表 DROP 后双方言连败传播（insertLikeRelation → Like）；
+  `ListLikedPosts` 关系表缺失降级与关联脏行扫描失败；`ListByFollow`
+  关库降级、草稿过滤 continue、时间戳比较与同秒 id 兜底（RFC3339 秒级
+  精度下相邻 Create 必同秒，三种组合一次构造齐）；
+- svc 层：启动 panic 梯子补第六级——全库就绪唯 post_likes 缺失，只读库
+  CREATE 失败走 SQLite→MySQL 双格式回落仍败（`precreateDB` 增 withFollows
+  段位）。
+
+community 剩余 19 块登记不可达（不硬造用例）：
+- 沿 DB 切片轮既有登记 ×15：`community.go` main stderr+exit ×2；handler
+  `httpx.ErrorCtx` ×3（get_posts/get_hot_posts/get_topics 恒
+  envelope+nil error）；`utils/auth.go` jwt/v5 死分支 ×2；topicmodel
+  LastInsertId / rows.Err / RowsAffected ×3；postmodel Create
+  LastInsertId 与 allVisible rows.Err ×2；followmodel RowsAffected ×2 与
+  ListFollowingTopicIds rows.Err ×1；
+- 新增登记 ×4：followmodel `ListFollowingUserIds` rows.Err（M3 新方法，
+  与已登记的 topic 方向 rows.Err 同族，驱动级遍历中断）；postmodel
+  insertLikeRelation 的 INSERT IGNORE 回落成功分支——SQLite 下
+  INSERT IGNORE 是语法错误恒失败，成功路径仅存在于 MySQL 方言，SQLite
+  测试面不可达（双方言回落策略的固有盲区）；postmodel `ListLikedPosts`
+  rows.Err（同族）；postmodel 我的点赞计数 QueryRow Scan 失败——计数与
+  列表查询同表同源（同一条 JOIN 与 COUNT），「列表成功而计数单独失败」
+  在 SQLite/MySQL 驱动下无注入面（count() 恒返回单行 int64）。
+
 ## 部署
 
 ### 1. Docker 构建

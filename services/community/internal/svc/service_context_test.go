@@ -114,7 +114,7 @@ func TestNewServiceContext_MySQLDialFail(t *testing.T) {
 }
 
 // precreateDB 按粒度预建只读测试库：Ping 先行（建文件），再按需建表/种子。
-func precreateDB(t *testing.T, path string, withTopics, topicsSeeded, withPosts, postsSeeded bool) {
+func precreateDB(t *testing.T, path string, withTopics, topicsSeeded, withPosts, postsSeeded, withFollows bool) {
 	t.Helper()
 	db, err := sql.Open("sqlite3", "file:"+path)
 	if err != nil {
@@ -147,6 +147,12 @@ func precreateDB(t *testing.T, path string, withTopics, topicsSeeded, withPosts,
 			t.Fatalf("precreate posts seed: %v", err)
 		}
 	}
+	if withFollows {
+		fm := model.NewFollowModel(db)
+		if err := fm.CreateFollowsTable(); err != nil {
+			t.Fatalf("precreate follows table: %v", err)
+		}
+	}
 }
 
 // roNewServiceContext 以只读 DSN 打开预建库（写路径全部失败）。
@@ -173,35 +179,44 @@ func wantPanic(t *testing.T, want string, fn func()) {
 
 func TestNewServiceContext_RO_NoTablesPanic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "community.db")
-	precreateDB(t, path, false, false, false, false)
+	precreateDB(t, path, false, false, false, false, false)
 
 	wantPanic(t, "创建话题表失败", func() { roNewServiceContext(t, path) })
 }
 
 func TestNewServiceContext_RO_TopicSeedPanic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "community.db")
-	precreateDB(t, path, true, false, false, false)
+	precreateDB(t, path, true, false, false, false, false)
 
 	wantPanic(t, "初始化话题种子数据失败", func() { roNewServiceContext(t, path) })
 }
 
 func TestNewServiceContext_RO_PostsTablePanic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "community.db")
-	precreateDB(t, path, true, true, false, false)
+	precreateDB(t, path, true, true, false, false, false)
 
 	wantPanic(t, "创建帖子表失败", func() { roNewServiceContext(t, path) })
 }
 
 func TestNewServiceContext_RO_PostSeedPanic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "community.db")
-	precreateDB(t, path, true, true, true, false)
+	precreateDB(t, path, true, true, true, false, false)
 
 	wantPanic(t, "初始化帖子种子数据失败", func() { roNewServiceContext(t, path) })
 }
 
 func TestNewServiceContext_RO_FollowsTablePanic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "community.db")
-	precreateDB(t, path, true, true, true, true)
+	precreateDB(t, path, true, true, true, true, false)
 
 	wantPanic(t, "创建关注关系表失败", func() { roNewServiceContext(t, path) })
+}
+
+// 第六级：全库就绪唯 post_likes 表缺失 → 只读库上 CREATE 失败，
+// 走 SQLite→MySQL 双格式回落仍失败 → panic（创建点赞关系表失败）。
+func TestNewServiceContext_RO_PostLikesTablePanic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "community.db")
+	precreateDB(t, path, true, true, true, true, true)
+
+	wantPanic(t, "创建点赞关系表失败", func() { roNewServiceContext(t, path) })
 }

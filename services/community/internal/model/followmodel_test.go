@@ -121,6 +121,14 @@ func TestFollowModel_ListScanErrorReturnsNil(t *testing.T) {
 	if got := m.ListFollowingTopicIds(7); got != nil {
 		t.Fatalf("list with text target_id = %v, want nil", got)
 	}
+	// 用户关注方向同款脏行
+	if _, err := m.db.Exec(
+		`INSERT INTO follows (user_id, target_type, target_id, created_at) VALUES (7, 'user', 'xyz', 'y')`); err != nil {
+		t.Fatalf("hand insert: %v", err)
+	}
+	if got := m.ListFollowingUserIds(7); got != nil {
+		t.Fatalf("user list with text target_id = %v, want nil", got)
+	}
 }
 
 func TestFollowModel_ConcurrentFollowExactlyOneTrue(t *testing.T) {
@@ -171,6 +179,9 @@ func TestFollowModel_ClosedDBReturnsFalseAndNil(t *testing.T) {
 	}
 	if got := m.ListFollowingTopicIds(1); got != nil {
 		t.Fatalf("ListFollowingTopicIds on closed db = %v, want nil", got)
+	}
+	if got := m.ListFollowingUserIds(1); got != nil {
+		t.Fatalf("ListFollowingUserIds on closed db = %v, want nil", got)
 	}
 	if err := m.CreateFollowsTable(); err == nil {
 		t.Fatal("CreateFollowsTable on closed db must error")

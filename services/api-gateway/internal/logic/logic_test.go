@@ -374,3 +374,56 @@ func TestHomeFeedLogicLimitClamp(t *testing.T) {
 		t.Fatalf("clamped limit = %d, want %d", gotLimit, homeFeedMaxLimit)
 	}
 }
+
+// TestHomeFeedLogicDegradesTopics 与 TestHomeFeedLogicDegradesPerGroup 互补：
+// 那条用例固定 topics 健康（证明健康组不受牵连），这条让 topics 失败，
+// 触达 topics 组的降级分支。
+func TestHomeFeedLogicDegradesTopics(t *testing.T) {
+	svcCtx := &svc.ServiceContext{
+		GameCatalog: mockGameCatalog{
+			featuredFn: func(ctx context.Context, limit int64) (map[string]interface{}, error) {
+				return map[string]interface{}{"games": []interface{}{}}, nil
+			},
+		},
+		Community: mockCommunity{
+			hotPostsFn: func(ctx context.Context, limit int) ([]integration.CommunityPostSummary, error) {
+				return nil, nil
+			},
+			topicsFn: func(ctx context.Context, limit int) ([]integration.CommunityTopicSummary, error) {
+				return nil, errors.New("community topics down")
+			},
+		},
+		Content: mockContent{
+			listGuidesFn: func(ctx context.Context, limit int) ([]integration.GuideSummary, error) {
+				return nil, nil
+			},
+		},
+	}
+
+	resp, err := NewHomeFeedLogic(context.Background(), svcCtx).HomeFeed(&types.HomeFeedRequest{})
+	if err != nil {
+		t.Fatalf("aggregate endpoint must not 5xx on single upstream failure: %v", err)
+	}
+	if len(resp.Topics) != 0 {
+		t.Fatalf("failed group must be empty list")
+	}
+	if !reflect.DeepEqual(resp.Degraded, []string{"topics"}) {
+		t.Fatalf("degraded = %v, want [topics]", resp.Degraded)
+	}
+}
+
+func TestSummarizeForFeed(t *testing.T) {
+	if got := summarizeForFeed(""); got != "" {
+		t.Fatalf("empty content summary = %q, want empty", got)
+	}
+	// 短正文原样返回且压成单行（换行/连续空白折叠）。
+	short := summarizeForFeed("第一行\n\n第二行\t细节")
+	if short != "第一行 第二行 细节" {
+		t.Fatalf("short summary = %q", short)
+	}
+	// 超长截断到 60 rune + 省略号。
+	long := summarizeForFeed(strings.Repeat("长", 80))
+	if got := []rune(long); len(got) != 61 || string(got[60]) != "…" {
+		t.Fatalf("long summary = %d runes, want 61 ending with ellipsis", len(got))
+	}
+}

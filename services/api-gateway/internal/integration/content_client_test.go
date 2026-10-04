@@ -84,3 +84,15 @@ func TestContentClient_Defaults(t *testing.T) {
 		t.Fatalf("default timeout = %v, want 5s", c.httpClient.Timeout)
 	}
 }
+
+func TestContentClient_ListGuides_InvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html>not json</html>`))
+	}))
+	defer server.Close()
+
+	client := NewContentClient(server.URL, time.Second)
+	if _, err := client.ListGuides(context.Background(), 5); err == nil {
+		t.Fatal("invalid JSON body must error")
+	}
+}

@@ -165,3 +165,51 @@ func TestCommunityClient_ListTopics_ConnectionError(t *testing.T) {
 		t.Fatal("connection failure must error")
 	}
 }
+
+func TestCommunityClient_ListHotPosts_ConnectionError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	base := server.URL
+	server.Close()
+
+	client := NewCommunityClient(base, time.Second)
+	if _, err := client.ListHotPosts(context.Background(), 5); err == nil {
+		t.Fatal("connection failure must error")
+	}
+}
+
+func TestCommunityClient_ListHotPosts_InvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html>not json</html>`))
+	}))
+	defer server.Close()
+
+	client := NewCommunityClient(server.URL, time.Second)
+	if _, err := client.ListHotPosts(context.Background(), 5); err == nil {
+		t.Fatal("invalid JSON body must error")
+	}
+}
+
+func TestCommunityClient_ListTopics_Non200(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	client := NewCommunityClient(server.URL, time.Second)
+	if _, err := client.ListTopics(context.Background(), 5); err == nil ||
+		!strings.Contains(err.Error(), "community status 503") {
+		t.Fatalf("err = %v, want community status 503", err)
+	}
+}
+
+func TestCommunityClient_ListTopics_InvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html>not json</html>`))
+	}))
+	defer server.Close()
+
+	client := NewCommunityClient(server.URL, time.Second)
+	if _, err := client.ListTopics(context.Background(), 5); err == nil {
+		t.Fatal("invalid JSON body must error")
+	}
+}
