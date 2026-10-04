@@ -1,0 +1,44 @@
+/* 中文阅读排版与亮暗双套品牌 token。
+   token 命名沿用 VitePress 约定，:root 为亮色，.dark 为暗色，各自成套。 */
+:root {
+  --vp-c-brand-1: #3e63dd;
+  --vp-c-brand-2: #2f52c4;
+  --vp-c-brand-3: #3e63dd;
+  --vp-c-brand-soft: rgba(62, 99, 221, 0.14);
+  --spawn-content-line-height: 1.75;
+  --spawn-paragraph-indent: 2em;
+}
+
+.dark {
+  --vp-c-brand-1: #93b0ff;
+  --vp-c-brand-2: #b3c6ff;
+  --vp-c-brand-3: #3e63dd;
+  --vp-c-brand-soft: rgba(147, 176, 255, 0.16);
+}
+
+/* 正文行高 1.7-1.8；中文段落首行缩进 2em（列表、引用、代码、卡片除外）。 */
+.vp-doc {
+  line-height: var(--spawn-content-line-height);
+}
+
+.vp-doc p {
+  text-indent: var(--spawn-paragraph-indent);
+}
+
+.vp-doc li p,
+.vp-doc blockquote p,
+.vp-doc .custom-block p,
+.vp-doc .VPFeature p,
+.VPFeature p {
+  text-indent: 0;
+}
+
+/* 首页 hero 标题用品牌色双停渐变，亮暗两套各自成立。 */
+:root {
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #3e63dd, #7a5af8);
+}
+
+.dark {
+  --vp-home-hero-name-background: linear-gradient(120deg, #93b0ff, #b3a6ff);
+}

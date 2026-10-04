@@ -6,6 +6,8 @@
     "mobile:typecheck": "pnpm --dir apps/mobile-app exec tsc --noEmit",
     "mobile:lint": "pnpm --dir apps/mobile-app exec eslint .",
     "web:typecheck": "pnpm --dir apps/web-client exec tsc -b",
-    "web:lint": "pnpm --dir apps/web-client exec eslint ."
+    "web:lint": "pnpm --dir apps/web-client exec eslint .",
+    "docs:dev": "pnpm --dir docs run dev",
+    "docs:build": "pnpm --dir docs run build"
   }
 }
