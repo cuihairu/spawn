@@ -33,5 +33,10 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			Path:    "/s/p/:id",
 			Handler: ShareLinkHandler(serverCtx),
 		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/home/feed",
+			Handler: HomeFeedHandler(serverCtx),
+		},
 	})
 }

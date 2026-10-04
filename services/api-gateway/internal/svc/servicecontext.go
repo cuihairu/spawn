@@ -20,9 +20,16 @@ type GameCatalogService interface {
 	GetFeatured(ctx context.Context, limit int64) (map[string]interface{}, error)
 }
 
-// CommunityService 社区上游：分享卡跳板页拉帖子标题/摘要。
+// CommunityService 社区上游：分享卡跳板页拉帖子标题/摘要；首页聚合拉热帖/话题列表。
 type CommunityService interface {
 	GetPost(ctx context.Context, id int64) (*integration.CommunityPost, error)
+	ListHotPosts(ctx context.Context, limit int) ([]integration.CommunityPostSummary, error)
+	ListTopics(ctx context.Context, limit int) ([]integration.CommunityTopicSummary, error)
+}
+
+// ContentService 内容上游：首页聚合拉攻略列表。
+type ContentService interface {
+	ListGuides(ctx context.Context, limit int) ([]integration.GuideSummary, error)
 }
 
 type ServiceContext struct {
@@ -30,17 +37,20 @@ type ServiceContext struct {
 	UserService UserService
 	GameCatalog GameCatalogService
 	Community   CommunityService
+	Content     ContentService
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
 	userClient := integration.NewUserServiceClient(c.Upstreams.UserService.BaseURL, time.Millisecond*time.Duration(c.Upstreams.UserService.Timeout))
 	gameClient := integration.NewGameCatalogClient(c.Upstreams.GameCatalog.BaseURL, time.Millisecond*time.Duration(c.Upstreams.GameCatalog.Timeout))
 	communityClient := integration.NewCommunityClient(c.Upstreams.Community.BaseURL, time.Millisecond*time.Duration(c.Upstreams.Community.Timeout))
+	contentClient := integration.NewContentClient(c.Upstreams.Content.BaseURL, time.Millisecond*time.Duration(c.Upstreams.Content.Timeout))
 
 	return &ServiceContext{
 		Config:      c,
 		UserService: userClient,
 		GameCatalog: gameClient,
 		Community:   communityClient,
+		Content:     contentClient,
 	}
 }

@@ -3,6 +3,9 @@ package logic
 import (
 	"context"
 	"errors"
+	"reflect"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/tappi/tappi/services/api-gateway/internal/integration"
@@ -162,5 +165,212 @@ func TestUserRecommendationsLogic(t *testing.T) {
 	data, ok := resp.Data.(map[string]any)
 	if !ok || len(data) == 0 {
 		t.Fatalf("unexpected data type: %#v", resp.Data)
+	}
+}
+
+type mockCommunity struct {
+	getPostFn  func(ctx context.Context, id int64) (*integration.CommunityPost, error)
+	hotPostsFn func(ctx context.Context, limit int) ([]integration.CommunityPostSummary, error)
+	topicsFn   func(ctx context.Context, limit int) ([]integration.CommunityTopicSummary, error)
+}
+
+func (m mockCommunity) GetPost(ctx context.Context, id int64) (*integration.CommunityPost, error) {
+	if m.getPostFn == nil {
+		return nil, errors.New("getPostFn not implemented")
+	}
+	return m.getPostFn(ctx, id)
+}
+
+func (m mockCommunity) ListHotPosts(ctx context.Context, limit int) ([]integration.CommunityPostSummary, error) {
+	if m.hotPostsFn == nil {
+		return nil, errors.New("hotPostsFn not implemented")
+	}
+	return m.hotPostsFn(ctx, limit)
+}
+
+func (m mockCommunity) ListTopics(ctx context.Context, limit int) ([]integration.CommunityTopicSummary, error) {
+	if m.topicsFn == nil {
+		return nil, errors.New("topicsFn not implemented")
+	}
+	return m.topicsFn(ctx, limit)
+}
+
+type mockContent struct {
+	listGuidesFn func(ctx context.Context, limit int) ([]integration.GuideSummary, error)
+}
+
+func (m mockContent) ListGuides(ctx context.Context, limit int) ([]integration.GuideSummary, error) {
+	if m.listGuidesFn == nil {
+		return nil, errors.New("listGuidesFn not implemented")
+	}
+	return m.listGuidesFn(ctx, limit)
+}
+
+func TestHomeFeedLogicAggregatesAndTrims(t *testing.T) {
+	var gotGameLimit, gotPostLimit, gotTopicLimit, gotGuideLimit int
+	svcCtx := &svc.ServiceContext{
+		GameCatalog: mockGameCatalog{
+			featuredFn: func(ctx context.Context, limit int64) (map[string]interface{}, error) {
+				gotGameLimit = int(limit)
+				return map[string]interface{}{
+					"games": []interface{}{
+						map[string]interface{}{
+							"id": "g1", "title": "星陨物语", "description": "不该下发的长简介",
+							"developer": "不该下发", "cover_image": "https://cdn/cover/g1.png",
+							"score": 9.1, "genres": []interface{}{"RPG", "剧情"}, "platforms": []interface{}{"PC", "Switch"},
+						},
+						"not-a-map", // 非 map 条目跳过
+					},
+				}, nil
+			},
+		},
+		Community: mockCommunity{
+			hotPostsFn: func(ctx context.Context, limit int) ([]integration.CommunityPostSummary, error) {
+				gotPostLimit = limit
+				return []integration.CommunityPostSummary{{
+					Id: 11, TopicId: 2, AuthorId: 7, AuthorName: "alice",
+					Title: "通关心得", Content: strings.Repeat("好", 100) + "\n第二行",
+					LikeCount: 12, CommentCount: 3, CreatedAt: "2026-10-04T10:00:00Z",
+				}}, nil
+			},
+			topicsFn: func(ctx context.Context, limit int) ([]integration.CommunityTopicSummary, error) {
+				gotTopicLimit = limit
+				return []integration.CommunityTopicSummary{{
+					Id: 2, Name: "星陨圈", PostCount: 30, FollowerCount: 88, IsOfficial: true,
+				}}, nil
+			},
+		},
+		Content: mockContent{
+			listGuidesFn: func(ctx context.Context, limit int) ([]integration.GuideSummary, error) {
+				gotGuideLimit = limit
+				return []integration.GuideSummary{{
+					Id: 5, GameId: "g1", GameTitle: "星陨物语", Title: "全收集攻略",
+					Summary: "官方摘要", AuthorName: "bob", Likes: 9, Views: 120,
+					CreatedAt: "2026-10-01T08:00:00Z",
+				}}, nil
+			},
+		},
+	}
+
+	resp, err := NewHomeFeedLogic(context.Background(), svcCtx).HomeFeed(&types.HomeFeedRequest{Limit: 3})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotGameLimit != 3 || gotPostLimit != 3 || gotTopicLimit != 3 || gotGuideLimit != 3 {
+		t.Fatalf("limits = game %d post %d topic %d guide %d, want all 3",
+			gotGameLimit, gotPostLimit, gotTopicLimit, gotGuideLimit)
+	}
+	if len(resp.FeaturedGames) != 1 || len(resp.HotPosts) != 1 || len(resp.Topics) != 1 || len(resp.Guides) != 1 {
+		t.Fatalf("group lengths = %d/%d/%d/%d, want 1/1/1/1",
+			len(resp.FeaturedGames), len(resp.HotPosts), len(resp.Topics), len(resp.Guides))
+	}
+	if len(resp.Degraded) != 0 {
+		t.Fatalf("degraded = %v, want empty", resp.Degraded)
+	}
+
+	game := resp.FeaturedGames[0]
+	if game.Id != "g1" || game.Title != "星陨物语" || game.CoverImage != "https://cdn/cover/g1.png" || game.Score != 9.1 {
+		t.Fatalf("game = %+v", game)
+	}
+	if len(game.Genres) != 2 || len(game.Platforms) != 2 {
+		t.Fatalf("game slices = %v %v", game.Genres, game.Platforms)
+	}
+
+	// 字段裁剪：description/developer 等大字段不在响应结构里（类型层面保证），
+	// 这里断言裁剪后的摘要：正文压成单行并截断到 60 rune + …
+	post := resp.HotPosts[0]
+	wantSummary := strings.Repeat("好", 60) + "…"
+	if post.Summary != wantSummary {
+		t.Fatalf("post summary len = %d, want %d runes ending with ellipsis", len([]rune(post.Summary)), 61)
+	}
+	if post.Id != 11 || post.AuthorName != "alice" || post.LikeCount != 12 || post.CommentCount != 3 {
+		t.Fatalf("post = %+v", post)
+	}
+	topic := resp.Topics[0]
+	if topic.Id != 2 || topic.Name != "星陨圈" || !topic.IsOfficial || topic.PostCount != 30 || topic.FollowerCount != 88 {
+		t.Fatalf("topic = %+v", topic)
+	}
+	guide := resp.Guides[0]
+	if guide.Id != 5 || guide.Title != "全收集攻略" || guide.Summary != "官方摘要" || guide.Views != 120 {
+		t.Fatalf("guide = %+v", guide)
+	}
+}
+
+func TestHomeFeedLogicDegradesPerGroup(t *testing.T) {
+	svcCtx := &svc.ServiceContext{
+		GameCatalog: mockGameCatalog{
+			featuredFn: func(ctx context.Context, limit int64) (map[string]interface{}, error) {
+				return nil, errors.New("game-catalog down")
+			},
+		},
+		Community: mockCommunity{
+			hotPostsFn: func(ctx context.Context, limit int) ([]integration.CommunityPostSummary, error) {
+				return nil, errors.New("community down")
+			},
+			topicsFn: func(ctx context.Context, limit int) ([]integration.CommunityTopicSummary, error) {
+				return []integration.CommunityTopicSummary{{Id: 1, Name: "still-up"}}, nil
+			},
+		},
+		Content: mockContent{
+			listGuidesFn: func(ctx context.Context, limit int) ([]integration.GuideSummary, error) {
+				return nil, errors.New("content down")
+			},
+		},
+	}
+
+	resp, err := NewHomeFeedLogic(context.Background(), svcCtx).HomeFeed(&types.HomeFeedRequest{})
+	if err != nil {
+		t.Fatalf("aggregate endpoint must not 5xx on single upstream failure: %v", err)
+	}
+	if len(resp.FeaturedGames) != 0 || len(resp.HotPosts) != 0 || len(resp.Guides) != 0 {
+		t.Fatalf("failed groups must be empty lists")
+	}
+	if len(resp.Topics) != 1 || resp.Topics[0].Name != "still-up" {
+		t.Fatalf("healthy group must still serve: %+v", resp.Topics)
+	}
+	sort.Strings(resp.Degraded)
+	want := []string{"featured_games", "guides", "hot_posts"}
+	if !reflect.DeepEqual(resp.Degraded, want) {
+		t.Fatalf("degraded = %v, want %v", resp.Degraded, want)
+	}
+}
+
+func TestHomeFeedLogicLimitClamp(t *testing.T) {
+	var gotLimit int
+	svcCtx := &svc.ServiceContext{
+		GameCatalog: mockGameCatalog{
+			featuredFn: func(ctx context.Context, limit int64) (map[string]interface{}, error) {
+				gotLimit = int(limit)
+				return map[string]interface{}{"games": []interface{}{}}, nil
+			},
+		},
+		Community: mockCommunity{
+			hotPostsFn: func(ctx context.Context, limit int) ([]integration.CommunityPostSummary, error) {
+				return nil, nil
+			},
+			topicsFn: func(ctx context.Context, limit int) ([]integration.CommunityTopicSummary, error) {
+				return nil, nil
+			},
+		},
+		Content: mockContent{
+			listGuidesFn: func(ctx context.Context, limit int) ([]integration.GuideSummary, error) {
+				return nil, nil
+			},
+		},
+	}
+
+	// 缺省 → 5
+	if _, err := NewHomeFeedLogic(context.Background(), svcCtx).HomeFeed(&types.HomeFeedRequest{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotLimit != homeFeedDefaultLimit {
+		t.Fatalf("default limit = %d, want %d", gotLimit, homeFeedDefaultLimit)
+	}
+	// 超上限 → 20
+	if _, err := NewHomeFeedLogic(context.Background(), svcCtx).HomeFeed(&types.HomeFeedRequest{Limit: 999}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotLimit != homeFeedMaxLimit {
+		t.Fatalf("clamped limit = %d, want %d", gotLimit, homeFeedMaxLimit)
 	}
 }
