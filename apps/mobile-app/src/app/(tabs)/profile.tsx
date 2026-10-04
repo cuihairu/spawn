@@ -3,7 +3,14 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { router } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { fetchCurrentUser, fetchGuides, fetchPosts, type Guide, type Post } from '../../api/client';
+import {
+  fetchCurrentUser,
+  fetchGuides,
+  fetchLikedPosts,
+  fetchPosts,
+  type Guide,
+  type Post,
+} from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { colors } from '../../constants/colors';
 
@@ -19,6 +26,8 @@ export default function ProfileScreen() {
   const [postTotal, setPostTotal] = useState(0);
   const [myGuides, setMyGuides] = useState<Guide[]>([]);
   const [guideTotal, setGuideTotal] = useState(0);
+  const [myLiked, setMyLiked] = useState<Post[]>([]);
+  const [likedTotal, setLikedTotal] = useState(0);
   const [sectionsLoading, setSectionsLoading] = useState(false);
   const [sectionsError, setSectionsError] = useState<string | null>(null);
 
@@ -42,20 +51,24 @@ export default function ProfileScreen() {
   }, [refresh]);
 
   // 我的帖子（community GET /posts?author_id=）+ 我的攻略（content-service
-  // GET /guides?author_id= 带 Bearer——作者查自己可见草稿，中间件可选鉴权）。
-  // 失败只降级区块展示，不阻塞资料卡。
+  // GET /guides?author_id= 带 Bearer——作者查自己可见草稿，中间件可选鉴权）
+  // + 我的点赞（community GET /users/likes 带 Bearer）。失败只降级区块
+  // 展示，不阻塞资料卡。
   const loadSections = useCallback(() => {
     if (!token || !user) return;
     setSectionsLoading(true);
     void (async () => {
-      const [posts, guides] = await Promise.all([
+      const [posts, guides, liked] = await Promise.all([
         fetchPosts({ authorId: user.id, limit: PAGE_SIZE }),
         fetchGuides({ authorId: user.id, pageSize: PAGE_SIZE }, token),
+        fetchLikedPosts(token, PAGE_SIZE, 0),
       ]);
       setMyPosts(posts.posts);
       setPostTotal(posts.total);
       setMyGuides(guides.guides);
       setGuideTotal(guides.total);
+      setMyLiked(liked.posts);
+      setLikedTotal(liked.total);
       setSectionsError(null);
     })().catch((err: unknown) => {
       setSectionsError(err instanceof Error ? err.message : '加载我的内容失败');
@@ -72,6 +85,8 @@ export default function ProfileScreen() {
         setPostTotal(0);
         setMyGuides([]);
         setGuideTotal(0);
+        setMyLiked([]);
+        setLikedTotal(0);
       });
       return;
     }
@@ -198,6 +213,36 @@ export default function ProfileScreen() {
         )}
       </View>
 
+      <View style={styles.section}>
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>我的点赞</Text>
+          <Text style={styles.sectionMeta}>
+            {likedTotal > PAGE_SIZE
+              ? `共 ${likedTotal} 篇 · 显示前 ${PAGE_SIZE}`
+              : likedTotal > 0
+                ? `共 ${likedTotal} 篇`
+                : ''}
+          </Text>
+        </View>
+        {sectionsLoading && myLiked.length === 0 ? (
+          <Text style={styles.sectionEmpty}>加载中...</Text>
+        ) : myLiked.length === 0 ? (
+          <Text style={styles.sectionEmpty}>还没有点赞过的帖子</Text>
+        ) : (
+          myLiked.map((post) => (
+            <Pressable
+              key={post.id}
+              style={styles.row}
+              onPress={() => router.push(`/post/${post.id}`)}>
+              <Text style={styles.rowTitle} numberOfLines={1}>
+                {post.title}
+              </Text>
+              <Text style={styles.rowMeta}>{post.created_at.slice(0, 10)}</Text>
+            </Pressable>
+          ))
+        )}
+      </View>
+
       {sectionsError ? (
         <Text style={styles.error} accessibilityRole="alert">
           {sectionsError}
@@ -207,7 +252,7 @@ export default function ProfileScreen() {
       <Pressable style={styles.logoutBtn} onPress={() => void signOut()}>
         <Text style={styles.logoutText}>退出登录</Text>
       </Pressable>
-      <Text style={styles.hint}>我的帖子/我的攻略已上线；M3 后续：我的点赞 · 本地推送 · 深链分享</Text>
+      <Text style={styles.hint}>我的帖子/攻略/点赞已上线；M3 后续：本地推送 · 深链分享 · Android release 包</Text>
     </View>
   );
 }

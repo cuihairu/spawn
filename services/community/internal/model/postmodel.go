@@ -38,10 +38,11 @@ type PostStore interface {
 	IncrementViews(id int64) error
 	Update(id, requesterId int64, req *types.UpdatePostReq) (*types.Post, error)
 	Delete(id, requesterId int64) error
-	Like(id int64) (*types.Post, error)
+	Like(id, userId int64) (*types.Post, error)
 	Share(id int64) (*types.Post, error)
 	List(filter PostListFilter) ([]types.Post, int64)
 	ListByFollow(topicIds, authorIds []int64, limit, offset int64) ([]types.Post, int64)
+	ListLikedPosts(userId, limit, offset int64) ([]types.Post, int64)
 	Hot(limit int64) []types.Post
 }
 
@@ -350,9 +351,13 @@ func (m *PostModel) Delete(id, requesterId int64) error {
 	return nil
 }
 
-// Like 点赞并返回最新帖子。
-func (m *PostModel) Like(id int64) (*types.Post, error) {
+// Like 点赞并返回最新帖子。计数保持单调累加（客户端乐观 +1 契约），
+// 同时幂等落一条点赞关系（post_likes 唯一键防重）供「我的点赞」查询。
+func (m *PostModel) Like(id, userId int64) (*types.Post, error) {
 	if _, err := m.getFromDB(id); err != nil {
+		return nil, err
+	}
+	if err := m.insertLikeRelation(userId, id); err != nil {
 		return nil, err
 	}
 	if _, err := m.db.Exec(`UPDATE posts SET like_count = like_count + 1 WHERE id = ?`, id); err != nil {
@@ -366,6 +371,108 @@ func (m *PostModel) Like(id int64) (*types.Post, error) {
 
 	m.cache.Delete(postKey(id))
 	return p, nil
+}
+
+// insertLikeRelation 幂等写入点赞关系（已存在则忽略，不报错）。
+// SQLite 用 INSERT OR IGNORE，MySQL 语法失败回落 INSERT IGNORE。
+func (m *PostModel) insertLikeRelation(userId, postId int64) error {
+	_, err := m.db.Exec(
+		`INSERT OR IGNORE INTO post_likes (user_id, post_id, created_at) VALUES (?, ?, ?)`,
+		userId, postId, time.Now().UTC().Format(time.RFC3339),
+	)
+	if err == nil {
+		return nil
+	}
+	if _, retryErr := m.db.Exec(
+		`INSERT IGNORE INTO post_likes (user_id, post_id, created_at) VALUES (?, ?, ?)`,
+		userId, postId, time.Now().UTC().Format(time.RFC3339),
+	); retryErr != nil {
+		return fmt.Errorf("记录点赞关系失败（SQLite: %v；MySQL: %w）", err, retryErr)
+	}
+	return nil
+}
+
+// CreatePostLikesTable 创建点赞关系表（开发使用）。先尝试 SQLite 方言，
+// 失败回落 MySQL（与帖子建表同款双格式策略）。
+func (m *PostModel) CreatePostLikesTable() error {
+	query := `
+		CREATE TABLE IF NOT EXISTS post_likes (
+			user_id INTEGER NOT NULL,
+			post_id INTEGER NOT NULL,
+			created_at VARCHAR(32) NOT NULL,
+			UNIQUE (user_id, post_id)
+		)
+	`
+
+	if _, err := m.db.Exec(query); err != nil {
+		query = `
+			CREATE TABLE IF NOT EXISTS post_likes (
+				user_id BIGINT NOT NULL,
+				post_id BIGINT NOT NULL,
+				created_at VARCHAR(32) NOT NULL,
+				UNIQUE KEY uk_user_post (user_id, post_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+		`
+		if _, err := m.db.Exec(query); err != nil {
+			return fmt.Errorf("创建点赞关系表失败（尝试了 SQLite 和 MySQL 格式）: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// ListLikedPosts 我的点赞：点赞关系表 join 帖子，按点赞时间倒序分页，
+// 排除已删除；clamp/空集语义与 List/ListByFollow 一致。
+func (m *PostModel) ListLikedPosts(userId, limit, offset int64) ([]types.Post, int64) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	rows, err := m.db.Query(
+		`SELECT p.id, p.topic_id, p.author_id, p.author_name, p.title, p.content, p.images,
+			p.type, p.tags, p.view_count, p.like_count, p.comment_count, p.share_count,
+			p.is_pinned, p.is_hot, p.status, p.created_at, p.updated_at
+		 FROM post_likes pl
+		 JOIN posts p ON p.id = pl.post_id
+		 WHERE pl.user_id = ? AND p.status != 'deleted'
+		 ORDER BY pl.created_at DESC, pl.post_id DESC
+		 LIMIT ? OFFSET ?`,
+		userId, limit, offset,
+	)
+	if err != nil {
+		// 表缺失（旧库未建）时按空集降级，不阻塞读取
+		return nil, 0
+	}
+	defer rows.Close()
+
+	var posts []types.Post
+	for rows.Next() {
+		p, err := scanPost(rows.Scan)
+		if err != nil {
+			return nil, 0
+		}
+		posts = append(posts, *p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0
+	}
+	if posts == nil {
+		posts = []types.Post{}
+	}
+
+	var total int64
+	if err := m.db.QueryRow(
+		`SELECT COUNT(*) FROM post_likes pl JOIN posts p ON p.id = pl.post_id
+		 WHERE pl.user_id = ? AND p.status != 'deleted'`,
+		userId,
+	).Scan(&total); err != nil {
+		total = 0
+	}
+
+	return posts, total
 }
 
 // Share 分享计数自增并返回最新帖子。

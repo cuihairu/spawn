@@ -49,6 +49,13 @@ type GetFollowedPostsReq struct {
 	Offset int64 `form:"offset,optional,default=0"`
 }
 
+// GetLikedPostsReq 我的点赞（M3 个人中心）：点赞关系 join 帖子，
+// 点赞时间倒序分页，与关注流同款分页参数语义。
+type GetLikedPostsReq struct {
+	Limit  int64 `form:"limit,optional,default=20"`
+	Offset int64 `form:"offset,optional,default=0"`
+}
+
 type GetPostReq struct {
 	Id int64 `path:"id"`
 }

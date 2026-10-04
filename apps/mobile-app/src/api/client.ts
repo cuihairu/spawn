@@ -428,6 +428,18 @@ export async function fetchFollowedPosts(token: string, limit = 20, offset = 0):
   return { posts: payload.posts ?? [], total: payload.total ?? 0 };
 }
 
+// 我的点赞（M3 个人中心）：community GET /users/likes，按点赞时间倒序分页
+export async function fetchLikedPosts(token: string, limit = 20, offset = 0): Promise<PostListResult> {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  const payload = await request<{ posts: Post[]; total: number }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/users/likes?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  return { posts: payload.posts ?? [], total: payload.total ?? 0 };
+}
+
 export async function fetchFollowingTopics(token: string): Promise<Topic[]> {
   const payload = await request<{ topics: Topic[] }>(`${COMMUNITY_SERVICE_URL}/api/v1/topics/following`, {
     headers: { Authorization: `Bearer ${token}` },

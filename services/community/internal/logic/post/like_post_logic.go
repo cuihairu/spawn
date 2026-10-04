@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/tappi/tappi/services/community/internal/httperr"
+	"github.com/tappi/tappi/services/community/internal/logic/common"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
 
@@ -31,7 +32,11 @@ func (l *LikePostLogic) LikePost(req *types.LikePostReq) (resp *types.CommonResp
 	if req == nil || req.Id <= 0 {
 		return nil, httperr.BadRequest("id required")
 	}
-	if _, err := l.svcCtx.PostRepo.Like(req.Id); err != nil {
+	userId, _, err := common.UserFromContext(l.ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := l.svcCtx.PostRepo.Like(req.Id, userId); err != nil {
 		return nil, err
 	}
 	return &types.CommonResp{Code: 0, Message: "ok"}, nil

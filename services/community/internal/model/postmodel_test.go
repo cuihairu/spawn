@@ -28,6 +28,9 @@ func newPostModel(t *testing.T, seed bool) *PostModel {
 	if err := m.CreatePostsTable(); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
+	if err := m.CreatePostLikesTable(); err != nil {
+		t.Fatalf("create likes table: %v", err)
+	}
 	if seed {
 		if err := m.SeedIfEmpty(); err != nil {
 			t.Fatalf("seed: %v", err)
@@ -210,7 +213,7 @@ func TestPostModel_CacheInvalidatedByWrites(t *testing.T) {
 		t.Fatalf("view count after increment = %d, want 121 (cache invalidated)", got.ViewCount)
 	}
 
-	if _, err := m.Like(1); err != nil {
+	if _, err := m.Like(1, 1001); err != nil {
 		t.Fatalf("Like: %v", err)
 	}
 	if got, _ := m.Get(1); got.LikeCount != 16 {
@@ -247,7 +250,7 @@ func TestPostModel_ConcurrentLikesAllLand(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := m.Like(1); err != nil {
+			if _, err := m.Like(1, 1001); err != nil {
 				t.Errorf("Like: %v", err)
 			}
 		}()
@@ -291,7 +294,7 @@ func TestPostModel_UpdateAndDelete_PermissionAndVisibility(t *testing.T) {
 	if _, err := m.Update(1, 1001, &types.UpdatePostReq{Title: "x"}); !errors.Is(err, ErrPostNotFound) {
 		t.Fatalf("update deleted = %v, want ErrPostNotFound", err)
 	}
-	if _, err := m.Like(1); !errors.Is(err, ErrPostNotFound) {
+	if _, err := m.Like(1, 1001); !errors.Is(err, ErrPostNotFound) {
 		t.Fatalf("like deleted = %v, want ErrPostNotFound", err)
 	}
 	if _, err := m.Share(1); !errors.Is(err, ErrPostNotFound) {
@@ -517,7 +520,7 @@ func TestPostModel_LikeShareReReadFailurePropagates(t *testing.T) {
 		t.Fatalf("create trigger: %v", err)
 	}
 
-	if _, err := m.Like(1); !errors.Is(err, ErrPostNotFound) {
+	if _, err := m.Like(1, 1001); !errors.Is(err, ErrPostNotFound) {
 		t.Fatalf("Like re-read err = %v, want ErrPostNotFound", err)
 	}
 	// 触发器已删帖 1；用帖 2 触达 Share 的二次读取失败分支
@@ -571,7 +574,7 @@ func TestPostModel_ClosedDBErrorPaths(t *testing.T) {
 	if err := m.Delete(1, 1001); err == nil {
 		t.Fatal("Delete on closed db must error")
 	}
-	if _, err := m.Like(1); err == nil {
+	if _, err := m.Like(1, 1001); err == nil {
 		t.Fatal("Like on closed db must error")
 	}
 	if _, err := m.Share(1); err == nil {
@@ -612,7 +615,7 @@ func TestPostModel_UpdateWriteFailurePropagates(t *testing.T) {
 	if err := m.Delete(1, 1001); err == nil {
 		t.Fatal("Delete under abort trigger must error")
 	}
-	if _, err := m.Like(1); err == nil {
+	if _, err := m.Like(1, 1001); err == nil {
 		t.Fatal("Like under abort trigger must error")
 	}
 	if _, err := m.Share(1); err == nil {
@@ -654,6 +657,69 @@ func TestPostModel_PersistsAcrossReopen(t *testing.T) {
 	}
 	if _, total := m2.List(PostListFilter{Limit: 50}); total != 1 {
 		t.Fatalf("reopened total = %d, want 1", total)
+	}
+}
+
+// TestPostModel_ListLikedPosts 我的点赞：关系落库/幂等/用户隔离/软删排除/分页窗。
+func TestPostModel_ListLikedPosts(t *testing.T) {
+	m := newPostModel(t, true)
+
+	// 空集：无点赞 → 空列表 + total 0
+	if posts, total := m.ListLikedPosts(5, 20, 0); total != 0 || len(posts) != 0 {
+		t.Fatalf("empty likes: want empty/0, got %v total=%d", posts, total)
+	}
+
+	// 点赞顺序：先赞 1 再赞 2 → [2,1]（created_at desc，同秒以 post_id desc 兜底）
+	if _, err := m.Like(1, 5); err != nil {
+		t.Fatalf("Like(1): %v", err)
+	}
+	if _, err := m.Like(2, 5); err != nil {
+		t.Fatalf("Like(2): %v", err)
+	}
+	posts, total := m.ListLikedPosts(5, 20, 0)
+	if total != 2 || ids(posts)[0] != 2 || ids(posts)[1] != 1 {
+		t.Fatalf("want [2 1] total=2, got %v total=%d", ids(posts), total)
+	}
+
+	// 幂等：重复点赞关系不重复入列，计数单调累加不受影响
+	if _, err := m.Like(1, 5); err != nil {
+		t.Fatalf("Like(1) again: %v", err)
+	}
+	if posts, total = m.ListLikedPosts(5, 20, 0); total != 2 {
+		t.Fatalf("idempotent like must keep 2 relation rows, got %d", total)
+	}
+	if got, _ := m.Get(1); got.LikeCount != 17 { // 种子 15 + 2 次
+		t.Fatalf("like count = %d, want 17 (counter keeps incrementing)", got.LikeCount)
+	}
+
+	// 用户隔离：他人点赞不影响我的列表
+	if _, err := m.Like(1, 6); err != nil {
+		t.Fatalf("Like(1) by other: %v", err)
+	}
+	if posts, total = m.ListLikedPosts(6, 20, 0); total != 1 || ids(posts)[0] != 1 {
+		t.Fatalf("user 6 want [1] total=1, got %v total=%d", ids(posts), total)
+	}
+	if posts, total = m.ListLikedPosts(5, 20, 0); total != 2 {
+		t.Fatalf("user 5 list must be unchanged, got %d", total)
+	}
+
+	// 分页窗：limit=1 offset=1 → 第一页余下的一条；浮动 limit<=0/offset<0 按默认钳制
+	if posts, total = m.ListLikedPosts(5, 1, 1); total != 2 || ids(posts)[0] != 1 {
+		t.Fatalf("page 2 want [1] total=2, got %v total=%d", ids(posts), total)
+	}
+	if posts, _ = m.ListLikedPosts(5, -5, 0); len(posts) != 2 {
+		t.Fatalf("limit=0 must clamp to 20, got %v", ids(posts))
+	}
+	if posts, _ = m.ListLikedPosts(5, 0, -3); ids(posts)[0] != 2 {
+		t.Fatalf("offset=-3 must clamp to 0, got %v", ids(posts))
+	}
+
+	// 软删排除：作者删帖后不出现在任何人我的点赞里
+	if err := m.Delete(1, 1001); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if posts, total = m.ListLikedPosts(5, 20, 0); total != 1 || posts[0].Id != 2 {
+		t.Fatalf("soft-deleted must be excluded, got %v total=%d", ids(posts), total)
 	}
 }
 

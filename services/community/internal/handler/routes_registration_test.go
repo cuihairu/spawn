@@ -272,6 +272,36 @@ func TestAllRoutesReachable(t *testing.T) {
 		t.Fatalf("DELETE /topics/:id/follow cleanup status=%d", status)
 	}
 
+	// --- M3 我的点赞（alice 上文已点赞 postId；bob 无点赞 → 空态）---
+	if status, _ = call(t, http.MethodGet, base+"/api/v1/users/likes", "", ""); status != 401 {
+		t.Fatalf("GET /users/likes anonymous status=%d, want 401", status)
+	}
+	if status, payload = call(t, http.MethodGet, base+"/api/v1/users/likes", alice, ""); status != 200 {
+		t.Fatalf("GET /users/likes status=%d body=%s", status, payload)
+	} else {
+		body := decode(t, payload)
+		wantId, _ := strconv.ParseInt(postId, 10, 64)
+		found := false
+		if posts, _ := body["posts"].([]interface{}); posts != nil {
+			for _, item := range posts {
+				if p, ok := item.(map[string]interface{}); ok && p["id"].(float64) == float64(wantId) {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("liked-posts of alice must contain post %s, got %s", postId, payload)
+		}
+	}
+	if status, payload = call(t, http.MethodGet, base+"/api/v1/users/likes", bob, ""); status != 200 {
+		t.Fatalf("GET /users/likes (empty) status=%d", status)
+	} else {
+		body := decode(t, payload)
+		if total, _ := body["total"].(float64); total != 0 {
+			t.Fatalf("empty like set must yield total 0, got %s", payload)
+		}
+	}
+
 	// --- 认证写：delete post（作者收尾）---
 	if status, _ = call(t, http.MethodDelete, base+"/api/v1/posts/"+postId, alice, ""); status != 200 {
 		t.Fatalf("DELETE /posts/:id author status=%d, want 200", status)

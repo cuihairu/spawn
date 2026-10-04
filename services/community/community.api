@@ -159,6 +159,9 @@ service community-api {
 
 	@handler GetFollowedPosts
 	get /posts/followed (GetFollowedPostsReq) returns (PostsResp)
+
+	@handler GetLikedPosts
+	get /users/likes (GetLikedPostsReq) returns (PostsResp)
 }
 
 @server (

@@ -74,6 +74,9 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := followModel.CreateFollowsTable(); err != nil {
 		panic(fmt.Sprintf("创建关注关系表失败: %v", err))
 	}
+	if err := postModel.CreatePostLikesTable(); err != nil {
+		panic(fmt.Sprintf("创建点赞关系表失败: %v", err))
+	}
 
 	return &ServiceContext{
 		Config:     c,

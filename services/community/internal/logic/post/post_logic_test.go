@@ -31,6 +31,15 @@ func authContext(userId int64, username string) context.Context {
 	return context.WithValue(ctx, "username", username)
 }
 
+// postIds 提取帖子 id 序列，便于失败信息可读。
+func postIds(posts []types.Post) []int64 {
+	out := make([]int64, 0, len(posts))
+	for _, p := range posts {
+		out = append(out, p.Id)
+	}
+	return out
+}
+
 // requireHTTPStatus 断言逻辑层返回的 httperr 状态码。
 func requireHTTPStatus(t *testing.T, err error, want int) {
 	t.Helper()
@@ -341,7 +350,7 @@ func TestLikePost(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		svcCtx := newTestServiceContext(t)
-		l := NewLikePostLogic(context.Background(), svcCtx)
+		l := NewLikePostLogic(authContext(1001, "alice"), svcCtx)
 		if _, err := l.LikePost(&types.LikePostReq{Id: 9999}); !errors.Is(err, model.ErrPostNotFound) {
 			t.Fatalf("err = %v, want ErrPostNotFound", err)
 		}
@@ -349,7 +358,7 @@ func TestLikePost(t *testing.T) {
 
 	t.Run("success increments likes", func(t *testing.T) {
 		svcCtx := newTestServiceContext(t) // 种子帖子 1 LikeCount=15
-		l := NewLikePostLogic(context.Background(), svcCtx)
+		l := NewLikePostLogic(authContext(1001, "alice"), svcCtx)
 		resp, err := l.LikePost(&types.LikePostReq{Id: 1})
 		if err != nil {
 			t.Fatalf("LikePost: %v", err)
@@ -360,6 +369,18 @@ func TestLikePost(t *testing.T) {
 		p, _ := svcCtx.PostRepo.Get(1)
 		if p.LikeCount != 16 {
 			t.Fatalf("likes = %d, want 16", p.LikeCount)
+		}
+	})
+
+	t.Run("records like relation for my-likes", func(t *testing.T) {
+		svcCtx := newTestServiceContext(t)
+		l := NewLikePostLogic(authContext(1001, "alice"), svcCtx)
+		if _, err := l.LikePost(&types.LikePostReq{Id: 1}); err != nil {
+			t.Fatalf("LikePost: %v", err)
+		}
+		posts, total := svcCtx.PostRepo.ListLikedPosts(1001, 20, 0)
+		if total != 1 || len(posts) != 1 || posts[0].Id != 1 {
+			t.Fatalf("liked-posts want [1] total=1, got total=%d ids=%v", total, postIds(posts))
 		}
 	})
 }

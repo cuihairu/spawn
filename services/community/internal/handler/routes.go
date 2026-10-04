@@ -73,6 +73,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/posts/followed",
 					Handler: post.GetFollowedPostsHandler(serverCtx),
 				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/users/likes",
+					Handler: post.GetLikedPostsHandler(serverCtx),
+				},
 			}...,
 		),
 		rest.WithPrefix("/api/v1"),
