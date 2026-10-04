@@ -330,15 +330,15 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 
 | 顺序 | 服务 | 理由 | 状态 |
 |------|------|------|------|
-| 1 | user-service | 模型层已有 MySQL/SQLite 双驱动（本节先例），只缺缓存；登录/注册是全仓最热 DB 路径，缓存收益直接 | ✅ 本切片已落地 |
-| 2 | game-catalog | 原 JSON 文件仓库，按 user-service 模式迁 SQLite/MySQL 双驱动 + 读缓存；目录量为数百行，过滤/排序/推荐语义保留在应用侧 | ✅ 本切片已落地 |
-| 3 | community、content-service | 同为文件仓库，按 game-catalog 跑通的模式跟进 | content-service ✅、community ✅ 本切片均已落地 |
+| 1 | user-service | 模型层已有 MySQL/SQLite 双驱动（本节先例），只缺缓存；登录/注册是全仓最热 DB 路径，缓存收益直接 | 已落地（本切片） |
+| 2 | game-catalog | 原 JSON 文件仓库，按 user-service 模式迁 SQLite/MySQL 双驱动 + 读缓存；目录量为数百行，过滤/排序/推荐语义保留在应用侧 | 已落地（本切片） |
+| 3 | community、content-service | 同为文件仓库，按 game-catalog 跑通的模式跟进 | content-service、community 均已落地（本切片） |
 
 - user-service-rpc 为 goctl 生成层，不手改、不纳入切片。
 
 #### 2）MySQL DSN 与部署形态（沿用双驱动先例）
 
-- **DSN 注入**：`MySQL.DataSource`（env `DATASOURCE`），标准形态见上文
+- DSN 注入：`MySQL.DataSource`（env `DATASOURCE`），标准形态见上文
   「配置数据库连接」：`user:pass@tcp(host:3306)/tappi?charset=utf8mb4&parseTime=true&...`
 - **驱动选择**（`svc.NewServiceContext` 判定）：DSN 含 `file:` 或 `.db` → SQLite；
   否则 → MySQL。启动时 `Ping` 失败即 panic（快速失败，启动期暴露配置问题）。
@@ -351,27 +351,27 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 
 #### 3）缓存选型：进程内 TTL+LRU（本切片），Redis 留作演进
 
-- **选型**：进程内泛型缓存 `services/user-service/internal/cache`（TTL + LRU，
+- 选型：进程内泛型缓存 `services/user-service/internal/cache`（TTL + LRU，
   可注入时钟，`ttl<=0` 即禁用），接入 `model.UserModel`：
   - 读：`FindOne` / `FindByUsername` / `FindByEmail` 命中返回值副本（无别名共享）；
   - 写：`Create` / `Update` 走统一失效点；`Update` 先读行内旧 username/email
     （调用方常只传 Id+Email 部分结构，旧键须从行内容推导）；
   - 不做负缓存（未找到/错误不写入）；`CheckXxxExists` 的 COUNT 恒直查数据库；
   - 兜底：任何失效遗漏由 60s TTL 硬界收敛（陈旧 ≤60s）。
-- **不选 go-zero sqlc / goctl model cache + Redis 的原因**：
+- 不选 go-zero sqlc / goctl model cache + Redis 的原因：
   1. 本仓模型为手写 `database/sql`，全仓无 sqlc 代码生成，引入即等于重写全部模型；
   2. CI 无 Redis 服务，新增外部依赖会破坏「门禁零外部依赖」的现状；
   3. 当前单实例部署，进程内缓存语义正确（无跨进程失效问题）。
-- **演进触发条件**：实例数 >1、或出现跨进程失效/共享缓存需求时，将
+- 演进触发条件：实例数 >1、或出现跨进程失效/共享缓存需求时，将
   `internal/cache` 实现替换为 go-zero `cache.Cache`（Redis，接入点不变、
   模型层代码零改动）；届时启用本页「启动依赖服务」的 Redis 容器，
   上文 goctl model cache 流程按需采用。
-- **首个切片交付物**：
+- 首个切片交付物：
   - `services/user-service/internal/cache/ttlcache.go` —— 泛型 TTL+LRU 缓存；
   - `services/user-service/model/usermodel.go` —— 读缓存与失效点接入；
   - 单测 `internal/cache/ttlcache_test.go`（命中/过期/LRU 淘汰/禁用/并发）；
   - 集成测试 `model/usercache_test.go`（关库命中、更新失效、无负缓存、值副本隔离）。
-- **game-catalog 切片交付物（2026-10-02）**：
+- game-catalog 切片交付物（2026-10-02）：
   - `services/game-catalog/model/gamemodel.go` —— JSON 文件仓迁 `GameModel`
     （games 表，数组列 JSON 文本编码；`GameStore` 接口五方法签名不变，
     logic 层零改动）；
@@ -387,7 +387,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
     兜底 20 与原先一致）；
   - Dockerfile 改 CGO 构建 + debian:bookworm-slim 运行时（go-sqlite3 需 cgo），
     `DATASOURCE` 默认 `file:/app/data/games.db`。
-- **content-service 切片交付物（2026-10-02）**：
+- content-service 切片交付物（2026-10-02）：
   - `services/content-service/model/guidemodel.go` + `commentmodel.go` ——
     Guide/Comment 双 JSON 文件仓迁 `GuideModel`/`CommentModel`（guides/comments
     两表，tags 数组列 JSON 文本编码；`GuideStore` 七方法 / `CommentStore`
@@ -406,7 +406,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
     「删除后 id 不复用」语义不变；
   - Dockerfile 改 CGO 构建 + debian:bookworm-slim（同 game-catalog），
     `DATASOURCE` 默认 `file:/app/data/content.db`。
-- **community 切片交付物（2026-10-02）**：
+- community 切片交付物（2026-10-02）：
   - `services/community/internal/model/{topic,post,follow}model.go` —— 三 JSON
     文件仓迁 `TopicModel`/`PostModel`/`FollowModel`（topics/posts/follows 三表；
     `TopicStore` 五方法 / `PostStore` 九方法 / `FollowStore` 五方法签名不变，
@@ -433,7 +433,7 @@ func (l *UserLogic) GetUser(req *types.UserRequest) (*types.UserResponse, error)
 | 模块 | 覆盖率 | 备注 |
 |------|-------|------|
 | api-gateway | 98.2% | 本轮收口（原 96.3%） |
-| user-service | 97.7% | 本轮独立复核确认天花板（派发 97.2% → 现 97.7%） |
+| user-service | 97.7% | 本轮独立复核确认见顶（派发 97.2% → 现 97.7%） |
 | game-catalog | 97.5% | DB 切片轮重测（原内存仓收口 97.6%；迁 DB 新增模型/缓存代码后同口径复测） |
 | community | 98.3% | DB 切片轮重测（原内存仓收口 99.2%；迁 DB 新增模型/缓存代码后同口径复测，缺口全量登记） |
 | content-service | 97.2% | DB 切片轮重测（原内存仓收口 98.2%；迁 DB 新增模型/缓存代码后同口径复测，缺口全量登记） |
@@ -498,7 +498,7 @@ usermodel:90（原 :77，mattn/go-sqlite3 LastInsertId 恒 (id, nil)；行号随
 插入平移）+ main ×2、handler envelope ×5。
 
 
-**user-service 覆盖率天花板验证轮（次日第十轮，97.7% → 97.7%）**：复测全模块覆盖率快照（台账口径），
+**user-service 覆盖率见顶验证轮（次日第十轮，97.7% → 97.7%）**：复测全模块覆盖率快照（台账口径），
 仍为 97.7%。本轮新增 1 例单测：
 - `model/usermodel_test.go` 追加 Create 分支（关库触发 Exec 错误 → 500 "创建用户失败"），
   覆盖 `usermodel.go:85` Exec 错误分支；
@@ -517,7 +517,7 @@ usermodel:90（原 :77，mattn/go-sqlite3 LastInsertId 恒 (id, nil)；行号随
 
 **user-service 覆盖率独立复核轮（次日第十一轮，97.7% → 97.7%）**：任务派发读数 97.2%，
 复测时模块已由任务间落地的两笔提交推进至 97.7%（`0be40ed` UserStore 接口化 + refetch
-故障注入、`191eda0` 关库 Exec 分支 + 天花板登记），按铁律不重写、在其上叠加。本轮逐块
+故障注入、`191eda0` 关库 Exec 分支 + 见顶登记），按铁律不重写、在其上叠加。本轮逐块
 读源码对剩余 11 块 / 14 句（总 601 句）做独立复核——不照抄台账结论，全部 11 块证实
 为真不可达而非「不可注入」误判（content-service 第六轮教训）：
 1. `user.go:24/25` main stderr+exit ×2 —— 全仓既定约定；run() 错误路径已单独覆盖，
@@ -1008,9 +1008,9 @@ Prometheus:
 
 | 行 | 项 | 选型 | 理由 | 状态 |
 |----|----|------|------|------|
-| 1 | 指标采集面 | Prometheus 静态抓取（`deploy/prometheus/prometheus.yml`，`tappi-services` job 六 target 9091–9096，带 `service` 标签） | 六服务的 go-zero agent `/metrics` 端点早已全量暴露（上表端口即约定），指标面只缺「抓取配置」即闭环；静态抓配零服务发现设施，单实例假定下最简 | ✅ |
-| 2 | 日志结构化 | go-zero logx `Log.Encoding: json`（六服务 `etc/*.yaml` 增 `Log` 块，`ServiceName` 标识来源，stdout console 模式） | logx 是仓内既有日志栈，JSON 单行天然可机器解析；容器 stdout 即日志流，零代码改动（`ServiceConf.Log` 为 go-zero 内建配置键） | ✅ |
-| 3 | 集中收集与可视化 | docker compose 轻量观测栈：Prometheus + Promtail + Loki + Grafana（`deploy/docker-compose.monitoring.yaml`） | 仓内部署形态即 docker compose；Promtail 文件抓取容器 json-file 日志 + Loki 单二进制文件存储，是 ELK（JVM 重）之外同量级最轻组合；Grafana 一处查指标与日志，数据源 provisioning 免手工配置 | ✅ |
+| 1 | 指标采集面 | Prometheus 静态抓取（`deploy/prometheus/prometheus.yml`，`tappi-services` job 六 target 9091–9096，带 `service` 标签） | 六服务的 go-zero agent `/metrics` 端点早已全量暴露（上表端口即约定），指标面只缺「抓取配置」即补齐；静态抓配零服务发现设施，单实例假定下最简 | 已完成 |
+| 2 | 日志结构化 | go-zero logx `Log.Encoding: json`（六服务 `etc/*.yaml` 增 `Log` 块，`ServiceName` 标识来源，stdout console 模式） | logx 是仓内既有日志栈，JSON 单行天然可机器解析；容器 stdout 即日志流，零代码改动（`ServiceConf.Log` 为 go-zero 内建配置键） | 已完成 |
+| 3 | 集中收集与可视化 | docker compose 轻量观测栈：Prometheus + Promtail + Loki + Grafana（`deploy/docker-compose.monitoring.yaml`） | 仓内部署形态即 docker compose；Promtail 文件抓取容器 json-file 日志 + Loki 单二进制文件存储，是 ELK（JVM 重）之外同量级最轻组合；Grafana 一处查指标与日志，数据源 provisioning 免手工配置 | 已完成 |
 
 **交付物**：
 
@@ -1065,19 +1065,19 @@ curl localhost:3000                        # Grafana（Prometheus/Loki 已装配
 
 | 服务 | 鉴权状态 | 实现位置 |
 |------|---------|---------|
-| user-service | ✅ 签发 + 全局校验 | 签发：`utils/auth.go` `GenerateToken`（HS256，默认 7 天）；校验：`middleware/auth.go` 全局挂载（`server.Use`），白名单 `/auth/register`、`/auth/login`、`/ping`、`/health`、`/from/` 前缀 |
-| content-service | ✅ 可选校验 | `utils/auth.go` + `middleware/auth.go`（GET 公开、写接口需令牌），已有单测 |
-| community | ✅ 按路由校验 | `internal/middleware/auth_middleware.go`（`rest.Middleware`），写路由经 `rest.WithMiddlewares` 挂载，已有集成测试 |
-| api-gateway | ✅ 透传 | 转发 `Authorization` 头到上游（`upstream_test.go` 覆盖） |
+| user-service | 签发 + 全局校验 | 签发：`utils/auth.go` `GenerateToken`（HS256，默认 7 天）；校验：`middleware/auth.go` 全局挂载（`server.Use`），白名单 `/auth/register`、`/auth/login`、`/ping`、`/health`、`/from/` 前缀 |
+| content-service | 可选校验 | `utils/auth.go` + `middleware/auth.go`（GET 公开、写接口需令牌），已有单测 |
+| community | 按路由校验 | `internal/middleware/auth_middleware.go`（`rest.Middleware`），写路由经 `rest.WithMiddlewares` 挂载，已有集成测试 |
+| api-gateway | 透传 | 转发 `Authorization` 头到上游（`upstream_test.go` 覆盖） |
 | user-service-rpc | ➖ 无需鉴权 | 仅集群内部 gRPC 通信，不直接暴露公网 |
-| game-catalog | ✅ 按路由校验（本次新增） | `utils/auth.go` + `middleware/auth.go`，`POST /games` 受保护，4 个 GET 路由保持匿名公开 |
+| game-catalog | 按路由校验 | `utils/auth.go` + `middleware/auth.go`，`POST /games` 受保护，4 个 GET 路由保持匿名公开（上一批次补齐） |
 
 ### 令牌机制
 
-- **算法**：HS256 对称签名；user-service 是唯一签发方，其余服务只做校验。
-- **载荷**：`user_id`（int64）、`username`（string），校验通过后注入请求上下文 key `user_id` / `username`。
-- **过期**：签发方 `TokenExpire` 默认 7 天；校验方在 `ParseToken` 中强制检查 `exp`。
-- **密钥**：各服务 `etc/*.yaml` 的 `Auth.JWTSecret`，支持 `JWT_SECRET` 环境变量覆盖；
+- 算法：HS256 对称签名；user-service 是唯一签发方，其余服务只做校验。
+- 载荷：`user_id`（int64）、`username`（string），校验通过后注入请求上下文 key `user_id` / `username`。
+- 过期：签发方 `TokenExpire` 默认 7 天；校验方在 `ParseToken` 中强制检查 `exp`。
+- 密钥：各服务 `etc/*.yaml` 的 `Auth.JWTSecret`，支持 `JWT_SECRET` 环境变量覆盖；
   开发环境共享默认值，生产环境必须通过环境变量注入独立密钥。
 
 ### 受保护路由示例（game-catalog）
@@ -1138,12 +1138,12 @@ curl -v http://localhost:8888/health
 **两个作业、五项门禁**：
 
 1. **gate 作业**（Go，Node/Go 环境随 `go-version-file` 走 `go.work`）：
-   - **gofmt 检查**：`gofmt -l .` 非空即失败；
-   - **全模块构建**：遍历 `go work edit -json` 声明的模块执行 `go build ./...`（新增服务自动纳入，无需改 workflow）；
-   - **全模块测试**：同列表执行 `go test ./... -race -count=1`；
+   - gofmt 检查：`gofmt -l .` 非空即失败；
+   - 全模块构建：遍历 `go work edit -json` 声明的模块执行 `go build ./...`（新增服务自动纳入，无需改 workflow）；
+   - 全模块测试：同列表执行 `go test ./... -race -count=1`；
 2. **mobile 作业**（前端，pnpm + Node 24）：
-   - **web-client**：`pnpm web:typecheck`（tsc）+ `pnpm web:lint`（eslint）；
-   - **mobile-app**：`pnpm mobile:typecheck`（tsc）+ `pnpm mobile:lint`（eslint）。
+   - web-client：`pnpm web:typecheck`（tsc）+ `pnpm web:lint`（eslint）；
+   - mobile-app：`pnpm mobile:typecheck`（tsc）+ `pnpm mobile:lint`（eslint）。
 
 Go 版本跟随 `go.work`（`actions/setup-go@v5` 的 `go-version-file`），模块间共享构建缓存。
 等价的本地验证：
@@ -1163,20 +1163,20 @@ CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/�
 
 ## 下一步
 
-1. ~~实现用户认证和授权~~ ✅ 已完成（详见上文「认证与授权（JWT）」）：
+1. ~~实现用户认证和授权~~ 已完成（详见上文「认证与授权（JWT）」）：
    核查 6 个服务均有 JWT 体系——user-service 签发+全局校验、content-service 可选校验、
    community 按路由校验、api-gateway 透传、user-service-rpc 内网免鉴权（设计如此）；
    唯一缺口 game-catalog（有公开写端点 POST /games）已补齐：`utils/auth.go` 校验工具 +
    `middleware/auth.go` + 路由挂载（`POST /games` 受保护、GET 匿名公开）。
    同时补齐 user-service 鉴权中间件与 game-catalog 认证工具/中间件/路由集成测试。
-2. ~~添加数据库模型和缓存~~ ✅ 已完成：设计决策已落档（见上文「数据库集成 →
+2. ~~添加数据库模型和缓存~~ 已完成：设计决策已落档（见上文「数据库集成 →
    设计决策：数据库模型与缓存」——落地顺序 user-service → game-catalog →
    community/content、DSN 双驱动部署形态、进程内 TTL+LRU 缓存选型）；
    user-service、game-catalog、content-service、community 四切片全部落地
    （模型层读缓存 + 单测/集成测试，全模块 build + `-race` 门禁通过；
    game-catalog、content-service、community 的 JSON 文件仓均已迁
    SQLite/MySQL 双驱动，交付物见「数据库集成 → 4」）。
-3. ~~实现服务间通信~~ ✅ 已完成（通路审计 + 补齐客户端契约测试）：
+3. ~~实现服务间通信~~ 已完成（通路审计 + 补齐客户端契约测试）：
 
    | 通路 | 实现位置 | 契约测试 |
    |------|---------|---------|
@@ -1192,7 +1192,7 @@ CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/�
 
    全部 HTTP 通路的端点/参数/响应契约均已对照服务端真实路由核实
    （曾修复 content-service 客户端路径不一致问题，见 ENHANCEMENT.md）。
-4. ~~集成监控和日志收集~~ ✅ 已完成（见上文「监控与指标（Prometheus）→
+4. ~~集成监控和日志收集~~ 已完成（见上文「监控与指标（Prometheus）→
    设计决策：监控集成与日志收集」）：指标采集面（Prometheus 静态抓取
    `deploy/prometheus/prometheus.yml` 六 target，根 compose 补发布
    /metrics 端口 9091–9095）、日志结构化（六服务 `etc/*.yaml` 增 logx
@@ -1201,7 +1201,7 @@ CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/�
    → Loki → Grafana 统一查指标与日志，数据源 provisioning 免配置）。
    设计决策表三行（采集/结构化/集中收集）均已勾选，交付物与启动验证
    命令见该节。
-5. ~~配置 CI/CD 流水线~~ ✅ CI 部分已完成（`.github/workflows/ci.yml`，见上文「CI 流水线」）：
+5. ~~配置 CI/CD 流水线~~ CI 部分已完成（`.github/workflows/ci.yml`，见上文「CI 流水线」）：
    push/PR 触发 Go 三道门禁（gofmt + 全模块 build + `go test -race`，模块列表动态读取 go.work）
    与前端四道门禁（web/mobile 各自 tsc + eslint）；CD 部分（部署流水线）因无部署目标暂缓。
 
