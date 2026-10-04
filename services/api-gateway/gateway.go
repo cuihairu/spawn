@@ -11,8 +11,10 @@ import (
 	"github.com/tappi/tappi/services/api-gateway/internal/community"
 	"github.com/tappi/tappi/services/api-gateway/internal/config"
 	"github.com/tappi/tappi/services/api-gateway/internal/content"
+	"github.com/tappi/tappi/services/api-gateway/internal/games"
 	"github.com/tappi/tappi/services/api-gateway/internal/handler"
 	"github.com/tappi/tappi/services/api-gateway/internal/svc"
+	"github.com/tappi/tappi/services/api-gateway/internal/users"
 
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/rest"
@@ -44,6 +46,8 @@ func run() error {
 	handler.RegisterHandlers(server, ctx)
 	content.RegisterContentProxyRoutes(server, ctx)
 	community.RegisterCommunityProxyRoutes(server, ctx)
+	users.RegisterUserProxyRoutes(server, ctx)
+	games.RegisterGameProxyRoutes(server, ctx)
 
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()

@@ -63,7 +63,7 @@
 ### 下一步建议
 
 1. 移动端 M3 收尾（详见 `docs/mobile_plan.md`）：Android release 包（EAS 或本地 gradle）与真机闭环验证——本地推送、深链分享卡等功能已落地，均待真机回归。
-2. api-gateway BFF 化演进：mobile-app 现直连各服务（与 web-client 同模式），网关扩为完整 BFF 后统一切换（社区/内容反代路由与分享卡跳板页已就位）。
+2. api-gateway BFF 化第二阶段：第一阶段（移动端统一入口，社区/内容/游戏/用户反代 + 分享卡）已落地；后续按需扩聚合端点（列表聚合、字段裁剪），web-client 保持直连各服务不受影响。
 3. `docs/architecture/` 补充总体架构与数据流文档（服务边界、网关反代拓扑、移动端直连拓扑的现状与演进）。
 
 ### Go-zero 开发约定

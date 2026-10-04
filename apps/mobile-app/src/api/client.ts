@@ -1,12 +1,16 @@
 import { Platform } from 'react-native';
 
-// 服务地址：Android 模拟器用 10.0.2.2 访问宿主机回环（Expo 开发惯例），
-// iOS 模拟器/本机调试用 localhost；上生产前换成网关域名（docs/mobile_plan.md 风险表）。
-const host = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
-export const USER_SERVICE_URL = `http://${host}:8888`;
-export const GAME_SERVICE_URL = `http://${host}:8890`;
-export const CONTENT_SERVICE_URL = `http://${host}:8891`;
-export const COMMUNITY_SERVICE_URL = `http://${host}:8892`;
+// BFF 统一入口（第一阶段）：mobile-app 全量经 api-gateway（:8800）——登录/注册/资料
+// 走自有聚合 handler，社区/内容/游戏走反代（internal/{community,content,users,games}
+// 代理路由 + /games/featured 等自有 handler），直连各服务的拓扑对 App 收敛为一个地址。
+// Android 模拟器用 10.0.2.2 访问宿主机回环（Expo 开发惯例），iOS 模拟器用 localhost；
+// 生产用 EXPO_PUBLIC_API_URL 指向网关域名。
+const devHost = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
+const gatewayBase = process.env.EXPO_PUBLIC_API_URL ?? `http://${devHost}:8800`;
+export const USER_SERVICE_URL = gatewayBase;
+export const GAME_SERVICE_URL = gatewayBase;
+export const CONTENT_SERVICE_URL = gatewayBase;
+export const COMMUNITY_SERVICE_URL = gatewayBase;
 
 export interface UserInfo {
   id: number;

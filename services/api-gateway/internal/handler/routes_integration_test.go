@@ -13,8 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tappi/tappi/services/api-gateway/internal/community"
 	"github.com/tappi/tappi/services/api-gateway/internal/config"
+	"github.com/tappi/tappi/services/api-gateway/internal/content"
+	"github.com/tappi/tappi/services/api-gateway/internal/games"
 	"github.com/tappi/tappi/services/api-gateway/internal/svc"
+	"github.com/tappi/tappi/services/api-gateway/internal/users"
 
 	"github.com/zeromicro/go-zero/rest"
 )
@@ -69,7 +73,7 @@ func (l *callLog) reset() {
 	l.calls = nil
 }
 
-// upstreamStubs 持有三个真实上游 stub 及其调用记录。
+// upstreamStubs 持有真实上游 stub 及其调用记录（content 仅作地址占位，无调用记录）。
 type upstreamStubs struct {
 	user         *callLog
 	game         *callLog
@@ -77,6 +81,7 @@ type upstreamStubs struct {
 	userURL      string
 	gameURL      string
 	communityURL string
+	contentURL   string
 }
 
 // newUpstreamStubs 启动上游 stub，故障开关只依赖请求本身（无共享可变状态，-race 安全）：
@@ -108,11 +113,26 @@ func newUpstreamStubs(t *testing.T) *upstreamStubs {
 				return
 			}
 			_, _ = w.Write([]byte(`{"token":"gw-token","user_info":{"id":7,"username":"alice"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/auth/register":
+			if strings.Contains(string(body), `"username":"taken"`) {
+				// 业务失败走 HTTP 200 + 信封 code 409，客户端语义不变
+				_, _ = w.Write([]byte(`{"code":409,"message":"用户名已被占用"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"code":200,"message":"ok","data":{"user_id":7}}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/users/99/recommendations":
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte("boom"))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/recommendations"):
 			_, _ = w.Write([]byte(`{"code":200,"message":"ok","data":{"games":[{"id":"g-1","title":"Alpha RPG"}]}}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/users/"):
+			// 资料详情（BFF 反代）：放在 recommendations 之后避免遮蔽
+			if r.Header.Get("Authorization") == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"code":401,"message":"missing authorization token"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"code":200,"message":"ok","data":{"id":7,"username":"alice","email":"a@x.dev"}}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte("no such upstream endpoint"))
@@ -127,15 +147,26 @@ func newUpstreamStubs(t *testing.T) *upstreamStubs {
 			query:  r.URL.RawQuery,
 		})
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path != "/games/featured" {
+		switch {
+		case r.URL.Path == "/games/featured":
+			if r.URL.Query().Get("limit") == "9" {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			_, _ = w.Write([]byte(`{"games":[{"id":"g-1","title":"Alpha RPG"},{"id":"g-2","title":"Beta FPS"}],"total":2}`))
+		case r.URL.Path == "/games":
+			_, _ = w.Write([]byte(`{"games":[{"id":"g-1","title":"Alpha RPG"}],"total":1,"limit":20,"offset":0}`))
+		case strings.HasPrefix(r.URL.Path, "/games/"):
+			if strings.HasSuffix(r.URL.Path, "/nope") {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"code":404,"message":"游戏不存在"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"game":{"id":"g-1","title":"Alpha RPG"}}`))
+		default:
 			w.WriteHeader(http.StatusNotFound)
-			return
+			_, _ = w.Write([]byte("no such upstream endpoint"))
 		}
-		if r.URL.Query().Get("limit") == "9" {
-			w.WriteHeader(http.StatusBadGateway)
-			return
-		}
-		_, _ = w.Write([]byte(`{"games":[{"id":"g-1","title":"Alpha RPG"},{"id":"g-2","title":"Beta FPS"}],"total":2}`))
 	}))
 	t.Cleanup(gameStub.Close)
 
@@ -159,14 +190,25 @@ func newUpstreamStubs(t *testing.T) *upstreamStubs {
 	}))
 	t.Cleanup(communityStub.Close)
 
+	contentStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// content 反代不在本文件断言范围（有独立包测试）；地址占用 + 全都 404，
+		// 偶发误触会立刻暴露为上游 404，不会误报成功。
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("not stubbed"))
+	}))
+	t.Cleanup(contentStub.Close)
+
 	stubs.userURL = userStub.URL
 	stubs.gameURL = gameStub.URL
 	stubs.communityURL = communityStub.URL
+	stubs.contentURL = contentStub.URL
 	return stubs
 }
 
 // newGatewayServer 按生产装配启动真实网关：配置里的上游地址指向 stub，
 // 超时给 2s；就绪探测用的 /games/featured 调用会在返回后清空调用记录。
+// 反代路由（content/community/users/games）与生产 main.go 同批注册，
+// 保证自有 handler 与反代共存的路由冲突在此暴露。
 func newGatewayServer(t *testing.T, stubs *upstreamStubs) string {
 	t.Helper()
 
@@ -185,10 +227,16 @@ func newGatewayServer(t *testing.T, stubs *upstreamStubs) string {
 	c.Upstreams.GameCatalog.Timeout = 2000
 	c.Upstreams.Community.BaseURL = stubs.communityURL
 	c.Upstreams.Community.Timeout = 2000
+	c.Upstreams.Content.BaseURL = stubs.contentURL
+	c.Upstreams.Content.Timeout = 2000
 
 	svcCtx := svc.NewServiceContext(c)
 	server := rest.MustNewServer(c.RestConf)
 	RegisterHandlers(server, svcCtx)
+	content.RegisterContentProxyRoutes(server, svcCtx)
+	community.RegisterCommunityProxyRoutes(server, svcCtx)
+	users.RegisterUserProxyRoutes(server, svcCtx)
+	games.RegisterGameProxyRoutes(server, svcCtx)
 	go server.Start()
 	t.Cleanup(server.Stop)
 
@@ -570,11 +618,108 @@ func TestRoutes_ShareLinkBadID(t *testing.T) {
 	}
 }
 
+// --- BFF 第一阶段：user/game 反代（mobile-app 统一入口） ---
+
+func TestRoutes_Register(t *testing.T) {
+	stubs := newUpstreamStubs(t)
+	base := newGatewayServer(t, stubs)
+
+	// 成功：信封 data.user_id 透传；上游收到注册体。
+	got := call(t, http.MethodPost, base+"/auth/register", "",
+		`{"username":"alice","email":"a@x.dev","password":"pw"}`)
+	if got.status != http.StatusOK {
+		t.Fatalf("register status = %d, body = %s", got.status, got.body)
+	}
+	if got.json["code"] != float64(200) {
+		t.Fatalf("envelope = %#v", got.json)
+	}
+	if data := object(t, got.json, "data"); data["user_id"] != float64(7) {
+		t.Fatalf("data = %#v", data)
+	}
+	sent := stubs.user.last(t)
+	if sent.method != http.MethodPost || sent.path != "/auth/register" {
+		t.Fatalf("upstream request = %s %s", sent.method, sent.path)
+	}
+	if !strings.Contains(sent.body, `"username":"alice"`) {
+		t.Fatalf("upstream body = %q", sent.body)
+	}
+
+	// 业务失败：HTTP 200 + 信封 code 409 原样透传（客户端 requestEnvelopeFull 语义不变）。
+	got = call(t, http.MethodPost, base+"/auth/register", "", `{"username":"taken","email":"t@x.dev","password":"pw"}`)
+	if got.status != http.StatusOK {
+		t.Fatalf("taken status = %d, want 200 信封", got.status)
+	}
+	if got.json["code"] != float64(409) || got.json["message"] != "用户名已被占用" {
+		t.Fatalf("taken envelope = %#v", got.json)
+	}
+}
+
+func TestRoutes_UserProfile(t *testing.T) {
+	stubs := newUpstreamStubs(t)
+	base := newGatewayServer(t, stubs)
+
+	// Bearer 透传 + 信封 data 透传。
+	got := call(t, http.MethodGet, base+"/users/7", "Bearer gw-token", "")
+	if got.status != http.StatusOK {
+		t.Fatalf("profile status = %d, body = %s", got.status, got.body)
+	}
+	if data := object(t, got.json, "data"); data["username"] != "alice" {
+		t.Fatalf("data = %#v", data)
+	}
+	sent := stubs.user.last(t)
+	if sent.path != "/users/7" || sent.auth != "Bearer gw-token" {
+		t.Fatalf("upstream request = %+v", sent)
+	}
+
+	// 匿名 → 上游 401 原样透传（App 401 统一跳登录依赖状态码）。
+	got = call(t, http.MethodGet, base+"/users/7", "", "")
+	if got.status != http.StatusUnauthorized {
+		t.Fatalf("anon status = %d, want 401", got.status)
+	}
+}
+
+func TestRoutes_GamesListAndDetail(t *testing.T) {
+	stubs := newUpstreamStubs(t)
+	base := newGatewayServer(t, stubs)
+
+	// 列表 + 搜索/分页 query 透传。
+	got := call(t, http.MethodGet, base+"/games?keyword=rpg&limit=20&offset=0", "", "")
+	if got.status != http.StatusOK {
+		t.Fatalf("games list status = %d, body = %s", got.status, got.body)
+	}
+	if games := list(t, got.json, "games"); len(games) != 1 {
+		t.Fatalf("games = %#v", games)
+	}
+	sent := stubs.game.last(t)
+	if sent.path != "/games" || sent.query != "keyword=rpg&limit=20&offset=0" {
+		t.Fatalf("upstream request = %+v", sent)
+	}
+
+	// 详情路径参数透传。
+	got = call(t, http.MethodGet, base+"/games/g-1", "", "")
+	if got.status != http.StatusOK {
+		t.Fatalf("game detail status = %d, body = %s", got.status, got.body)
+	}
+	if game := object(t, got.json, "game"); game["title"] != "Alpha RPG" {
+		t.Fatalf("game = %#v", game)
+	}
+	sent = stubs.game.last(t)
+	if sent.path != "/games/g-1" {
+		t.Fatalf("upstream request = %+v", sent)
+	}
+
+	// 缺失 → 上游 404 原样透传。
+	got = call(t, http.MethodGet, base+"/games/nope", "", "")
+	if got.status != http.StatusNotFound {
+		t.Fatalf("missing status = %d, want 404", got.status)
+	}
+}
+
 // --- 路由注册本身 ---
 
-// TestRoutes_RegistrationIsExact 校验 RegisterHandlers 注册的路由集合恰好是四条：
+// TestRoutes_RegistrationIsExact 校验网关自有 handler 的路由边界：
 // 路径存在但方法不符返回 405，路径不存在返回 404，都不会被某条路由兜住，
-// 也不会触达上游，证明没有隐式兜底路由。
+// 也不会触达上游，证明没有隐式兜底路由。（反代路由由各 proxy 包单测覆盖。）
 func TestRoutes_RegistrationIsExact(t *testing.T) {
 	stubs := newUpstreamStubs(t)
 	base := newGatewayServer(t, stubs)
@@ -589,7 +734,9 @@ func TestRoutes_RegistrationIsExact(t *testing.T) {
 		{"精选只注册 GET", http.MethodPost, "/games/featured", http.StatusMethodNotAllowed},
 		{"推荐只注册 GET", http.MethodPost, "/users/7/recommendations", http.StatusMethodNotAllowed},
 		{"分享卡只注册 GET", http.MethodPost, "/s/p/1", http.StatusMethodNotAllowed},
-		{"未注册路径", http.MethodGet, "/games", http.StatusNotFound},
+		// go-zero 对参数路由的未注册方法返回 404：关键断言是不触达上游
+		{"资料只注册 GET", http.MethodPost, "/users/7", http.StatusMethodNotAllowed},
+		{"未注册路径", http.MethodGet, "/api/v1/games", http.StatusNotFound},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
