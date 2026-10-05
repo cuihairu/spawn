@@ -1267,6 +1267,92 @@ pnpm mobile:typecheck && pnpm mobile:lint
 
 CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/镜像仓库凭据），待部署方案确定后补充。
 
+## 待拍板材料（2026-10-05）
+
+以下两项只备料未动手：未合并 PR、未动 dependabot 分支、未开工上传后端。
+
+### 1. 图片上传后端存储选型
+
+缺口登记在 `mobile_plan.md` 第 3 条：content-service / community 现无对象存储，
+首期图片功能限「选图预览」，上传能力另立后端任务。
+
+现状（以源码核实）：
+
+- `services/` 下无 multipart/FormFile 处理，上传端点从零起步，没有既有实现要兼容。
+- 图片字段只在 community 两处：`Posts.Images`（JSON 字符串数组）与
+  `Topics.CoverImage`。content-service 攻略、user-service 用户没有图片/头像
+  字段；移动端头像目前是首字母占位（`profile.tsx`），web-client 仅在发帖
+  参数带 `images?: string[]`。字段里存的都是 URL 字符串，指向哪里由后端定。
+- 部署形态：docker compose 单机六服务 + web-client nginx，业务服务无数据卷，
+  无 K8s、无云厂商依赖——与 2026-10-02 监控选型时点的判断一致（见上文
+  「设计决策：监控集成与日志收集」）。
+
+| 方案 | 成本 | 运维 | 数据边界 |
+|---|---|---|---|
+| A. 本地盘 + 服务静态托管 | 货币 0（用宿主既有磁盘） | 备份要自己纳入（仓内现无备份机制，SQLite 同处境）；扩容即加盘 | 数据不出部署边界 |
+| B. MinIO 自托管（compose 加一容器，S3 兼容） | 货币 0 | 多一个常驻容器的升级与监控；换来预签名、分片上传、生命周期策略 | 数据不出部署边界 |
+| C. 云对象存储（OSS/S3/R2） | 按量付费（存储量 + 请求次数）+ 密钥管理 | 存储面零运维，CDN 直出 | 数据外发到第三方。**默认关**：不配凭据启动即拒、开关显式打开才生效，开启需另行拍板 |
+| D. 图片存数据库（BLOB） | 货币 0 | 随库备份 | 数据不出边界。库膨胀、读放大，SQLite/MySQL 都不宜，列出来只为排除 |
+
+**推荐方案 A：本地盘存储，api-gateway 做统一上传入口。** 理由：
+
+1. 单机 compose、无云依赖的现状下，A 是同量级最轻方案，与监控选型同一口径
+   （按部署形态取最轻）。
+2. 首期要传的只有帖子图、话题封面，加头像也不过 MB 级；B 的高级接口、C 的
+   CDN 在这个量级用不上。
+3. 边界干净：图片留在部署内。将来若要外发（C）是独立拍板项，开关默认关，
+   不随本次选型搭车。
+
+落点（实施细节，随实施单出，不在本材料拍板范围）：gateway 加
+`POST /upload`（JWT 之后）校验类型与大小、落 `uploads/`，返回
+`/uploads/...` URL 写进既有 `Images`/`CoverImage` 字段；compose 给 gateway
+挂 `uploads` 卷；业务服务只存 URL 不碰文件，web/mobile 只拿 URL 渲染。
+
+状态：待拍板。
+
+### 2. dependabot npm 安全组 PR #2（CI 锁文件红）
+
+PR 是什么：dependabot npm_and_yarn 分组安全更新，分支
+`dependabot/npm_and_yarn/npm_and_yarn-fd5110c855`，manifest 侧 14 项依赖
+升级，横跨根与 `apps/web-client` 两个 workspace（docs、mobile-app 的
+manifest 不在改动面）。组内包名单（取自 run 37239958566 标题，标题截断，
+全名单以 PR 页面为准）：@babel/core、@humanfs/node、baseline-browser-mapping、
+brace-expansion、braces、browserslist、decode-uri-component、esbuild、flatted、
+js-yaml、minimatch、nanoid、node-forge、picomatch、postcss、react-router
+（多实例）等——构建链安全补丁为主，react-router 属运行时。仓库没有
+`.github/dependabot.yml`（版本更新从未配置），这类分组来自服务端安全更新
+设置，与已合并的 go_modules 组 PR #1 同一来源（152 告警背景）。
+
+为什么红：dependabot 改了 `package.json` 但没更新 `pnpm-lock.yaml`，CI 的
+`pnpm install --frozen-lockfile` 报
+`ERR_PNPM_OUTDATED_LOCKFILE: pnpm-lock.yaml is not up to date with
+apps/web-client/package.json`（run 37239958566，3m4s，completed failure）。
+PR 在 git 层 MERGEABLE、与 main 无冲突，红的只有锁文件同步这道校验；main
+的锁文件与 manifest 一致（本地装过验证），问题不在 main。
+
+照原样合并的影响面——三条 workflow 的 install 都是
+`pnpm install --frozen-lockfile`，会全部转红：
+
+| workflow | 挂在哪一步 | 后果 |
+|---|---|---|
+| ci.yml | `mobile` job（web + mobile 四道门禁的 install） | push 后 CI 红；Go `gate` job 不受影响 |
+| docs.yml | build job 的 install | 文档站构建部署被挡，站点内容冻结 |
+| nightly.yml | install | 每日 nightly Release 断供（18:37 UTC cron + 手动触发） |
+
+另：Dependabot 自己的 Update 作业因该 PR 红而持续失败，随本 PR 一并解决。
+
+| 方案 | 做法 | 代价 |
+|---|---|---|
+| A（推荐） | 拍板合并 PR #2（允许红检查合入）→ 我在 main 跑 `pnpm install`（钉 pnpm 10.22.0）生成锁文件，跑 `pnpm install --frozen-lockfile` + web/mobile 四道门禁转绿 → 提交推送 | main 有分钟级红窗口；窗口若撞上 nightly cron，当日 Release 缺一次 |
+| B | 放开「只推 main」限制，我在 PR 分支补锁 → CI 转绿后再正常合并 | 零红窗口；突破现行推送约束，需显式授权 |
+| C | 关闭 PR #2 等 dependabot 下轮重建 | 重建大概率同样红（锁文件更新能力问题不因重建消失），安全补丁继续敞口 |
+| D | 我在 main 代做同款 14 项升级 + 补锁，关掉 PR #2 | 与 dependabot 重复劳动，等于替它改依赖，超出本轮「不动手 dependabot」范围 |
+
+推荐方案 A：红窗口分钟级，修复动作是一次 `pnpm install` 加一个 commit；
+要零窗口就选 B 并显式放开分支推送。
+
+状态：待拍板是否合并。本轮未合并、未动 dependabot 分支。
+
 ## 下一步
 
 1. ~~实现用户认证和授权~~ 已完成（详见上文「认证与授权（JWT）」）：
