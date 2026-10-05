@@ -1,0 +1,56 @@
+# iOS 编译验证：GitHub macOS runner 跑 Expo prebuild（CNG 生成 ios/）+ 模拟器 SDK 构建（免签名）。
+# 只手动触发——macOS 分钟按 10 倍计费，不挂 push，按需点火；失败时列出可用 scheme 辅助排查。
+name: iOS build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: expo prebuild + iphonesimulator build
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Expo prebuild (ios, CNG)
+        working-directory: apps/mobile-app
+        run: npx expo prebuild -p ios --no-install
+
+      - name: Pod install
+        working-directory: apps/mobile-app/ios
+        run: pod install
+
+      - name: Build for iOS Simulator (no signing)
+        working-directory: apps/mobile-app/ios
+        run: |
+          xcodebuild -workspace spawn.xcworkspace \
+            -scheme spawn \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/derived \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: List schemes and targets (failure aid)
+        if: failure()
+        working-directory: apps/mobile-app/ios
+        run: xcodebuild -workspace spawn.xcworkspace -list
