@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.9
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 COPY . .
 ARG VITE_USER_SERVICE_URL=http://localhost:8888
 ARG VITE_GAME_SERVICE_URL=http://localhost:8890

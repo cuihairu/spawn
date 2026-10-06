@@ -6,7 +6,7 @@ spawn 的客户端与服务端现状一览。规划中的端只列状态，不�
 
 | 端 | 目录 | 技术栈 | 状态 |
 | --- | --- | --- | --- |
-| Web 主站 | `apps/web-client` | React 19 · Vite 7 · React Router 7 | 已落地 |
+| Web 主站 | `apps/web-client` | React 19 · Vite 8 · React Router 7 | 已落地 |
 | 移动客户端 | `apps/mobile-app` | Expo 57 · React Native 0.86 · expo-router | 已落地（Android release 出包流程已就绪） |
 | 小程序壳 | `apps/mini-program` | — | 规划中，尚未创建 |
 | 运营后台 | `apps/admin-console` | — | 规划中，尚未创建 |
