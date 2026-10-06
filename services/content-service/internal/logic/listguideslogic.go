@@ -40,6 +40,7 @@ func (l *ListGuidesLogic) ListGuides(req *types.ListGuidesRequest) (resp *types.
 		GameId:        req.GameId,
 		AuthorId:      req.AuthorId,
 		Tag:           req.Tag,
+		Keyword:       req.Keyword,
 		Page:          req.Page,
 		PageSize:      req.PageSize,
 		PublishedOnly: !includeDrafts,

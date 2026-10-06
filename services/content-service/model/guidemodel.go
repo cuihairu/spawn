@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tappi/tappi/services/content-service/internal/cache"
@@ -35,6 +36,7 @@ type GuideFilter struct {
 	GameId        string
 	AuthorId      int64
 	Tag           string
+	Keyword       string
 	Page          int
 	PageSize      int
 	PublishedOnly bool
@@ -482,6 +484,14 @@ func matchesGuide(guide *Guide, filter GuideFilter) bool {
 			}
 		}
 		if !found {
+			return false
+		}
+	}
+
+	// Keyword：标题/摘要/正文任一包含即命中（大小写不敏感，空白关键词不生效）。
+	if filter.Keyword != "" {
+		kw := strings.ToLower(filter.Keyword)
+		if !strings.Contains(strings.ToLower(guide.Title+" "+guide.Summary+" "+guide.Content), kw) {
 			return false
 		}
 	}

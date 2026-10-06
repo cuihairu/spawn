@@ -13,6 +13,8 @@ const GuidesPage = ({ token, userId }: Props) => {
   const [guides, setGuides] = useState<Guide[]>([])
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<'all' | 'my'>('all')
+  const [keyword, setKeyword] = useState('')
+  const [searchText, setSearchText] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const loadGuides = useCallback(async () => {
@@ -21,6 +23,7 @@ const GuidesPage = ({ token, userId }: Props) => {
     try {
       const params = {
         ...(filter === 'my' && userId ? { authorId: userId } : {}),
+        ...(keyword ? { keyword } : {}),
         limit: 50,
         token,
       }
@@ -31,7 +34,7 @@ const GuidesPage = ({ token, userId }: Props) => {
     } finally {
       setLoading(false)
     }
-  }, [filter, token, userId])
+  }, [filter, keyword, token, userId])
 
   useEffect(() => {
     // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState.
@@ -51,6 +54,38 @@ const GuidesPage = ({ token, userId }: Props) => {
       <div className="guides-header">
         <h1>游戏攻略</h1>
         <div className="guides-actions">
+          <form
+            className="guide-search-form"
+            role="search"
+            onSubmit={(e) => {
+              e.preventDefault()
+              setKeyword(searchText.trim())
+            }}
+          >
+            <input
+              type="search"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="搜索攻略标题、摘要或正文"
+              aria-label="搜索攻略"
+            />
+            {searchText && (
+              <button
+                type="button"
+                className="guide-search-clear"
+                aria-label="清空搜索"
+                onClick={() => {
+                  setSearchText('')
+                  setKeyword('')
+                }}
+              >
+                ×
+              </button>
+            )}
+            <button type="submit" className="guide-search-submit">
+              搜索
+            </button>
+          </form>
           <div className="filter-tabs">
             <button
               type="button"
@@ -87,8 +122,26 @@ const GuidesPage = ({ token, userId }: Props) => {
         <div className="loading-state">加载中...</div>
       ) : guides.length === 0 ? (
         <div className="empty-state">
-          <p>{filter === 'my' ? '你还没有创建攻略' : '暂无攻略'}</p>
-          {token && (
+          <p>
+            {keyword
+              ? `没有找到与「${keyword}」匹配的攻略`
+              : filter === 'my'
+                ? '你还没有创建攻略'
+                : '暂无攻略'}
+          </p>
+          {keyword && (
+            <button
+              type="button"
+              className="create-guide-btn"
+              onClick={() => {
+                setSearchText('')
+                setKeyword('')
+              }}
+            >
+              清空搜索
+            </button>
+          )}
+          {!keyword && token && (
             <Link to="/guides/new" className="create-guide-btn">
               创建第一篇攻略
             </Link>

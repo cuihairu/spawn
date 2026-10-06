@@ -53,6 +53,7 @@ type ListGuidesRequest struct {
 	GameId   string `form:"game_id,optional"`
 	AuthorId int64  `form:"author_id,optional"`
 	Tag      string `form:"tag,optional"`
+	Keyword  string `form:"keyword,optional"`
 	Page     int    `form:"page,default=1"`
 	PageSize int    `form:"page_size,default=20"`
 }
