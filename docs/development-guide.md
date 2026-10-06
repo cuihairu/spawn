@@ -1357,8 +1357,10 @@ PR 在 git 层 MERGEABLE、与 main 无冲突，红的只有锁文件同步这�
 - vite `^7→^8` 连带 `@vitejs/plugin-react@5.1.1` 的 peer 不认 vite 8——pnpm
   不卡 peer 冲突所以 CI 门禁没拦到，Docker 镜像的 `npm ci` 才 ERESOLVE。
   `9682992` 顶 plugin-react 6.1.2（peer `vite ^8.0.0`）、双锁同步、Dockerfile
-  转 node:24-alpine + `npm ci` 可复现安装。本机 Docker Hub 不可达，镜像实
-  构建待网络恢复后 compose 复验（`npm ci --dry-run` 与 pnpm 全门禁已绿）。
+  转 node:24-alpine + `npm ci` 可复现安装。镜像实构建已复验（2026-10-07：
+  本机 Docker Hub 域名遭 DNS 污染，验证真 IP 钉 /etc/hosts 后
+  `docker compose build web-client` 成功、容器冒烟 HTTP 200；
+  `npm ci --dry-run` 与 pnpm 全门禁此前已绿）。
 - Dependabot Updates 的 npm 组作业在 10-06 又红（braces、decode-uri-component、
   esbuild、node-forge、uuid、vite 新一批，dependabot 依旧产不出一致的
   pnpm-lock，PR 建不出来）；go_modules 组同日出了新 PR 且 CI 绿，待拍板合并。
