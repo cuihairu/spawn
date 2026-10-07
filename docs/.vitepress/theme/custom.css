@@ -47,12 +47,7 @@
   text-indent: 0;
 }
 
-/* 首页 hero 标题用品牌色双停渐变，亮暗两套各自成立。 */
+/* 首页 hero 标题用纯品牌色（随 --vp-c-brand-1 亮暗各档自动跟随）。 */
 :root {
-  --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(120deg, #d4237a, #f06ba6);
-}
-
-.dark {
-  --vp-home-hero-name-background: linear-gradient(120deg, #f06ba6, #f796c4);
+  --vp-home-hero-name-color: var(--vp-c-brand-1);
 }
