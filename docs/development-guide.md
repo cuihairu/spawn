@@ -1369,8 +1369,6 @@ PR 在 git 层 MERGEABLE、与 main 无冲突，红的只有锁文件同步这�
 
 ## 下一步
 
-## 下一步
-
 1. ~~实现用户认证和授权~~ 已完成（详见上文「认证与授权（JWT）」）：
    核查 6 个服务均有 JWT 体系——user-service 签发+全局校验、content-service 可选校验、
    community 按路由校验、api-gateway 透传、user-service-rpc 内网免鉴权（设计如此）；
