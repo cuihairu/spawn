@@ -12,7 +12,8 @@
       "android"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tappi.spawn"
     },
     "android": {
       "package": "com.tappi.spawn",

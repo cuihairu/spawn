@@ -95,3 +95,4 @@
 |------|------|------|
 | 2026-10-02 | 按推荐定稿：Android P0 / iOS P1；功能面按第 2 节切分；React Native（Expo）+ TypeScript；里程碑 M0–M3 共约 7–8 周 | 用户授权免审直接拍板；M0 同日开工。Flutter 备选否决理由维持有效 |
 | 2026-10-05 | iOS 与鸿蒙定位改为**低优先级填空**：只写代码；iOS 验证走 GitHub macOS runner（不占本地不卡进度），鸿蒙无工具链只写码编译过即可；有空闲就做、没空继续其他任务，绝不卡主进度，也不当主线 | 用户修正令，覆盖 10-02「iOS P1 紧随」节奏；M3 的 iOS TestFlight 侧载验证随本口径转为填空项 |
+| 2026-10-07 | （按 10-05 填空口径自主执行，非拍板）iOS 补 `ios.bundleIdentifier = com.tappi.spawn` 与 Android 对齐：此前 iOS 侧无 bundle id，prebuild 每次靠 Expo 推导默认值，身份不稳定波及 `spawn://` 深链注册与将来侧载/推送证书；iOS workflow（497d4cd）build 验证 | 主队列清零后的填空项；鸿蒙维持 plan 第 2 节「暂不」（RN 纯血鸿蒙生态未稳）不动 |
