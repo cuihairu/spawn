@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
 import type { UserInfo } from './api/client'
 import HomePage from './pages/HomePage'
+import DiscoverPage from './pages/DiscoverPage'
 import CommunityPage from './pages/CommunityPage'
 import GuidesPage from './pages/GuidesPage'
 import GuideDetailPage from './pages/GuideDetailPage'
@@ -46,6 +47,9 @@ function App() {
               <Link to="/" className="nav-link">
                 首页
               </Link>
+              <Link to="/discover" className="nav-link">
+                发现
+              </Link>
               <Link to="/community" className="nav-link">
                 社区
               </Link>
@@ -67,6 +71,7 @@ function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<HomePage auth={auth} onAuthChange={handleAuthChange} />} />
+            <Route path="/discover" element={<DiscoverPage />} />
             <Route
               path="/community"
               element={<CommunityPage token={auth?.token} userId={auth?.user.id} />}
