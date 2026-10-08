@@ -86,6 +86,10 @@ type HomeFeedResponse {
 	Degraded      []string        `json:"degraded"`
 }
 
+type UploadResponse {
+	Url string `json:"url"`
+}
+
 service api-gateway {
 	@handler LoginHandler
 	post /auth/login (LoginRequest) returns (LoginResponse)
@@ -101,4 +105,11 @@ service api-gateway {
 
 	@handler HomeFeedHandler
 	get /home/feed (HomeFeedRequest) returns (HomeFeedResponse)
+
+	// 统一上传入口：multipart form 字段 file，JWT 之后落本地盘（方案 A）。
+	@handler UploadHandler
+	post /upload returns (UploadResponse)
+
+	// 已上传图片的静态托管不进本 API 声明（非 JSON 端点），
+	// 在 internal/handler/routes.go 注册 GET /uploads/:file。
 }

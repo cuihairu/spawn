@@ -8,6 +8,18 @@ import "github.com/zeromicro/go-zero/rest"
 type Config struct {
 	rest.RestConf
 
+	// Auth 上传入口的 JWT 本地校验：secret 与 user-service 的 Auth.JWTSecret
+	// 保持一致（HS256），claims 口径见 internal/upload.UserClaims。
+	Auth struct {
+		JWTSecret string `json:",env=JWT_SECRET"`
+	}
+
+	// Upload 统一上传入口：图片落本地盘（方案 A），业务服务只存返回的 URL。
+	Upload struct {
+		Dir      string `json:",default=./uploads"`
+		MaxBytes int64  `json:",default=10485760"`
+	}
+
 	Upstreams struct {
 		UserService struct {
 			BaseURL string `json:",env=USER_SERVICE_URL"`

@@ -9,6 +9,10 @@ services:
       GAME_SERVICE_URL: http://game-catalog:8890
       CONTENT_SERVICE_URL: http://content-service:8891
       COMMUNITY_SERVICE_URL: http://community:8892
+      # 与 user-service 的 Auth.JWTSecret 同值：上传入口网关本地校验 JWT。
+      JWT_SECRET: tappi-user-service-jwt-secret-key-2024
+    volumes:
+      - uploads:/app/uploads
     depends_on:
       - user-service
       - game-catalog
@@ -82,3 +86,6 @@ services:
       - content-service
       - community
     restart: unless-stopped
+
+volumes:
+  uploads:

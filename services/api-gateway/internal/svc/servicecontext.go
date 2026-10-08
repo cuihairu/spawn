@@ -9,6 +9,7 @@ import (
 
 	"github.com/tappi/tappi/services/api-gateway/internal/config"
 	"github.com/tappi/tappi/services/api-gateway/internal/integration"
+	"github.com/tappi/tappi/services/api-gateway/internal/upload"
 )
 
 type UserService interface {
@@ -38,6 +39,9 @@ type ServiceContext struct {
 	GameCatalog GameCatalogService
 	Community   CommunityService
 	Content     ContentService
+	// UploadAuth 上传入口的 JWT 本地校验；UploadStore 图片落盘配置（方案 A）。
+	UploadAuth  *upload.Validator
+	UploadStore *upload.Store
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -52,5 +56,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		GameCatalog: gameClient,
 		Community:   communityClient,
 		Content:     contentClient,
+		UploadAuth:  upload.NewValidator(c.Auth.JWTSecret),
+		UploadStore: &upload.Store{Dir: c.Upload.Dir, MaxBytes: c.Upload.MaxBytes},
 	}
 }

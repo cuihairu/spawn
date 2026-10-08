@@ -34,6 +34,11 @@ func TestRun_StartsGateway(t *testing.T) {
 	content := `Name: api-gateway-test
 Host: 127.0.0.1
 Port: ` + strconv.Itoa(port) + `
+Auth:
+  JWTSecret: "test-secret"
+Upload:
+  Dir: "` + t.TempDir() + `"
+  MaxBytes: 10485760
 Upstreams:
   UserService:
     BaseURL: "http://localhost:18888"

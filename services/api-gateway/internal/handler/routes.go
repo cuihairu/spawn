@@ -38,5 +38,15 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			Path:    "/home/feed",
 			Handler: HomeFeedHandler(serverCtx),
 		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/upload",
+			Handler: UploadHandler(serverCtx),
+		},
+		{
+			Method:  http.MethodGet,
+			Path:    "/uploads/:file",
+			Handler: UploadsFileHandler(serverCtx),
+		},
 	})
 }

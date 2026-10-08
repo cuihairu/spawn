@@ -2,7 +2,10 @@ module github.com/tappi/tappi/services/api-gateway
 
 go 1.26.0
 
-require github.com/zeromicro/go-zero v1.9.3
+require (
+	github.com/golang-jwt/jwt/v5 v5.3.0
+	github.com/zeromicro/go-zero v1.9.3
+)
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

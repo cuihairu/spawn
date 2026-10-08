@@ -2,6 +2,16 @@ Name: api-gateway
 Host: 0.0.0.0
 Port: 8800
 
+# 上传入口的 JWT 本地校验：secret 与 user-service 的 Auth.JWTSecret 保持一致，
+# 部署面可用 JWT_SECRET 环境变量覆盖（compose 里两端同步传值）。
+Auth:
+  JWTSecret: "tappi-user-service-jwt-secret-key-2024"
+
+# 统一上传入口：图片落本地盘（选型方案 A），容器内挂 uploads 卷。
+Upload:
+  Dir: "./uploads"
+  MaxBytes: 10485760
+
 Upstreams:
   UserService:
     BaseURL: "http://localhost:8888"
