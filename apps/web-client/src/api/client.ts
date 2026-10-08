@@ -672,6 +672,32 @@ export async function fetchPostById(id: number): Promise<Post> {
   return mapPost(payload.post)
 }
 
+// 关注流（M3 契约，与 mobile 对等）：按关注话题/用户的帖子聚合，最近更新倒序。
+export async function fetchFollowedPosts(
+  token: string,
+  limit = 20,
+  offset = 0,
+): Promise<{ posts: Post[]; total: number }> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const payload = await request<PostsResp>(baseUrl, `/api/v1/posts/followed?limit=${limit}&offset=${offset}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return { posts: (payload.posts ?? []).map(mapPost), total: payload.total ?? 0 }
+}
+
+// 我的点赞：点赞关系 join 帖子，点赞时间倒序分页。
+export async function fetchLikedPosts(
+  token: string,
+  limit = 20,
+  offset = 0,
+): Promise<{ posts: Post[]; total: number }> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const payload = await request<PostsResp>(baseUrl, `/api/v1/users/likes?limit=${limit}&offset=${offset}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return { posts: (payload.posts ?? []).map(mapPost), total: payload.total ?? 0 }
+}
+
 // 网关自有端点（POST /upload、GET /home/feed）专用：无网关地址时按本地默认网关回退。
 const gatewayBaseUrl = apiGatewayUrl ?? 'http://localhost:8800'
 

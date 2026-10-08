@@ -8,6 +8,7 @@ import GuidesPage from './pages/GuidesPage'
 import GuideDetailPage from './pages/GuideDetailPage'
 import GuideEditorPage from './pages/GuideEditorPage'
 import PostDetailPage from './pages/PostDetailPage'
+import ProfilePage from './pages/ProfilePage'
 import './App.css'
 
 const AUTH_STORAGE_KEY = 'tappi.auth'
@@ -58,6 +59,9 @@ function App() {
               </Link>
               {auth ? (
                 <>
+                  <Link to="/profile" className="nav-link">
+                    个人中心
+                  </Link>
                   <span className="nav-user">👤 {auth.user.nickname || auth.user.username}</span>
                   <button type="button" className="nav-logout" onClick={() => handleAuthChange(null)}>
                     退出登录
@@ -72,6 +76,19 @@ function App() {
           <Routes>
             <Route path="/" element={<HomePage auth={auth} onAuthChange={handleAuthChange} />} />
             <Route path="/discover" element={<DiscoverPage />} />
+            <Route
+              path="/profile"
+              element={
+                auth ? (
+                  <ProfilePage token={auth.token} userId={auth.user.id} nickname={auth.user.nickname} />
+                ) : (
+                  <div className="error-page">
+                    <p>请先登录</p>
+                    <Link to="/">返回首页</Link>
+                  </div>
+                )
+              }
+            />
             <Route
               path="/community"
               element={<CommunityPage token={auth?.token} userId={auth?.user.id} />}

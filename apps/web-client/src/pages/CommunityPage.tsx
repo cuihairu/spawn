@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   createPost,
   createTopic,
+  fetchFollowedPosts,
   fetchFollowingTopics,
   fetchHotPosts,
   fetchPosts,
@@ -26,9 +27,10 @@ const CommunityPage = ({ token, userId }: Props) => {
   const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selectedMode, setSelectedMode] = useState<'latest' | 'hot' | 'mine'>('latest')
-  // 未登录时「我的」不可用，渲染期推导回退到最新（替代原 effect 内的同步 setState）.
-  const mode = selectedMode === 'mine' && (!token || !userId) ? 'latest' : selectedMode
+  const [selectedMode, setSelectedMode] = useState<'latest' | 'hot' | 'mine' | 'followed'>('latest')
+  // 未登录时「我的/关注」不可用，渲染期推导回退到最新（替代原 effect 内的同步 setState）.
+  const mode =
+    selectedMode !== 'latest' && (!token || !userId) ? 'latest' : selectedMode
   const [following, setFollowing] = useState<Set<number>>(new Set())
 
   const [topicDraft, setTopicDraft] = useState({ name: '', description: '' })
@@ -125,6 +127,11 @@ const CommunityPage = ({ token, userId }: Props) => {
         setPosts(list)
         return
       }
+      if (mode === 'followed' && token) {
+        const res = await fetchFollowedPosts(token, 50)
+        setPosts(res.posts)
+        return
+      }
       const res = await fetchPosts({
         topicId: mode === 'mine' ? undefined : activeTopicId ?? undefined,
         authorId: mode === 'mine' && userId ? userId : undefined,
@@ -136,7 +143,7 @@ const CommunityPage = ({ token, userId }: Props) => {
     } finally {
       setLoading(false)
     }
-  }, [activeTopicId, mode, userId])
+  }, [activeTopicId, mode, token, userId])
 
   useEffect(() => {
     // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState.
@@ -352,6 +359,8 @@ const CommunityPage = ({ token, userId }: Props) => {
               <div className="secondary-text">
                 {mode === 'hot'
                   ? '热门帖子（全站）'
+                  : mode === 'followed'
+                    ? '关注流（已关注话题与用户的帖子）'
                   : mode === 'mine'
                     ? '我的帖子（按最近更新排序）'
                   : activeTopic
@@ -362,10 +371,11 @@ const CommunityPage = ({ token, userId }: Props) => {
             <div className="inline-actions">
               <select
                 value={mode}
-                onChange={(e) => setSelectedMode(e.target.value as 'latest' | 'hot' | 'mine')}
+                onChange={(e) => setSelectedMode(e.target.value as 'latest' | 'hot' | 'mine' | 'followed')}
               >
                 <option value="latest">最新</option>
                 <option value="hot">热门</option>
+                {token ? <option value="followed">关注</option> : null}
                 {token ? <option value="mine">我的帖子</option> : null}
               </select>
               <button type="button" className="secondary-btn" onClick={handleToggleFollow} disabled={!token || loading}>
@@ -379,7 +389,11 @@ const CommunityPage = ({ token, userId }: Props) => {
           ) : posts.length === 0 ? (
             <div className="community-empty">
               <div className="secondary-text">
-                {mode === 'mine' ? '你还没有发布帖子' : '暂无帖子'}
+                {mode === 'mine'
+                  ? '你还没有发布帖子'
+                  : mode === 'followed'
+                    ? '关注话题或用户后，这里会聚合他们的帖子'
+                  : '暂无帖子'}
               </div>
               {mode === 'mine' ? (
                 <button type="button" className="secondary-btn" onClick={() => setSelectedMode('latest')}>

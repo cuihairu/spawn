@@ -1,0 +1,33 @@
+/* 个人中心：三区块纵排，复用 community-card 与 feed-list */
+.profile-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.profile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.profile-header h1 {
+  margin: 0 0 0.25rem;
+}
+
+.profile-header p {
+  margin: 0;
+}
+
+.feed-item-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.profile-page .feed-item .post-meta {
+  margin-top: 0.35rem;
+}

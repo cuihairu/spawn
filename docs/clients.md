@@ -17,6 +17,10 @@ spawn 的客户端与服务端现状一览。规划中的端只列状态，不�
 - 开发调试时直连各业务服务；经 `api-gateway` 的聚合接口（`/home/feed`）可一次拿到首页四组数据。
 - 「发现」页（`/discover`）消费 `GET /home/feed` 聚合四区块（精选游戏/热帖/话题/攻略），
   网关侧降级分组顶部给提示条，对等 mobile 发现 Tab（2026-10-09 落地）。
+- M3 关系功能 web 对等（2026-10-09 落地）：社区页帖子流加「关注」模式
+  （`GET /api/v1/posts/followed`，未登录自动回退最新）；个人中心页（`/profile`，
+  登录后导航可达）聚合我的帖子（author_id 过滤）/我的攻略（author_id 过滤，
+  带 Bearer 可见自己草稿）/我的点赞（`GET /api/v1/users/likes`）。
 - 常用脚本：`pnpm --dir apps/web-client run dev`（开发）、`build`（tsc + vite 打包）、`lint`。
 
 ## 移动端（mobile-app）
