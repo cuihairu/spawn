@@ -2,6 +2,12 @@
   "name": "spawn",
   "private": true,
   "packageManager": "pnpm@10.22.0",
+  "pnpm": {
+    "overrides": {
+      "vite@>=5 <6": "6.4.3",
+      "decode-uri-component@>=0.2 <0.5": "0.5.0"
+    }
+  },
   "scripts": {
     "mobile:typecheck": "pnpm --dir apps/mobile-app exec tsc --noEmit",
     "mobile:lint": "pnpm --dir apps/mobile-app exec eslint .",
