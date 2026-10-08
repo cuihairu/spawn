@@ -1308,7 +1308,11 @@ CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/�
 `/uploads/...` URL 写进既有 `Images`/`CoverImage` 字段；compose 给 gateway
 挂 `uploads` 卷；业务服务只存 URL 不碰文件，web/mobile 只拿 URL 渲染。
 
-状态：待拍板。
+状态：已拍板（2026-10-08 用户拍板）：走方案 A——本地盘存储 +
+api-gateway 统一上传入口，按上文落点开工（`POST /upload` 挂在 JWT 之后，
+校验类型与大小、落 `uploads/` 返回 URL 写既有 `Images`/`CoverImage` 字段，
+compose 给 gateway 挂 uploads 卷）。外发方案 C 维持默认关，另立拍板
+不随本项搭车。
 
 ### 2. dependabot npm 安全组 PR #2（CI 锁文件红）
 
@@ -1351,7 +1355,8 @@ PR 在 git 层 MERGEABLE、与 main 无冲突，红的只有锁文件同步这�
 推荐方案 A：红窗口分钟级，修复动作是一次 `pnpm install` 加一个 commit；
 要零窗口就选 B 并显式放开分支推送。
 
-**结局（2026-10-07 补记）**：走方案 A。PR #2 已合并（`0d2757f`），main 补锁
+**结局（2026-10-07 补记；2026-10-08 用户正式拍板追认：修锁文件 CI 红后
+合并，即方案 A）**：走方案 A。PR #2 已合并（`0d2757f`），main 补锁
 `2cda261` 后 CI/docs 转绿。两笔后续：
 
 - vite `^7→^8` 连带 `@vitejs/plugin-react@5.1.1` 的 peer 不认 vite 8——pnpm
@@ -1363,9 +1368,17 @@ PR 在 git 层 MERGEABLE、与 main 无冲突，红的只有锁文件同步这�
   `npm ci --dry-run` 与 pnpm 全门禁此前已绿）。
 - Dependabot Updates 的 npm 组作业在 10-06 又红（braces、decode-uri-component、
   esbuild、node-forge、uuid、vite 新一批，dependabot 依旧产不出一致的
-  pnpm-lock，PR 建不出来）；go_modules 组同日出了新 PR 且 CI 绿，待拍板合并。
-  npm 组这批安全补丁的落地策略需拍板：手动代做（方案 D）或等 dependabot
-  自修，维持登记不动。
+  pnpm-lock，PR 建不出）。**2026-10-08 拍定方案 D 手动代做**（等 dependabot
+  自修已被 10-04 / 10-06 两轮证伪，平台不支持 pnpm 锁更新，不会自愈），
+  `17c5f40` 落地：pnpm overrides 钉 `vite@>=5 <6 → 6.4.3`（vitepress 链
+  旧实例，esbuild 随 vite 6 的 pin 带上 0.25.12）与
+  `decode-uri-component@>=0.2 <0.5 → 0.5.0`（expo 链 query-string@7 的
+  传递依赖），8 条 npm 告警清 5 条，web-client 的 vite 8 不受影响
+  （scoped override 只钉 vite 5 线）。其余 3 条登记不动：`uuid@7.0.3`
+  （expo 工具链 xcode 包 pin，uuid 9+ 转 ESM-only，override 必断
+  prebuild，等上游跟进）、`braces@3.0.3` 与 `node-forge@1.4.0`（已是
+  最新版本，上游尚无修复版）。go_modules 组 10-06 批 PR #3 已同日合并
+  （`1914f8a`）。
 
 ## 下一步
 
