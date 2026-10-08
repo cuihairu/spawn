@@ -1314,6 +1314,17 @@ api-gateway 统一上传入口，按上文落点开工（`POST /upload` 挂在 J
 compose 给 gateway 挂 uploads 卷）。外发方案 C 维持默认关，另立拍板
 不随本项搭车。
 
+落地记录：后端 `6642132`（gateway `POST /upload` JWT 本地校验 + 512 字节
+魔数嗅探白名单 png/jpeg/webp/gif + 10MB 上限 + 随机文件名 `O_EXCL` 落盘、
+`GET /uploads/:file` 文件名正则白名单防遍历 + `ServeContent` 回读，compose
+挂 uploads 卷；全栈冒烟过：无/坏 token 401、非图 400、超限 413、上传-回读
+字节一致）。前端接线同日收尾：web 侧 `createPost` 透传 `images`（后端
+`CreatePostReq.Images` 本就接受）、发帖表单选图（png/jpg/webp/gif 最多 4 张、
+单张 10MB 提交前本地预检、本地 blob 预览可移除，提交时逐张 `/upload` 换
+URL 再随帖落库）、帖子详情以 `resolveImageUrl` 把 `/uploads/` 相对路径拼
+网关来源后渲染；mobile 对等接线（expo-image-picker 系统相册多选 +
+同一 `/upload` helper，`compose` 缩略图行、`post/[id]` 网格渲染）。
+
 ### 2. dependabot npm 安全组 PR #2（CI 锁文件红）
 
 PR 是什么：dependabot npm_and_yarn 分组安全更新，分支
@@ -1378,7 +1389,16 @@ PR 在 git 层 MERGEABLE、与 main 无冲突，红的只有锁文件同步这�
   （expo 工具链 xcode 包 pin，uuid 9+ 转 ESM-only，override 必断
   prebuild，等上游跟进）、`braces@3.0.3` 与 `node-forge@1.4.0`（已是
   最新版本，上游尚无修复版）。go_modules 组 10-06 批 PR #3 已同日合并
-  （`1914f8a`）。
+  （`1914f8a`）。残留 3 条告警随后处置完毕（2026-10-08）：dismiss API
+  不认 `no_fix_available` 理由（422，合法值仅 fix_started/inaccurate/
+  no_bandwidth/not_used/tolerable_risk），改按链路定性——`braces`
+  （micromatch 构建链）与 `node-forge`（@expo/cli 证书签名链）dismiss 为
+  `not_used`（纯开发期工具链，不进生产产物），`uuid` dismiss 为
+  `fix_started`（修复版 11.1.1 存在但 xcode@3.0.1 锁 ^7，台账跟踪等
+  上游）。同时补 `.github/dependabot.yml` 把方案 D 定成配置事实：gomod
+  六模块（含 user-service-rpc）合组单 PR 周更自动开、npm 刻意不列维持
+  人工管控；安全告警/安全 PR 由服务端设置驱动，不受该文件影响照常
+  推送。
 
 ## 下一步
 

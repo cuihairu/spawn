@@ -1,0 +1,22 @@
+# dependabot 版本更新配置（2026-10-08 方案 D 定档，决策记录见 docs/development-guide.md）：
+# - gomod：六个服务模块合组单 PR 自动开，每周巡一次；
+# - npm/pnpm：刻意不列——按方案 D 人工管控（安全告警逐条评估，用 pnpm overrides 手动升级）；
+# - 安全更新（security alerts / 安全 PR）由仓库服务端设置驱动，不受本文件影响，照常推送。
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directories:
+      - /services/api-gateway
+      - /services/community
+      - /services/content-service
+      - /services/game-catalog
+      - /services/user-service
+      - /services/user-service-rpc
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Shanghai
+    groups:
+      go-modules:
+        patterns:
+          - '*'
