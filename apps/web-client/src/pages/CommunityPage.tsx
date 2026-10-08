@@ -36,9 +36,13 @@ const CommunityPage = ({ token, userId }: Props) => {
   // 发帖附图：本地 File + 预览 URL，提交时才逐张上传换 /uploads/ URL。
   const [postImages, setPostImages] = useState<{ file: File; preview: string }[]>([])
   const postImagesRef = useRef(postImages)
-  postImagesRef.current = postImages
 
-  // 组件卸载时释放仍在列表里的本地预览 URL（已移除/已提交的在各自路径释放）。
+  // 渲染期不写 ref（react-hooks/refs），用同步 effect 跟踪最新列表，
+  // 供卸载清理读取（已移除/已提交的预览在各自路径释放）。
+  useEffect(() => {
+    postImagesRef.current = postImages
+  }, [postImages])
+
   useEffect(
     () => () => {
       postImagesRef.current.forEach((img) => URL.revokeObjectURL(img.preview))
