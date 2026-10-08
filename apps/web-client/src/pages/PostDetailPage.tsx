@@ -4,6 +4,7 @@ import {
   deletePost,
   fetchPostById,
   likePost,
+  resolveImageUrl,
   sharePost,
   updatePost,
   type Post,
@@ -271,6 +272,18 @@ const PostDetailPage = ({ token, userId }: Props) => {
               </div>
             ) : null}
             <p style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7, margin: 0 }}>{post.content}</p>
+            {post.images && post.images.length > 0 ? (
+              <div className="post-images">
+                {post.images.map((src) => (
+                  <img
+                    key={src}
+                    src={resolveImageUrl(src)}
+                    alt={`${post.title} 附图`}
+                    loading="lazy"
+                  />
+                ))}
+              </div>
+            ) : null}
           </>
         )}
       </article>

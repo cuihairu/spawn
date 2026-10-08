@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   Share,
@@ -17,6 +18,7 @@ import {
   fetchPostById,
   followUser,
   likePost,
+  resolveImageUrl,
   sharePost,
   unfollowUser,
   type Post,
@@ -239,6 +241,18 @@ export default function PostDetailScreen() {
             </View>
           ) : null}
           <Text style={styles.body}>{post.content}</Text>
+          {post.images?.length ? (
+            <View style={styles.imageGrid}>
+              {post.images.map((src) => (
+                <Image
+                  key={src}
+                  source={{ uri: resolveImageUrl(src) }}
+                  style={styles.postImage}
+                  resizeMode="cover"
+                />
+              ))}
+            </View>
+          ) : null}
           <View style={styles.statRow}>
             <Text style={styles.statText}>👁 {post.view_count} 阅读</Text>
             <Text style={styles.statText}>👍 {post.like_count} 赞</Text>
@@ -432,6 +446,20 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     lineHeight: 26,
+  },
+  imageGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  postImage: {
+    width: 152,
+    height: 152,
+    borderRadius: 10,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   statRow: {
     flexDirection: 'row',

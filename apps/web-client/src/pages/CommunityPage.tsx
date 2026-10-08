@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   createPost,
@@ -9,6 +9,7 @@ import {
   fetchTopics,
   followTopic,
   unfollowTopic,
+  uploadImage,
   type Post,
   type Topic,
 } from '../api/client'
@@ -32,6 +33,46 @@ const CommunityPage = ({ token, userId }: Props) => {
 
   const [topicDraft, setTopicDraft] = useState({ name: '', description: '' })
   const [postDraft, setPostDraft] = useState({ title: '', content: '', tags: '' })
+  // 发帖附图：本地 File + 预览 URL，提交时才逐张上传换 /uploads/ URL。
+  const [postImages, setPostImages] = useState<{ file: File; preview: string }[]>([])
+  const postImagesRef = useRef(postImages)
+  postImagesRef.current = postImages
+
+  // 组件卸载时释放仍在列表里的本地预览 URL（已移除/已提交的在各自路径释放）。
+  useEffect(
+    () => () => {
+      postImagesRef.current.forEach((img) => URL.revokeObjectURL(img.preview))
+    },
+    [],
+  )
+
+  const MAX_POST_IMAGES = 4
+  const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+  const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+  const addImages = (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    const picked: { file: File; preview: string }[] = []
+    for (const file of files) {
+      if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+        setError(`不支持的图片格式：${file.name}（仅 png/jpg/webp/gif）`)
+        continue
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        setError(`图片超过 10MB 上限：${file.name}`)
+        continue
+      }
+      picked.push({ file, preview: URL.createObjectURL(file) })
+    }
+    setPostImages((prev) => [...prev, ...picked].slice(0, MAX_POST_IMAGES))
+  }
+
+  const removeImage = (index: number) => {
+    setPostImages((prev) => {
+      URL.revokeObjectURL(prev[index].preview)
+      return prev.filter((_, i) => i !== index)
+    })
+  }
 
   const updateTopicStats = useCallback((topicId: number, updater: (topic: Topic) => Topic) => {
     setTopics((prev) => prev.map((topic) => (topic.id === topicId ? updater(topic) : topic)))
@@ -188,11 +229,21 @@ const CommunityPage = ({ token, userId }: Props) => {
         .map((t) => t.trim())
         .filter(Boolean)
         .slice(0, 8)
+      // 附图先上传换 URL，再随帖子落库；任一张失败则整体不发。
+      const images = await Promise.all(postImages.map((img) => uploadImage(img.file, token)))
       const created = await createPost(
-        { topicId: activeTopicId, title: postDraft.title.trim(), content: postDraft.content.trim(), tags },
+        {
+          topicId: activeTopicId,
+          title: postDraft.title.trim(),
+          content: postDraft.content.trim(),
+          tags,
+          images,
+        },
         token,
       )
       setPostDraft({ title: '', content: '', tags: '' })
+      postImages.forEach((img) => URL.revokeObjectURL(img.preview))
+      setPostImages([])
       setSelectedMode('mine')
       setPosts((prev) => [created, ...prev.filter((item) => item.id !== created.id)])
       updateTopicStats(activeTopicId, (topic) => ({
@@ -376,8 +427,38 @@ const CommunityPage = ({ token, userId }: Props) => {
                 onChange={(e) => setPostDraft((p) => ({ ...p, tags: e.target.value }))}
                 placeholder="标签（逗号分隔，可选）"
               />
+              <div className="post-image-picker">
+                {postImages.map((img, index) => (
+                  <div key={img.preview} className="post-image-thumb">
+                    <img src={img.preview} alt={`附图 ${index + 1}`} />
+                    <button
+                      type="button"
+                      className="post-image-remove"
+                      aria-label={`移除附图 ${index + 1}`}
+                      onClick={() => removeImage(index)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {postImages.length < 4 ? (
+                  <label className="post-image-add">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      multiple
+                      hidden
+                      onChange={(e) => {
+                        addImages(e.target.files)
+                        e.target.value = ''
+                      }}
+                    />
+                    ＋ 图片({postImages.length}/4)
+                  </label>
+                ) : null}
+              </div>
               <button type="button" className="primary-btn" onClick={handleCreatePost} disabled={loading}>
-                发布帖子
+                {loading ? '发布中...' : '发布帖子'}
               </button>
             </div>
           ) : null}

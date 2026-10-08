@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,14 +12,18 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { createPost, fetchTopics, type Topic } from '../api/client';
+import { createPost, fetchTopics, uploadImage, type Topic } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { emitPostsChanged } from '../lib/postsBus';
 import { colors } from '../constants/colors';
 
-// 发帖（Stack /compose，从社区 Tab 进入）：话题圈子（必选，默认第一个）+ 标题 + 正文。
+const MAX_IMAGES = 4;
+
+// 发帖（Stack /compose，从社区 Tab 进入）：话题圈子（必选，默认第一个）+ 标题 + 正文
+// + 附图（系统相册选择器，提交时先经网关 /upload 换 URL 再随帖子落库）。
 // 成功后广播 posts 变更并返回社区流。
 export default function ComposeScreen() {
   const { token } = useAuth();
@@ -26,9 +31,29 @@ export default function ComposeScreen() {
   const [topicId, setTopicId] = useState<number | null>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [images, setImages] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [topicsLoading, setTopicsLoading] = useState(true);
+
+  const pickImages = async () => {
+    if (submitting) return;
+    const remaining = MAX_IMAGES - images.length;
+    if (remaining <= 0) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
+      quality: 0.85,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      setImages((prev) => [...prev, ...result.assets].slice(0, MAX_IMAGES));
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setImages((prev) => prev.filter((_, i) => i !== index));
+  };
 
   // 圈子列表一次性加载，默认选中第一个（topic_id 为必填）
   useEffect(() => {
@@ -62,7 +87,19 @@ export default function ComposeScreen() {
     }
     setSubmitting(true);
     void (async () => {
-      await createPost({ topicId, title: trimmedTitle, content: trimmedContent }, token);
+      // 附图先逐张上传换 /uploads/ URL，任一张失败则整体不发帖。
+      const uploaded = await Promise.all(
+        images.map((img) =>
+          uploadImage(
+            { uri: img.uri, fileName: img.fileName, mimeType: img.mimeType },
+            token,
+          ),
+        ),
+      );
+      await createPost(
+        { topicId, title: trimmedTitle, content: trimmedContent, images: uploaded },
+        token,
+      );
       emitPostsChanged();
       router.back();
     })().catch((err: unknown) => {
@@ -130,6 +167,26 @@ export default function ComposeScreen() {
           maxLength={2000}
           textAlignVertical="top"
         />
+
+        <Text style={styles.label}>图片（可选，最多 {MAX_IMAGES} 张）</Text>
+        <View style={styles.imageRow}>
+          {images.map((img, index) => (
+            <Pressable key={`${img.uri}-${index}`} onPress={() => removeImage(index)} hitSlop={4}>
+              <Image source={{ uri: img.uri }} style={styles.imageThumb} />
+              <View style={styles.imageRemoveBadge}>
+                <Ionicons name="close" size={12} color="#fff" />
+              </View>
+            </Pressable>
+          ))}
+          {images.length < MAX_IMAGES ? (
+            <Pressable style={styles.imageAdd} onPress={() => void pickImages()} disabled={submitting}>
+              <Ionicons name="images-outline" size={20} color={colors.textMuted} />
+              <Text style={styles.imageAddText}>
+                {images.length}/{MAX_IMAGES}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
 
         {error ? (
           <Text style={styles.error} accessibilityRole="alert">
@@ -240,5 +297,42 @@ const styles = StyleSheet.create({
   error: {
     color: '#ff6b6b',
     fontSize: 13,
+  },
+  imageRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  imageThumb: {
+    width: 76,
+    height: 76,
+    borderRadius: 10,
+    backgroundColor: colors.card,
+  },
+  imageRemoveBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  imageAdd: {
+    width: 76,
+    height: 76,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  imageAddText: {
+    color: colors.textMuted,
+    fontSize: 11,
   },
 });

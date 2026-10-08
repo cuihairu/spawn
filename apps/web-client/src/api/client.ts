@@ -672,8 +672,42 @@ export async function fetchPostById(id: number): Promise<Post> {
   return mapPost(payload.post)
 }
 
+// 统一上传入口（POST /upload）只挂在网关上：无网关地址时按本地默认网关回退。
+const uploadBaseUrl = apiGatewayUrl ?? 'http://localhost:8800'
+
+export async function uploadImage(file: File, token: string): Promise<string> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await fetch(new URL('/upload', uploadBaseUrl), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  })
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null
+    const message = payload?.error ?? `上传失败（${response.status}）`
+    throw new Error(message)
+  }
+  const payload = (await response.json()) as { url: string }
+  return payload.url
+}
+
+// 帖子图片存的是网关相对路径（/uploads/<hash>.<ext>），渲染前拼上网关来源。
+export function resolveImageUrl(url?: string): string | undefined {
+  if (!url) return undefined
+  if (/^https?:\/\//.test(url)) return url
+  return `${uploadBaseUrl}${url.startsWith('/') ? '' : '/'}${url}`
+}
+
 export async function createPost(
-  params: { topicId: number; title: string; content: string; tags?: string[]; type?: string },
+  params: {
+    topicId: number
+    title: string
+    content: string
+    tags?: string[]
+    type?: string
+    images?: string[]
+  },
   token: string,
 ): Promise<Post> {
   const baseUrl = apiGatewayUrl ?? communityServiceUrl
@@ -686,6 +720,7 @@ export async function createPost(
       content: params.content,
       type: params.type ?? 'discussion',
       tags: params.tags ?? [],
+      images: params.images ?? [],
     }),
   })
   return mapPost(payload.post)

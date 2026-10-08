@@ -11,7 +11,7 @@
 | game-catalog | Go / go-zero | 8890 | 9092 | 游戏库、列表筛选、详情、精选/推荐榜单 | SQLite（默认 `file:data/games.db`）或 MySQL |
 | content-service | Go / go-zero | 8891 | 9093 | 攻略 CRUD/发布/点赞、评论（含嵌套回复） | SQLite（默认 `file:data/content.db`）或 MySQL |
 | community | Go / go-zero | 8892 | 9094 | 帖子流/热榜、话题圈子、关注关系（话题/用户）、点赞/分享计数、关注流、我的点赞 | SQLite/MySQL（post_likes 关系表等启动建表） |
-| api-gateway | Go / go-zero | 8800 | 9095 | BFF：自有聚合 handler + 四路反代（见 §3） | 无状态 |
+| api-gateway | Go / go-zero | 8800 | 9095 | BFF：自有聚合 handler + 四路反代（见 §3）+ 统一图片上传入口（见 §3.1） | uploads 卷（图片本地盘存储，选型方案 A） |
 | user-service-rpc | Go / gRPC | 8080 (gRPC) | 9096 | 内网 gRPC 通道（手机/Web 均不直连；protoc 生成代码缺口保留原样） | — |
 
 未落地（README 规划占位）：data-panel、matchmaking、realtime-hub、crawler-jobs、admin-console、mini-program。
@@ -47,6 +47,8 @@ web-client 直连拓扑保持不变，网关路由扩容不要求 web 迁移。
 | GET /users/:id/recommendations | 跨服务推荐（Bearer 透传） | user-service → game-catalog |
 | GET /s/p/:id | 分享卡跳板页（html/template og meta + `spawn://` 深链按钮） | community |
 | GET /home/feed | BFF 第二阶段列表聚合：精选游戏/热帖/话题/攻略四路并发，逐组字段裁剪（正文/图片等大字段不下发，帖子正文截 60 字摘要）；单上游故障降级为空组并记 `degraded`，不做整体 5xx | game-catalog + community + content-service |
+| POST /upload | 统一图片上传入口（2026-10-08 方案 A 落地）：Bearer JWT 本地校验（HS256 与 user-service 同密钥）、512 字节魔数嗅探白名单 png/jpeg/webp/gif、10MB 上限、随机文件名 `O_EXCL` 落 uploads 卷，返回 `/uploads/<hash>.<ext>`；业务服务只存 URL 不碰文件 | 本地盘（uploads 卷） |
+| GET /uploads/:file | 已上传图片静态托管：文件名正则白名单（`^[0-9a-f]{32}\.(png\|jpg\|webp\|gif)$`）防路径遍历后 `ServeContent` 回读 | 本地盘（uploads 卷） |
 
 ### 3.2 反代路由（internal/{users,games,community,content}，proxy.NewUpstream passthrough）
 
