@@ -144,7 +144,10 @@ const GuideDetailPage = ({ token, userId }: Props) => {
           </div>
           <div className="guide-meta-info">
             <span className="guide-author">
-              作者: {guide.authorName || `用户${guide.authorId}`}
+              作者:{' '}
+              <Link to={`/users/${guide.authorId}`} className="guide-author-link">
+                {guide.authorName || `用户${guide.authorId}`}
+              </Link>
             </span>
             <span className="guide-date">
               {guide.status === 'draft' ? '创建于' : '最近更新'}: {formatDate(guide.updatedAt)}

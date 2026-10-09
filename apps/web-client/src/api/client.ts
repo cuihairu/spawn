@@ -161,6 +161,29 @@ export async function login(username: string, password: string): Promise<LoginRe
   }
 }
 
+export interface PublicUserInfo {
+  id: number
+  username: string
+  nickname: string
+}
+
+// 公开用户资料（GET /users/:id 免鉴权；邮箱字段不取不展示）
+export async function fetchUserInfo(userId: number): Promise<PublicUserInfo> {
+  const baseUrl = apiGatewayUrl ?? userServiceUrl
+  const payload = await request<ApiResponse<{ id: number; username: string; nickname?: string }>>(
+    baseUrl,
+    `/users/${userId}`,
+  )
+  if (!payload.data || payload.code !== 200) {
+    throw new Error(payload.message || '用户不存在')
+  }
+  return {
+    id: payload.data.id,
+    username: payload.data.username,
+    nickname: payload.data.nickname || payload.data.username,
+  }
+}
+
 export async function fetchFeaturedGames(limit = 6): Promise<GameSummary[]> {
   const baseUrl = apiGatewayUrl ?? gameServiceUrl
   const payload = await request<{ games: GameDto[] }>(

@@ -12,6 +12,7 @@ import GameDetailPage from './pages/GameDetailPage'
 import NotificationsPage from './pages/NotificationsPage'
 import PostDetailPage from './pages/PostDetailPage'
 import ProfilePage from './pages/ProfilePage'
+import UserProfilePage from './pages/UserProfilePage'
 import StatsPage from './pages/StatsPage'
 import './App.css'
 
@@ -172,6 +173,7 @@ function App() {
               path="/guides/:id"
               element={<GuideDetailPage token={auth?.token} userId={auth?.user.id} />}
             />
+            <Route path="/users/:id" element={<UserProfilePage />} />
             <Route
               path="/guides/:id/edit"
               element={

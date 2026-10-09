@@ -806,3 +806,12 @@
   border-color: #9f6bff;
   color: white;
 }
+
+.guide-author-link {
+  color: #9fa8ff;
+  text-decoration: none;
+}
+
+.guide-author-link:hover {
+  text-decoration: underline;
+}
