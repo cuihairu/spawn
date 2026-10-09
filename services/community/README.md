@@ -57,6 +57,17 @@ Community Service 是 spawn 社区平台的核心服务之一，提供帖子发�
 被关注（follow_user）。写入 `UNIQUE (user_id, actor_id, type, target_id)` 幂等去重，
 自我动作与「回复帖子作者本人」不重复通知；通知写失败不回滚主操作。
 
+### 内容审核（举报与敏感词）
+- `POST /api/v1/posts/:id/report` - 举报帖子，reason 可选（需认证）
+- `GET /api/v1/moderation/reports` - 举报队列，status 过滤 + 分页（仅管理员）
+- `POST /api/v1/moderation/reports/:id/handle` - 处置举报，action 为
+  `dismiss`（驳回，内容保留）/ `resolve`（处置，内容移除）（仅管理员）
+
+敏感词过滤为阻塞式：发帖/改帖/评论写入前扫描 `Moderation.BlockedWords`
+（空配置回落内置默认表），命中即 400 拒绝并提示首个违规词。
+管理员由 `Moderation.AdminUserIds` 允许名单指定；举报按
+`UNIQUE (reporter_id, target_type, target_id)` 幂等去重，仅 pending 可处置。
+
 标「需认证」的接口要求 `Authorization: Bearer <token>`。
 
 ## 数据模型
@@ -122,9 +133,10 @@ type Topic struct {
 
 ### 权限控制
 - 游客：可浏览帖子和话题
-- 登录用户：可发帖、评论、点赞、关注
+- 登录用户：可发帖、评论、点赞、关注、举报
 - 作者：可编辑/删除自己的帖子
-- 管理员：可管理所有内容（待实现）
+- 管理员（`Moderation.AdminUserIds` 允许名单）：可查看举报队列并处置
+  （驳回/处置移除内容）
 
 ## 与其他服务的集成
 
@@ -139,7 +151,8 @@ type Topic struct {
 
 ### API Gateway
 - 统一入口：`/api/v1/topics**`、`/api/v1/posts**`、`/api/v1/users/{following,likes}`、
-  `/api/v1/users/:user_id/follow`、`/api/v1/notifications**` 反代路由
+  `/api/v1/users/:user_id/follow`、`/api/v1/notifications**`、`/api/v1/moderation/**`、
+  `/api/v1/posts/:id/report` 反代路由
   （见 `services/api-gateway/internal/community/routes.go`）；
   另有 integration client（热帖/话题列表/帖子详情）供网关 `/home/feed` 聚合与 `/s/p/:id` 分享卡
 
@@ -159,6 +172,11 @@ MySQL:
 
 Auth:
   JWTSecret: your-secret-key-change-in-production
+
+# 内容审核：BlockedWords 空则用内置默认敏感词表；AdminUserIds 为管理员允许名单
+Moderation:
+  BlockedWords: []
+  AdminUserIds: [1]
 ```
 
 ## 启动服务
@@ -242,7 +260,7 @@ ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]
 
 ### 中期（1-2月）
 - [x] 实现通知系统
-- [ ] 添加内容审核功能
+- [x] 添加内容审核功能（敏感词阻塞过滤 + 举报队列管理端点）
 - [ ] 实现图片上传服务
 - [ ] 优化热门推荐算法
 
