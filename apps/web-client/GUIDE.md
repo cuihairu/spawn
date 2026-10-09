@@ -175,7 +175,8 @@ Web Client 集成了以下后端服务：
 ## 未来改进方向
 
 - [x] 添加 LocalStorage 持久化登录状态
-- [ ] 支持 Markdown 格式的攻略内容
+- [x] 支持 Markdown 格式的攻略内容（创建/编辑可选 text 或 markdown 格式，
+  详情页按 format 渲染（marked + DOMPurify 净化防 XSS），编辑器带编辑/预览切换）
 - [x] 添加图片上传功能（发帖附图经网关 `POST /upload` 落盘换 URL，详情页
   `resolveImageUrl` 拼网关来源渲染）
 - [ ] 实现攻略搜索和高级筛选
