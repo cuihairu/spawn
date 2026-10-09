@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
-import type { UserInfo } from './api/client'
+import { fetchUnreadNotificationCount, type UserInfo } from './api/client'
 import HomePage from './pages/HomePage'
 import DiscoverPage from './pages/DiscoverPage'
 import CommunityPage from './pages/CommunityPage'
@@ -9,6 +9,7 @@ import GuideDetailPage from './pages/GuideDetailPage'
 import GuideEditorPage from './pages/GuideEditorPage'
 import GamesPage from './pages/GamesPage'
 import GameDetailPage from './pages/GameDetailPage'
+import NotificationsPage from './pages/NotificationsPage'
 import PostDetailPage from './pages/PostDetailPage'
 import ProfilePage from './pages/ProfilePage'
 import StatsPage from './pages/StatsPage'
@@ -30,14 +31,37 @@ function App() {
     }
   })
 
+  // 站内通知未读数：登录后拉取 + 30s 轮询驱动导航铃铛徽标；登出在回调里清零。
+  const [unreadNotifications, setUnreadNotifications] = useState(0)
   const handleAuthChange = useCallback((next: { token: string; user: UserInfo } | null) => {
     setAuth(next)
     if (!next) {
       localStorage.removeItem(AUTH_STORAGE_KEY)
+      setUnreadNotifications(0)
       return
     }
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next))
   }, [])
+
+  useEffect(() => {
+    if (!auth) return
+    let cancelled = false
+    const refresh = () => {
+      fetchUnreadNotificationCount(auth.token)
+        .then((count) => {
+          if (!cancelled) setUnreadNotifications(count)
+        })
+        .catch(() => {
+          // 静默：徽标轮询失败不打扰用户
+        })
+    }
+    const timer = window.setInterval(refresh, 30_000)
+    queueMicrotask(refresh)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [auth])
 
   return (
     <BrowserRouter>
@@ -65,6 +89,12 @@ function App() {
               </Link>
               {auth ? (
                 <>
+                  <Link to="/notifications" className="nav-bell" aria-label={`未读通知 ${unreadNotifications} 条`}>
+                    🔔
+                    {unreadNotifications > 0 ? (
+                      <span className="nav-badge">{unreadNotifications > 99 ? '99+' : unreadNotifications}</span>
+                    ) : null}
+                  </Link>
                   <Link to="/stats" className="nav-link">
                     战绩
                   </Link>
@@ -105,6 +135,19 @@ function App() {
               element={
                 auth ? (
                   <ProfilePage token={auth.token} userId={auth.user.id} nickname={auth.user.nickname} />
+                ) : (
+                  <div className="error-page">
+                    <p>请先登录</p>
+                    <Link to="/">返回首页</Link>
+                  </div>
+                )
+              }
+            />
+            <Route
+              path="/notifications"
+              element={
+                auth ? (
+                  <NotificationsPage token={auth.token} onUnreadChange={setUnreadNotifications} />
                 ) : (
                   <div className="error-page">
                     <p>请先登录</p>

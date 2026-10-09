@@ -807,6 +807,52 @@ export async function deletePostComment(
   })
 }
 
+// ===== 站内通知（community 域）：字段与 PostComment 同款 snake 直传 =====
+export interface AppNotification {
+  id: number
+  user_id: number
+  actor_id: number
+  actor_name?: string
+  type: 'like_post' | 'comment_post' | 'reply_comment' | 'follow_user' | string
+  target_id: number
+  content: string
+  is_read: boolean
+  created_at: string
+}
+
+type NotificationsResp = { notifications: AppNotification[]; total: number }
+type UnreadCountResp = { count: number }
+
+export async function fetchNotifications(
+  token: string,
+  limit = 20,
+  offset = 0,
+): Promise<{ notifications: AppNotification[]; total: number }> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const payload = await request<NotificationsResp>(
+    baseUrl,
+    `/api/v1/notifications?limit=${limit}&offset=${offset}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  return { notifications: payload.notifications ?? [], total: payload.total ?? 0 }
+}
+
+export async function fetchUnreadNotificationCount(token: string): Promise<number> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const payload = await request<UnreadCountResp>(baseUrl, '/api/v1/notifications/unread-count', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return payload.count ?? 0
+}
+
+export async function markAllNotificationsRead(token: string): Promise<void> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  await request<CommonResp>(baseUrl, '/api/v1/notifications/read-all', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
 // 网关自有端点（POST /upload、GET /home/feed）专用：无网关地址时按本地默认网关回退。
 const gatewayBaseUrl = apiGatewayUrl ?? 'http://localhost:8800'
 
