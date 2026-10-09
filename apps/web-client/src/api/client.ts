@@ -301,6 +301,8 @@ export async function fetchGuides(params?: {
   gameId?: string
   authorId?: number
   keyword?: string
+  tag?: string
+  sort?: string
   limit?: number
   offset?: number
   token?: string
@@ -310,6 +312,8 @@ export async function fetchGuides(params?: {
   if (params?.gameId) searchParams.set('game_id', params.gameId)
   if (params?.authorId) searchParams.set('author_id', String(params.authorId))
   if (params?.keyword) searchParams.set('keyword', params.keyword)
+  if (params?.tag) searchParams.set('tag', params.tag)
+  if (params?.sort) searchParams.set('sort', params.sort)
   const pageSize = params?.limit && params.limit > 0 ? params.limit : 20
   const offset = params?.offset && params.offset > 0 ? params.offset : 0
   const page = Math.floor(offset / pageSize) + 1

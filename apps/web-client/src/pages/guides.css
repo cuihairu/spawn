@@ -750,3 +750,59 @@
   outline: none;
   border-color: #7083ff;
 }
+
+.guide-advanced-filter {
+  display: flex;
+  align-items: center;
+}
+
+.guide-sort {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.guide-sort select {
+  padding: 0.45rem 0.75rem;
+  background: rgba(0, 0, 0, 0.3);
+  color: #f4f5fb;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.guide-sort select:focus {
+  outline: none;
+  border-color: #7083ff;
+}
+
+.guide-tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.guide-tag-chip {
+  padding: 0.3rem 0.85rem;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  color: #f4f5fb;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.guide-tag-chip:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.guide-tag-chip.active {
+  background-color: #7083ff;
+  border-color: #9f6bff;
+  color: white;
+}

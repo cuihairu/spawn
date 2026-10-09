@@ -16,6 +16,9 @@ const GuidesPage = ({ token, userId }: Props) => {
   const [filter, setFilter] = useState<'all' | 'my'>('all')
   const [keyword, setKeyword] = useState('')
   const [searchText, setSearchText] = useState('')
+  const [tag, setTag] = useState('')
+  const [sort, setSort] = useState('')
+  const [allTags, setAllTags] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   // 游戏详情页跳转带 ?gameId=&title= 过滤本游戏攻略（对等 mobile /guides?game_id=）
   const [searchParams, setSearchParams] = useSearchParams()
@@ -30,6 +33,8 @@ const GuidesPage = ({ token, userId }: Props) => {
         ...(filter === 'my' && userId ? { authorId: userId } : {}),
         ...(keyword ? { keyword } : {}),
         ...(gameId ? { gameId } : {}),
+        ...(tag ? { tag } : {}),
+        ...(sort ? { sort } : {}),
         limit: 50,
         token,
       }
@@ -40,12 +45,32 @@ const GuidesPage = ({ token, userId }: Props) => {
     } finally {
       setLoading(false)
     }
-  }, [filter, keyword, gameId, token, userId])
+  }, [filter, keyword, gameId, tag, sort, token, userId])
 
   useEffect(() => {
     // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState.
     queueMicrotask(loadGuides)
   }, [loadGuides])
+
+  // 标签聚合来源：不带标签过滤拉一批已发布攻略取去重标签（失败不阻塞列表）
+  const loadTags = useCallback(async () => {
+    try {
+      const data = await fetchGuides({ limit: 100, token })
+      const seen = new Map<string, number>()
+      for (const g of data) {
+        for (const t of g.tags) {
+          seen.set(t, (seen.get(t) ?? 0) + 1)
+        }
+      }
+      setAllTags([...seen.keys()].sort((a, b) => a.localeCompare(b)))
+    } catch {
+      // 标签聚合失败仅隐藏筛选行
+    }
+  }, [token])
+
+  useEffect(() => {
+    queueMicrotask(loadTags)
+  }, [loadTags])
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('zh-CN', {
@@ -110,6 +135,21 @@ const GuidesPage = ({ token, userId }: Props) => {
               </button>
             )}
           </div>
+          <div className="guide-advanced-filter">
+            <label className="guide-sort">
+              排序
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value)}
+                aria-label="排序方式"
+              >
+                <option value="">默认</option>
+                <option value="newest">最新</option>
+                <option value="likes">最多点赞</option>
+                <option value="views">最多浏览</option>
+              </select>
+            </label>
+          </div>
           {token && (
             <Link to="/guides/new" className="create-guide-btn">
               ✍️ 创建攻略
@@ -137,6 +177,22 @@ const GuidesPage = ({ token, userId }: Props) => {
         </div>
       ) : null}
 
+      {allTags.length > 0 ? (
+        <div className="guide-tag-filter" role="group" aria-label="按标签筛选">
+          {allTags.slice(0, 12).map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={`guide-tag-chip ${tag === t ? 'active' : ''}`}
+              aria-pressed={tag === t}
+              onClick={() => setTag(tag === t ? '' : t)}
+            >
+              #{t}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {error && (
         <div className="error-banner" role="alert">
           {error}
@@ -150,20 +206,23 @@ const GuidesPage = ({ token, userId }: Props) => {
           <p>
             {keyword
               ? `没有找到与「${keyword}」匹配的攻略`
-              : filter === 'my'
-                ? '你还没有创建攻略'
-                : '暂无攻略'}
+              : tag
+                ? `没有标签为「${tag}」的攻略`
+                : filter === 'my'
+                  ? '你还没有创建攻略'
+                  : '暂无攻略'}
           </p>
-          {keyword && (
+          {(keyword || tag) && (
             <button
               type="button"
               className="create-guide-btn"
               onClick={() => {
                 setSearchText('')
                 setKeyword('')
+                setTag('')
               }}
             >
-              清空搜索
+              清空筛选
             </button>
           )}
           {!keyword && token && (
