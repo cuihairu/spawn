@@ -51,7 +51,7 @@ Mobile APKs and service container images are not part of the nightly delivery (A
 ```
 
 > The tree above is a roadmap. For actual status see `services/README.md` and `apps/README.md`:
-> the six services plus web-client and mobile-app have code; matchmaking/realtime-hub/data-panel/crawler-jobs,
+> the seven services plus web-client and mobile-app have code; matchmaking/realtime-hub/crawler-jobs,
 > mini-program, and admin-console have not been created yet.
 
 ## Observability
@@ -69,6 +69,7 @@ Ports and metric details are documented in the "Monitoring & Metrics (Prometheus
 | content-service | 8891 | 9093 |
 | community | 8892 | 9094 |
 | api-gateway | 8800 | 9095 |
+| data-panel | 8896 | 9097 |
 | user-service-rpc | 8080 (gRPC) | 9096 |
 
 ### Module Responsibilities at a Glance
@@ -131,17 +132,25 @@ Guides, news, and comments service; go-zero implementation with SQLite/MySQL dua
 - Port: 8891
 
 #### 4. API Gateway (`services/api-gateway`)
-Unified access layer combining BFF aggregation and a four-way reverse proxy; only one unified API surface is exposed (all mobile-app calls go through this single address).
+Unified access layer combining BFF aggregation and a five-way reverse proxy; only one unified API surface is exposed (all mobile-app calls go through this single address).
 - `POST /auth/login` - User login (proxied to user-service)
 - `GET /games/featured` - Featured games
 - `GET /users/:id/recommendations` - User recommendations
 - `GET /home/feed` - Home feed aggregation (featured games / hot posts / topics / guides, four concurrent calls with field trimming + per-upstream failure degradation)
 - `GET /s/p/:id` - Post share-card jump page (og meta + `spawn://` deep link + web entry)
-- Reverse proxy: community (posts/topics/follows/likes/post comments), content (guides/comments), users (register/profile), games (list/detail) — full route coverage
+- Reverse proxy: community (posts/topics/follows/likes/post comments), content (guides/comments), users (register/profile), games (list/detail), data-panel (match stats) — full route coverage
 - Port: 8800
 
-#### 5. Web Client (`apps/web-client`)
-React 19 + Vite + React Router 7 frontend. Pages: home (login & recommendations), discover (one-request home feed), games library + game detail, guide list/detail/editor, community (post feed with followed mode), post detail, profile. Guides support "All/Mine" filtering with draft and published save states; guide comments support nested replies and likes; posts support like/share/comments (reply with parent comment, author-only delete); the games library offers keyword search, genre filtering, and pagination, with game cards linking to detail pages that surface related guides. Browsing works without login; write operations require login. Dark theme, responsive layout.
+#### 5. Data Panel Service (`services/data-panel`)
+Match-stats aggregation for the player dashboard; go-zero with SQLite/MySQL dual-driver storage (default local SQLite with embedded seed data). Ingest is monotonic increment accumulation (single-statement upsert `col = col + delta`, never regresses).
+- `GET /api/v1/stats/users/:user_id/summary` - Cross-game summary (public)
+- `GET /api/v1/stats/users/:user_id/games` - Per-game stats list (public, paginated)
+- `GET /api/v1/stats/users/:user_id/games/:game_id` - Single game stats (public)
+- `POST /api/v1/stats/records` - Ingest stat deltas (JWT-protected, attributed to the token user)
+- Port: 8896
+
+#### 6. Web Client (`apps/web-client`)
+React 19 + Vite + React Router 7 frontend. Pages: home (login & recommendations), discover (one-request home feed), games library + game detail, guide list/detail/editor, community (post feed with followed mode), post detail, profile, match-stats dashboard (KPI cards + per-game table via the gateway). Guides support "All/Mine" filtering with draft and published save states; guide comments support nested replies and likes; posts support like/share/comments (reply with parent comment, author-only delete); the games library offers keyword search, genre filtering, and pagination, with game cards linking to detail pages that surface related guides. Browsing works without login; write operations require login. Dark theme, responsive layout.
 
 ### Technical Highlights
 
@@ -149,7 +158,7 @@ Cross-service calls go over HTTP: user-service calls game-catalog via `GameCatal
 fetch game data for recommendations, with failure fallback; content-service fetches game titles
 from game-catalog with circuit breaking, retries, and Prometheus metrics. Game repository and
 user recommendation logic have unit tests. `docker-compose.yaml` brings up all services with one
-command, and each service directory has its own `Dockerfile`. All six services' data layers run
+command, and each service directory has its own `Dockerfile`. All seven services' data layers run
 on the SQLite/MySQL dual driver (a DSN containing `file:` uses SQLite; inject a MySQL connection
 string in production), with in-process TTL+LRU read caching; concurrency safety is guaranteed by
 connection-pool clamping and the cache itself.
@@ -165,6 +174,7 @@ go run services/game-catalog/game.go -f services/game-catalog/etc/game-api.yaml
 go run services/user-service/user.go -f services/user-service/etc/user-api.yaml
 go run services/content-service/content.go -f services/content-service/etc/content-api.yaml
 go run services/community/community.go -f services/community/etc/community-api.yaml
+go run services/data-panel/data-panel.go -f services/data-panel/etc/data-panel-api.yaml
 go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
 
 # Frontend
@@ -180,6 +190,7 @@ cd apps/web-client && npm install && npm run dev
 | game-catalog | 8890 | Game catalog service | Done |
 | content-service | 8891 | Content service (guides + comments) | Done |
 | community | 8892 | Community service (posts/topics/follows/likes) | Done |
+| data-panel | 8896 | Match-stats panel service (ingest + query) | Done |
 | user-service-rpc | 8080 (gRPC) | User service RPC (cluster-internal) | Done |
 | web-client | 5173 | Web frontend | Done |
 | mobile-app | — | React Native (Expo) client | In progress (see `docs/mobile_plan.md`) |

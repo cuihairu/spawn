@@ -50,8 +50,8 @@
 └── tests                # 跨服务集成测试与合规测试
 ```
 
-> 上树是规划图。落地状态以 `services/README.md`、`apps/README.md` 为准：六服务与 web-client、
-> mobile-app 有代码，matchmaking/realtime-hub/data-panel/crawler-jobs、mini-program、admin-console 尚未创建。
+> 上树是规划图。落地状态以 `services/README.md`、`apps/README.md` 为准：七服务与 web-client、
+> mobile-app 有代码，matchmaking/realtime-hub/crawler-jobs、mini-program、admin-console 尚未创建。
 
 ## 可观测性
 
@@ -66,6 +66,7 @@
 | content-service | 8891 | 9093 |
 | community | 8892 | 9094 |
 | api-gateway | 8800 | 9095 |
+| data-panel | 8896 | 9097 |
 | user-service-rpc | 8080 (gRPC) | 9096 |
 
 ### 模块职责概览
@@ -128,18 +129,26 @@
 - 端口：8891
 
 #### 4. API Gateway（`services/api-gateway`）
-BFF 聚合 + 四路反代的统一接入层，对外只暴露统一的 API（mobile-app 全量调用面经此单地址）。
+BFF 聚合 + 五路反代的统一接入层，对外只暴露统一的 API（mobile-app 全量调用面经此单地址）。
 - `POST /auth/login` - 用户登录（透传 user-service）
 - `GET /games/featured` - 精选游戏
 - `GET /users/:id/recommendations` - 用户推荐
 - `GET /home/feed` - 首页列表聚合（精选游戏/热帖/话题/攻略四路并发，字段裁剪 + 单上游故障分组降级）
 - `GET /s/p/:id` - 帖子分享卡跳板页（og meta + `spawn://` 深链 + Web 入口）
-- 反代：community（帖子/话题/关注/点赞/帖子评论）、content（攻略/评论）、users（注册/资料）、games（列表/详情）全量路由
+- 反代：community（帖子/话题/关注/点赞/帖子评论）、content（攻略/评论）、users（注册/资料）、games（列表/详情）、data-panel（战绩）全量路由
 - 端口：8800
 
-#### 5. Web Client（`apps/web-client`）
+#### 5. 战绩数据面板服务（`services/data-panel`）
+玩家战绩面板的战绩聚合服务；go-zero 实现，SQLite/MySQL 双驱动存储（默认本地 SQLite + 内嵌种子数据）。摄入为单调增量累加（单语句 upsert `col = col + delta`，只增不回退）。
+- `GET /api/v1/stats/users/:user_id/summary` - 跨游戏汇总（公开）
+- `GET /api/v1/stats/users/:user_id/games` - 按游戏明细列表（公开，分页）
+- `GET /api/v1/stats/users/:user_id/games/:game_id` - 单游戏战绩（公开）
+- `POST /api/v1/stats/records` - 摄入战绩增量（JWT 保护，归属取令牌用户）
+- 端口：8896
+
+#### 6. Web Client（`apps/web-client`）
 React 19 + Vite + React Router 7 前端。页面：首页（登录与推荐）、发现（一次请求聚合四区块）、
-游戏库与游戏详情、攻略列表/详情/创建编辑、社区（帖子流含关注模式）、帖子详情、个人中心。
+游戏库与游戏详情、攻略列表/详情/创建编辑、社区（帖子流含关注模式）、帖子详情、个人中心、战绩面板（KPI 卡 + 按游戏明细，经网关取数）。
 攻略支持「全部/我的」筛选和草稿、发布两种保存态；攻略评论支持嵌套回复、点赞，作者可删自己的评论；
 帖子可点赞、分享、评论（带 parent_id 回复，仅作者可删）；游戏库支持关键词搜索、类型过滤与分页，
 游戏卡直达详情页并聚合相关攻略。未登录能浏览，写操作要登录。暗色主题，响应式布局。
@@ -149,7 +158,7 @@ React 19 + Vite + React Router 7 前端。页面：首页（登录与推荐）�
 跨服务调用走 HTTP：user-service 经 `GameCatalogClient` 调 game-catalog 拿游戏数据拼推荐，
 失败降级兜底；content-service 调 game-catalog 取游戏标题带熔断、重试和 Prometheus 指标。
 游戏仓库与用户推荐逻辑有单元测试。`docker-compose.yaml` 一条命令拉起全部服务，各服务目录
-有独立 `Dockerfile`。六服务数据面均已切 SQLite/MySQL 双驱动（DSN 含 `file:` 走 SQLite，
+有独立 `Dockerfile`。七服务数据面均已切 SQLite/MySQL 双驱动（DSN 含 `file:` 走 SQLite，
 生产注入 MySQL 连接串），进程内 TTL+LRU 读缓存，并发安全由连接池钳制与缓存自身保证。
 
 ### 快速体验
@@ -163,6 +172,7 @@ go run services/game-catalog/game.go -f services/game-catalog/etc/game-api.yaml
 go run services/user-service/user.go -f services/user-service/etc/user-api.yaml
 go run services/content-service/content.go -f services/content-service/etc/content-api.yaml
 go run services/community/community.go -f services/community/etc/community-api.yaml
+go run services/data-panel/data-panel.go -f services/data-panel/etc/data-panel-api.yaml
 go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
 
 # 前端
@@ -178,6 +188,7 @@ cd apps/web-client && npm install && npm run dev
 | game-catalog | 8890 | 游戏目录服务 | 已完成 |
 | content-service | 8891 | 内容服务（攻略+评论） | 已完成 |
 | community | 8892 | 社区服务（帖子/话题/关注/点赞） | 已完成 |
+| data-panel | 8896 | 战绩数据面板服务（摄入 + 查询） | 已完成 |
 | user-service-rpc | 8080 (gRPC) | 用户服务 RPC（集群内部） | 已完成 |
 | web-client | 5173 | Web前端 | 已完成 |
 | mobile-app | — | React Native（Expo）客户端 | 实施中（见 `docs/mobile_plan.md`） |
