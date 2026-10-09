@@ -21,10 +21,14 @@ func RegisterContentProxyRoutes(server *rest.Server, serverCtx *svc.ServiceConte
 	server.AddRoutes([]rest.Route{
 		{Method: http.MethodGet, Path: "/api/v1/guides", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/guides", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/guides/favorites", Handler: h},
 		{Method: http.MethodGet, Path: "/api/v1/guides/:id", Handler: h},
 		{Method: http.MethodPut, Path: "/api/v1/guides/:id", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/guides/:id/publish", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/guides/:id/like", Handler: h},
+		{Method: http.MethodPost, Path: "/api/v1/guides/:id/favorite", Handler: h},
+		{Method: http.MethodDelete, Path: "/api/v1/guides/:id/favorite", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/guides/:id/favorite", Handler: h},
 
 		{Method: http.MethodGet, Path: "/api/v1/comments", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/comments", Handler: h},

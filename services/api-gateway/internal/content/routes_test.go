@@ -68,6 +68,55 @@ func TestContentProxyRoutesPassthrough(t *testing.T) {
 	if last.method != http.MethodPut || last.path != "/api/v1/guides/7" || last.body != `{"title":"t"}` {
 		t.Fatalf("last hit = %+v", last)
 	}
+
+	// 收藏三件套 + 收藏列表：路径与方法透传
+	favReq, err := http.NewRequest(http.MethodPost, l+"/api/v1/guides/7/favorite", nil)
+	if err != nil {
+		t.Fatalf("build favorite: %v", err)
+	}
+	favResp, err := http.DefaultClient.Do(favReq)
+	if err != nil {
+		t.Fatalf("favorite: %v", err)
+	}
+	favResp.Body.Close()
+
+	delReq, err := http.NewRequest(http.MethodDelete, l+"/api/v1/guides/7/favorite", nil)
+	if err != nil {
+		t.Fatalf("build unfavorite: %v", err)
+	}
+	delResp, err := http.DefaultClient.Do(delReq)
+	if err != nil {
+		t.Fatalf("unfavorite: %v", err)
+	}
+	delResp.Body.Close()
+
+	statusResp, err := http.Get(l + "/api/v1/guides/7/favorite")
+	if err != nil {
+		t.Fatalf("favorite status: %v", err)
+	}
+	statusResp.Body.Close()
+
+	listResp, err := http.Get(l + "/api/v1/guides/favorites")
+	if err != nil {
+		t.Fatalf("favorites list: %v", err)
+	}
+	listResp.Body.Close()
+
+	want := []hit{
+		{http.MethodPost, "/api/v1/guides/7/favorite", ""},
+		{http.MethodDelete, "/api/v1/guides/7/favorite", ""},
+		{http.MethodGet, "/api/v1/guides/7/favorite", ""},
+		{http.MethodGet, "/api/v1/guides/favorites", ""},
+	}
+	got := hits[len(hits)-4:]
+	if len(got) != len(want) {
+		t.Fatalf("hits tail = %+v", got)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Fatalf("hit[%d] = %+v, want %+v", i, got[i], w)
+		}
+	}
 }
 
 func startProxyTestServer(t *testing.T, serverCtx *svc.ServiceContext) string {
