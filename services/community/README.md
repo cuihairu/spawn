@@ -261,7 +261,8 @@ ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]
 ### 中期（1-2月）
 - [x] 实现通知系统
 - [x] 添加内容审核功能（敏感词阻塞过滤 + 举报队列管理端点）
-- [ ] 实现图片上传服务
+- [x] 实现图片上传服务（选型方案 A：网关统一 `POST /upload` 落盘 + `GET /uploads/:file`
+  托管，community 只存帖子 images URL 列表）
 - [ ] 优化热门推荐算法
 
 ### 长期（3-6月）
