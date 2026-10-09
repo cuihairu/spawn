@@ -1,8 +1,8 @@
 # Tappi 监控栈 —— Prometheus 抓取配置（「下一步」第 4 项：监控集成与日志收集）。
 #
 # 目标经 host.docker.internal 指向宿主机已发布的 /metrics 端口：
-#   - 本机裸跑（go run / 二进制）：服务自身监听 9091-9096，天然可达；
-#   - docker compose（仓库根 docker-compose.yaml）：各服务已发布 9091-9096
+#   - 本机裸跑（go run / 二进制）：服务自身监听 9091-9097，天然可达；
+#   - docker compose（仓库根 docker-compose.yaml）：各服务已发布 9091-9097
 #     到宿主机，经 host-gateway 同样可达。
 # user-service-rpc（9096）不在根 compose 中（依赖 etcd，按设计独立内网部署），
 # 仅在宿主机单独启动后可见。
@@ -29,6 +29,9 @@ scrape_configs:
       - targets: ["host.docker.internal:9095"]
         labels:
           service: api-gateway
+      - targets: ["host.docker.internal:9097"]
+        labels:
+          service: data-panel
       - targets: ["host.docker.internal:9096"]
         labels:
           service: user-service-rpc

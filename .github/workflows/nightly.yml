@@ -34,7 +34,7 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      # 后端产物：六个服务 linux-amd64 二进制。CGO 开启（mattn/go-sqlite3 需要，
+      # 后端产物：七个服务 linux-amd64 二进制。CGO 开启（mattn/go-sqlite3 需要，
       # runner 自带 gcc），数据源默认 SQLite 文件库，生产经 DATASOURCE 切 MySQL。
       - name: Build service binaries (linux-amd64)
         run: |
@@ -47,6 +47,7 @@ jobs:
           build_service api-gateway gateway api-gateway
           build_service community community community
           build_service content-service content content-service
+          build_service data-panel data-panel data-panel
           build_service game-catalog game game-catalog
           build_service user-service user user-service
           build_service user-service-rpc user user-service-rpc
@@ -81,7 +82,7 @@ jobs:
             echo
             echo "## 产物清单"
             echo
-            echo "- \`spawn-<服务名>-linux-amd64\` ×6：后端服务二进制（CGO 构建，内嵌 SQLite 驱动）。下载后 \`chmod +x\` 直接运行，配置文件在仓库各服务 \`etc/\` 目录；\`DATASOURCE\` 注入 MySQL 连接串可切换存储。"
+            echo "- \`spawn-<服务名>-linux-amd64\` ×7：后端服务二进制（CGO 构建，内嵌 SQLite 驱动）。下载后 \`chmod +x\` 直接运行，配置文件在仓库各服务 \`etc/\` 目录；\`DATASOURCE\` 注入 MySQL 连接串可切换存储。"
             echo "- \`spawn-web-client-linux-amd64.tar.gz\`：Web 主站静态产物，解压后任意静态服务器可托管。"
             echo "- \`SHA256SUMS.txt\`：全部资产校验和，下载后于同目录 \`sha256sum -c SHA256SUMS.txt\` 核对。"
             echo

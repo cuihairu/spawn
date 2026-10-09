@@ -9,6 +9,7 @@ services:
       GAME_SERVICE_URL: http://game-catalog:8890
       CONTENT_SERVICE_URL: http://content-service:8891
       COMMUNITY_SERVICE_URL: http://community:8892
+      DATA_PANEL_URL: http://data-panel:8896
       # 与 user-service 的 Auth.JWTSecret 同值：上传入口网关本地校验 JWT。
       JWT_SECRET: tappi-user-service-jwt-secret-key-2024
     volumes:
@@ -18,6 +19,7 @@ services:
       - game-catalog
       - content-service
       - community
+      - data-panel
     ports:
       - "8800:8800"
       - "9095:9095" # /metrics（deploy/ 观测栈抓取）
@@ -68,6 +70,17 @@ services:
       - "9094:9094" # /metrics（deploy/ 观测栈抓取）
     restart: unless-stopped
 
+  data-panel:
+    build:
+      context: ./services/data-panel
+    environment:
+      # 与 user-service 的 Auth.JWTSecret 同值：战绩摄入 Bearer 校验。
+      JWT_SECRET: tappi-user-service-jwt-secret-key-2024
+    ports:
+      - "8896:8896"
+      - "9097:9097" # /metrics（deploy/ 观测栈抓取）
+    restart: unless-stopped
+
   web-client:
     build:
       context: ./apps/web-client
@@ -85,6 +98,7 @@ services:
       - api-gateway
       - content-service
       - community
+      - data-panel
     restart: unless-stopped
 
 volumes:
