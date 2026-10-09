@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +39,7 @@ type GuideFilter struct {
 	AuthorId      int64
 	Tag           string
 	Keyword       string
+	Sort          string // ""=默认 id 升序；newest/likes/views
 	Page          int
 	PageSize      int
 	PublishedOnly bool
@@ -450,6 +452,8 @@ func (m *GuideModel) List(filter GuideFilter) ([]*Guide, int) {
 		filtered = append(filtered, guide)
 	}
 
+	sortGuides(filtered, filter.Sort)
+
 	total := len(filtered)
 	start := (filter.Page - 1) * filter.PageSize
 	// 非法分页参数（page<1 或 size<0）钳制为空页/首页，避免负索引切片 panic
@@ -472,6 +476,33 @@ func (m *GuideModel) List(filter GuideFilter) ([]*Guide, int) {
 	copy(result, filtered[start:end])
 
 	return result, total
+}
+
+// sortGuides 就地排序：newest=新→旧，likes/views=降序，并列按 id 升序；
+// 未知或空值保持原有 id 升序不变。
+func sortGuides(guides []*Guide, sortKey string) {
+	less := func(a, b *Guide) bool { return a.Id < b.Id }
+	switch sortKey {
+	case "newest":
+		less = func(a, b *Guide) bool { return a.Id > b.Id }
+	case "likes":
+		less = func(a, b *Guide) bool {
+			if a.Likes != b.Likes {
+				return a.Likes > b.Likes
+			}
+			return a.Id < b.Id
+		}
+	case "views":
+		less = func(a, b *Guide) bool {
+			if a.Views != b.Views {
+				return a.Views > b.Views
+			}
+			return a.Id < b.Id
+		}
+	default:
+		return
+	}
+	sort.SliceStable(guides, func(i, j int) bool { return less(guides[i], guides[j]) })
 }
 
 func matchesGuide(guide *Guide, filter GuideFilter) bool {

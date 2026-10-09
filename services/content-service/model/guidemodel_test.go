@@ -240,6 +240,39 @@ func TestGuideModelList_Pagination(t *testing.T) {
 
 // --- Get / Create / Update / Publish / Like / IncrementViews ---
 
+func TestGuideModelList_Sort(t *testing.T) {
+	m := newGuideModel(t, false)
+	seedGuides(t, m, []*Guide{
+		{Id: 1, Title: "g1", Views: 10, Likes: 5},
+		{Id: 2, Title: "g2", Views: 20, Likes: 6},
+		{Id: 3, Title: "g3", Views: 30, Likes: 7},
+		{Id: 4, Title: "g4", Views: 30, Likes: 1},
+	}...)
+
+	cases := []struct {
+		name string
+		sort string
+		want []int64
+	}{
+		{"default keeps id asc", "", []int64{1, 2, 3, 4}},
+		{"unknown key keeps id asc", "bogus", []int64{1, 2, 3, 4}},
+		{"newest first", "newest", []int64{4, 3, 2, 1}},
+		{"likes desc", "likes", []int64{3, 2, 1, 4}},
+		{"views desc ties by id asc", "views", []int64{3, 4, 2, 1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			guides, total := m.List(GuideFilter{Page: 1, PageSize: 10, Sort: tc.sort})
+			if total != len(tc.want) {
+				t.Fatalf("total = %d, want %d", total, len(tc.want))
+			}
+			if !equalInt64(guideIds(guides), tc.want) {
+				t.Fatalf("ids = %v, want %v", guideIds(guides), tc.want)
+			}
+		})
+	}
+}
+
 func TestGuideModelGet_NotFound(t *testing.T) {
 	repo := loadSampleGuides(t)
 

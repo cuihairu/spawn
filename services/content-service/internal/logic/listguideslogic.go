@@ -41,6 +41,7 @@ func (l *ListGuidesLogic) ListGuides(req *types.ListGuidesRequest) (resp *types.
 		AuthorId:      req.AuthorId,
 		Tag:           req.Tag,
 		Keyword:       req.Keyword,
+		Sort:          req.Sort,
 		Page:          req.Page,
 		PageSize:      req.PageSize,
 		PublishedOnly: !includeDrafts,
