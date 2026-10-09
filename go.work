@@ -4,6 +4,7 @@ use (
 	./services/api-gateway
 	./services/community
 	./services/content-service
+	./services/data-panel
 	./services/game-catalog
 	./services/user-service
 	./services/user-service-rpc

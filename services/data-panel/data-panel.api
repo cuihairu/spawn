@@ -1,0 +1,106 @@
+syntax = "v1"
+
+info (
+	title:   "Data Panel API"
+	desc:    "战绩数据面板 - 小黑盒式玩家战绩摄入与查询"
+	author:  "Tappi Team"
+	version: "v1.0"
+)
+
+type (
+	// 单游戏累积战绩行（计数为单调累加，win_rate/kd 读侧计算）
+	PlayerStat {
+		GameId       string  `json:"game_id"`
+		GameTitle    string  `json:"game_title"`
+		Matches      int64   `json:"matches"`
+		Wins         int64   `json:"wins"`
+		WinRate      float64 `json:"win_rate"`
+		Kills        int64   `json:"kills"`
+		Deaths       int64   `json:"deaths"`
+		Assists      int64   `json:"assists"`
+		Kd           float64 `json:"kd"`
+		Score        int64   `json:"score"`
+		RankPoints   int64   `json:"rank_points"`
+		LastPlayedAt string  `json:"last_played_at"`
+		CreatedAt    string  `json:"created_at"`
+		UpdatedAt    string  `json:"updated_at"`
+	}
+
+	// 玩家跨游戏汇总
+	StatSummary {
+		UserId          int64   `json:"user_id"`
+		TotalMatches    int64   `json:"total_matches"`
+		TotalWins       int64   `json:"total_wins"`
+		WinRate         float64 `json:"win_rate"`
+		TotalKills      int64   `json:"total_kills"`
+		TotalDeaths     int64   `json:"total_deaths"`
+		TotalAssists    int64   `json:"total_assists"`
+		Kd              float64 `json:"kd"`
+		TotalScore      int64   `json:"total_score"`
+		TotalRankPoints int64   `json:"total_rank_points"`
+		GameCount       int64   `json:"game_count"`
+		LastPlayedAt    string  `json:"last_played_at"`
+	}
+
+	GetSummaryReq {
+		UserId int64 `path:"user_id"`
+	}
+
+	SummaryResp {
+		Summary StatSummary `json:"summary"`
+	}
+
+	ListGameStatsReq {
+		UserId int64 `path:"user_id"`
+		Limit  int64 `form:"limit,optional"`
+		Offset int64 `form:"offset,optional"`
+	}
+
+	GameStatsResp {
+		Games []PlayerStat `json:"games"`
+		Total int64        `json:"total"`
+	}
+
+	GetGameStatReq {
+		UserId int64  `path:"user_id"`
+		GameId string `path:"game_id"`
+	}
+
+	PlayerStatResp {
+		Stat PlayerStat `json:"stat"`
+	}
+
+	// 战绩摄入：增量 delta（单调累加），归属取 JWT user_id
+	RecordStatReq {
+		GameId     string `json:"game_id"`
+		GameTitle  string `json:"game_title,optional"`
+		Matches    int64  `json:"matches,optional"`
+		Wins       int64  `json:"wins,optional"`
+		Kills      int64  `json:"kills,optional"`
+		Deaths     int64  `json:"deaths,optional"`
+		Assists    int64  `json:"assists,optional"`
+		Score      int64  `json:"score,optional"`
+		RankPoints int64  `json:"rank_points,optional"`
+		PlayedAt   string `json:"played_at,optional"`
+	}
+
+	RecordedStatResp {
+		Code    int64      `json:"code"`
+		Message string     `json:"message"`
+		Stat    PlayerStat `json:"stat"`
+	}
+)
+
+service data-panel {
+	@handler GetSummaryHandler
+	get /stats/users/:user_id/summary (GetSummaryReq) returns (SummaryResp)
+
+	@handler ListGameStatsHandler
+	get /stats/users/:user_id/games (ListGameStatsReq) returns (GameStatsResp)
+
+	@handler GetGameStatHandler
+	get /stats/users/:user_id/games/:game_id (GetGameStatReq) returns (PlayerStatResp)
+
+	@handler RecordStatHandler
+	post /stats/records (RecordStatReq) returns (RecordedStatResp)
+}

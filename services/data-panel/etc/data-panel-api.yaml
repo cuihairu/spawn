@@ -1,0 +1,26 @@
+Name: data-panel-api
+Host: 0.0.0.0
+Port: 8896
+Timeout: 30000
+
+# 战绩数据库：DSN 含 file:/.db 走 SQLite（默认本地文件，零配置），
+# 生产用 MySQL 连接串 + DATASOURCE 环境变量覆盖。空表启动时自动写入内嵌演示战绩。
+MySQL:
+  DataSource: "file:data/stats.db"
+
+# JWT 校验密钥（与 user-service 共享；生产环境用 JWT_SECRET 环境变量覆盖）
+Auth:
+  JWTSecret: "tappi-user-service-jwt-secret-key-2024"
+
+# Prometheus 指标端点（go-zero agent 自动暴露 /metrics）
+Prometheus:
+  Host: 0.0.0.0
+  Port: 9097
+
+# 结构化日志（go-zero logx）：JSON 单行输出到容器 stdout，
+# 由 deploy/docker-compose.monitoring.yaml 的 Promtail 集中收集进 Loki
+Log:
+  ServiceName: data-panel-api
+  Mode: console
+  Encoding: json
+  Level: info
