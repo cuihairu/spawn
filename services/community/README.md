@@ -263,7 +263,7 @@ ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]
 - [x] 添加内容审核功能（敏感词阻塞过滤 + 举报队列管理端点）
 - [x] 实现图片上传服务（选型方案 A：网关统一 `POST /upload` 落盘 + `GET /uploads/:file`
   托管，community 只存帖子 images URL 列表）
-- [ ] 优化热门推荐算法
+- [x] 优化热门推荐算法（v2：浏览对数阻尼 + 平滑重力衰减 + 关注提权 ×1.5）
 
 ### 长期（3-6月）
 - [ ] 实现实时推送
