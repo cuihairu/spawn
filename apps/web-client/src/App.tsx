@@ -11,6 +11,7 @@ import GamesPage from './pages/GamesPage'
 import GameDetailPage from './pages/GameDetailPage'
 import PostDetailPage from './pages/PostDetailPage'
 import ProfilePage from './pages/ProfilePage'
+import StatsPage from './pages/StatsPage'
 import './App.css'
 
 const AUTH_STORAGE_KEY = 'tappi.auth'
@@ -64,6 +65,9 @@ function App() {
               </Link>
               {auth ? (
                 <>
+                  <Link to="/stats" className="nav-link">
+                    战绩
+                  </Link>
                   <Link to="/profile" className="nav-link">
                     个人中心
                   </Link>
@@ -83,6 +87,19 @@ function App() {
             <Route path="/discover" element={<DiscoverPage />} />
             <Route path="/games" element={<GamesPage />} />
             <Route path="/games/:id" element={<GameDetailPage />} />
+            <Route
+              path="/stats"
+              element={
+                auth ? (
+                  <StatsPage userId={auth.user.id} nickname={auth.user.nickname} />
+                ) : (
+                  <div className="error-page">
+                    <p>请先登录</p>
+                    <Link to="/">返回首页</Link>
+                  </div>
+                )
+              }
+            />
             <Route
               path="/profile"
               element={
