@@ -326,3 +326,104 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   display: block;
 }
+
+/* 帖子详情评论区 */
+.post-comments {
+  margin-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 1rem;
+}
+
+.post-comments-title {
+  margin: 0 0 0.75rem;
+}
+
+.post-comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.post-comment {
+  padding: 0.7rem 0.85rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.post-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+  color: rgba(201, 210, 255, 0.72);
+}
+
+.post-comment-author {
+  color: #d7d2ff;
+  font-weight: 600;
+}
+
+.post-comment-time {
+  flex: 1;
+}
+
+.post-comment-delete,
+.post-comment-cancel,
+.post-comment-reply-btn {
+  border: none;
+  background: none;
+  color: rgba(201, 210, 255, 0.6);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.post-comment-delete:hover {
+  color: #ff8fa3;
+}
+
+.post-comment-reply-btn:hover {
+  color: #c9c4ff;
+}
+
+.post-comment-content {
+  margin-top: 0.4rem;
+  color: #f4f5fb;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.post-comment-reply {
+  color: #c9c4ff;
+  font-size: 0.9em;
+}
+
+.post-comment-form {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.post-comment-form textarea {
+  resize: vertical;
+  min-height: 72px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.65rem 0.9rem;
+  color: #f4f5fb;
+}
+
+.post-comment-form .primary-btn {
+  align-self: flex-start;
+}
+
+.post-comment-replying {
+  color: #c9c4ff;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}

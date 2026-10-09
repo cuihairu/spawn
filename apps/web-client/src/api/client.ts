@@ -698,6 +698,62 @@ export async function fetchLikedPosts(
   return { posts: (payload.posts ?? []).map(mapPost), total: payload.total ?? 0 }
 }
 
+// ===== 帖子评论（community 域，区别于攻略评论的 content 域 createComment）=====
+export interface PostComment {
+  id: number
+  post_id: number
+  author_id: number
+  author_name?: string
+  content: string
+  parent_id?: number
+  reply_to_author_name?: string
+  created_at: string
+  updated_at: string
+}
+
+type PostCommentResp = { comment: PostComment }
+type PostCommentsResp = { comments: PostComment[]; total: number }
+
+export async function fetchPostComments(
+  postId: number,
+  limit = 50,
+  offset = 0,
+): Promise<{ comments: PostComment[]; total: number }> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const payload = await request<PostCommentsResp>(
+    baseUrl,
+    `/api/v1/posts/${postId}/comments?limit=${limit}&offset=${offset}`,
+  )
+  return { comments: payload.comments ?? [], total: payload.total ?? 0 }
+}
+
+export async function createPostComment(
+  postId: number,
+  content: string,
+  parentId: number | undefined,
+  token: string,
+): Promise<PostComment> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const payload = await request<PostCommentResp>(baseUrl, `/api/v1/posts/${postId}/comments`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ content, parent_id: parentId }),
+  })
+  return payload.comment
+}
+
+export async function deletePostComment(
+  postId: number,
+  commentId: number,
+  token: string,
+): Promise<void> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  await request<CommonResp>(baseUrl, `/api/v1/posts/${postId}/comments/${commentId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
 // 网关自有端点（POST /upload、GET /home/feed）专用：无网关地址时按本地默认网关回退。
 const gatewayBaseUrl = apiGatewayUrl ?? 'http://localhost:8800'
 

@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
+  createPostComment,
+  deletePostComment,
   deletePost,
   fetchPostById,
+  fetchPostComments,
   likePost,
   resolveImageUrl,
   sharePost,
   updatePost,
   type Post,
+  type PostComment,
 } from '../api/client'
 import './community.css'
 
@@ -25,6 +29,12 @@ const PostDetailPage = ({ token, userId }: Props) => {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState({ title: '', content: '', tags: '' })
+  // 评论（community 域帖子评论）：列表 + 发评/删评；回复带 parent_id。
+  const [comments, setComments] = useState<PostComment[]>([])
+  const [commentTotal, setCommentTotal] = useState(0)
+  const [commentDraft, setCommentDraft] = useState('')
+  const [replyTo, setReplyTo] = useState<PostComment | null>(null)
+  const [commentBusy, setCommentBusy] = useState(false)
 
   const load = useCallback(async (postId: number) => {
     setLoading(true)
@@ -39,11 +49,27 @@ const PostDetailPage = ({ token, userId }: Props) => {
     }
   }, [])
 
+  const loadComments = useCallback(async (postId: number) => {
+    try {
+      const res = await fetchPostComments(postId)
+      setComments(res.comments)
+      setCommentTotal(res.total)
+    } catch {
+      // 评论加载失败不阻塞帖子本体，置空即可
+      setComments([])
+      setCommentTotal(0)
+    }
+  }, [])
+
   useEffect(() => {
     if (!id) return
+    const postId = Number(id)
     // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState.
-    queueMicrotask(() => load(Number(id)))
-  }, [id, load])
+    queueMicrotask(() => {
+      load(postId)
+      loadComments(postId)
+    })
+  }, [id, load, loadComments])
 
   // post 到达或变化时在渲染期同步编辑草稿（adjust-state-during-render）.
   const [draftFor, setDraftFor] = useState<Post | null>(null)
@@ -170,6 +196,55 @@ const PostDetailPage = ({ token, userId }: Props) => {
     }
   }
 
+  const handleSubmitComment = async () => {
+    if (!post) return
+    if (!token) {
+      setError('请先登录')
+      return
+    }
+    const content = commentDraft.trim()
+    if (!content) {
+      setError('评论内容不能为空')
+      return
+    }
+    setCommentBusy(true)
+    setError(null)
+    try {
+      const created = await createPostComment(
+        post.id,
+        content,
+        replyTo ? replyTo.id : undefined,
+        token ?? '',
+      )
+      setComments((prev) => [...prev, created])
+      setCommentTotal((n) => n + 1)
+      // 帖子评论计数单调累加，同步顶栏展示
+      setPost((prev) => (prev ? { ...prev, commentCount: prev.commentCount + 1 } : prev))
+      setCommentDraft('')
+      setReplyTo(null)
+    } catch (err) {
+      setError((err as Error).message || '评论失败')
+    } finally {
+      setCommentBusy(false)
+    }
+  }
+
+  const handleDeleteComment = async (comment: PostComment) => {
+    if (!post || !token) return
+    setCommentBusy(true)
+    setError(null)
+    try {
+      await deletePostComment(post.id, comment.id, token)
+      setComments((prev) => prev.filter((c) => c.id !== comment.id))
+      setCommentTotal((n) => Math.max(0, n - 1))
+      // 计数契约单调不回退（与点赞同款），顶栏 commentCount 保持不动
+    } catch (err) {
+      setError((err as Error).message || '删除评论失败')
+    } finally {
+      setCommentBusy(false)
+    }
+  }
+
   if (loading) return <div className="community-page">加载中...</div>
 
   if (error && !post) {
@@ -284,6 +359,84 @@ const PostDetailPage = ({ token, userId }: Props) => {
                 ))}
               </div>
             ) : null}
+
+            <div className="post-comments">
+              <h2 className="post-comments-title">评论（{commentTotal}）</h2>
+              {comments.length === 0 ? (
+                <div className="secondary-text">还没有评论，来抢沙发</div>
+              ) : (
+                <div className="post-comments-list">
+                  {comments.map((comment) => (
+                    <div key={comment.id} className="post-comment">
+                      <div className="post-comment-head">
+                        <span className="post-comment-author">
+                          👤 {comment.author_name || `用户${comment.author_id}`}
+                        </span>
+                        <span className="post-comment-time">{formatDate(comment.created_at)}</span>
+                        {token && userId === comment.author_id ? (
+                          <button
+                            type="button"
+                            className="post-comment-delete"
+                            onClick={() => handleDeleteComment(comment)}
+                            disabled={commentBusy}
+                          >
+                            删除
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="post-comment-content">
+                        {comment.reply_to_author_name ? (
+                          <span className="post-comment-reply">回复 @{comment.reply_to_author_name}：</span>
+                        ) : null}
+                        {comment.content}
+                      </div>
+                      {token ? (
+                        <button
+                          type="button"
+                          className="post-comment-reply-btn"
+                          onClick={() => {
+                            setReplyTo(comment)
+                            setCommentDraft('')
+                          }}
+                          disabled={commentBusy}
+                        >
+                          回复
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {token ? (
+                <div className="post-comment-form">
+                  {replyTo ? (
+                    <div className="post-comment-replying">
+                      回复 @{replyTo.author_name || `用户${replyTo.author_id}`}
+                      <button type="button" className="post-comment-cancel" onClick={() => setReplyTo(null)}>
+                        取消回复
+                      </button>
+                    </div>
+                  ) : null}
+                  <textarea
+                    value={commentDraft}
+                    onChange={(e) => setCommentDraft(e.target.value)}
+                    placeholder={replyTo ? `回复 @${replyTo.author_name || `用户${replyTo.author_id}`}...` : '写下你的评论...'}
+                    disabled={commentBusy}
+                  />
+                  <button
+                    type="button"
+                    className="primary-btn"
+                    onClick={handleSubmitComment}
+                    disabled={commentBusy}
+                  >
+                    {commentBusy ? '发送中...' : '发表评论'}
+                  </button>
+                </div>
+              ) : (
+                <div className="secondary-text">登录后可评论</div>
+              )}
+            </div>
           </>
         )}
       </article>
