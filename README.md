@@ -137,11 +137,11 @@ Unified access layer combining BFF aggregation and a four-way reverse proxy; onl
 - `GET /users/:id/recommendations` - User recommendations
 - `GET /home/feed` - Home feed aggregation (featured games / hot posts / topics / guides, four concurrent calls with field trimming + per-upstream failure degradation)
 - `GET /s/p/:id` - Post share-card jump page (og meta + `spawn://` deep link + web entry)
-- Reverse proxy: community (posts/topics/follows/likes), content (guides/comments), users (register/profile), games (list/detail) — full route coverage
+- Reverse proxy: community (posts/topics/follows/likes/post comments), content (guides/comments), users (register/profile), games (list/detail) — full route coverage
 - Port: 8800
 
 #### 5. Web Client (`apps/web-client`)
-React 19 + Vite + React Router 7 frontend. Seven pages: home (login & recommendations), guide list, guide detail, guide create/edit, post feed, post detail. Guides support "All/Mine" filtering with draft and published save states; comments support nested replies and likes, and authors can delete their own comments; the community page talks directly to the community service, with like and share on posts. Browsing works without login; write operations require login. Dark theme, responsive layout.
+React 19 + Vite + React Router 7 frontend. Pages: home (login & recommendations), discover (one-request home feed), games library + game detail, guide list/detail/editor, community (post feed with followed mode), post detail, profile. Guides support "All/Mine" filtering with draft and published save states; guide comments support nested replies and likes; posts support like/share/comments (reply with parent comment, author-only delete); the games library offers keyword search, genre filtering, and pagination, with game cards linking to detail pages that surface related guides. Browsing works without login; write operations require login. Dark theme, responsive layout.
 
 ### Technical Highlights
 
