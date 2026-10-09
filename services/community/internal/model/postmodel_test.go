@@ -449,27 +449,28 @@ func TestPostModel_HotDecayBuckets(t *testing.T) {
 	}
 	now := time.Now().UTC()
 
+	// v2 公式：base / (ageHours+2)^1.2，平滑重力衰减无阶梯断崖
 	fresh := base
 	fresh.CreatedAt = now.Format(time.RFC3339)
-	if got := hotScore(fresh); math.Abs(got-30) > 1e-6 {
-		t.Fatalf("fresh score = %v, want 30 (decay 1)", got)
+	if got, want := hotScore(fresh), 30.0/math.Pow(2, 1.2); math.Abs(got-want) > want*0.01 {
+		t.Fatalf("fresh score = %v, want ~%v", got, want)
 	}
 
 	dayOld := base
 	dayOld.CreatedAt = now.Add(-48 * time.Hour).Format(time.RFC3339)
-	if got, want := hotScore(dayOld), 30.0/(2*(48.0/24)); math.Abs(got-want) > want*0.01 {
+	if got, want := hotScore(dayOld), 30.0/math.Pow(50, 1.2); math.Abs(got-want) > want*0.01 {
 		t.Fatalf("48h score = %v, want ~%v", got, want)
 	}
 
 	weekOld := base
 	weekOld.CreatedAt = now.Add(-100 * time.Hour).Format(time.RFC3339)
-	if got, want := hotScore(weekOld), 30.0/(4*(100.0/24)); math.Abs(got-want) > want*0.01 {
+	if got, want := hotScore(weekOld), 30.0/math.Pow(102, 1.2); math.Abs(got-want) > want*0.01 {
 		t.Fatalf("100h score = %v, want ~%v", got, want)
 	}
 
 	ancient := base
 	ancient.CreatedAt = now.Add(-400 * time.Hour).Format(time.RFC3339)
-	if got, want := hotScore(ancient), 30.0/(8*(400.0/24)); math.Abs(got-want) > want*0.01 {
+	if got, want := hotScore(ancient), 30.0/math.Pow(402, 1.2); math.Abs(got-want) > want*0.01 {
 		t.Fatalf("400h score = %v, want ~%v", got, want)
 	}
 
@@ -483,6 +484,72 @@ func TestPostModel_HotDecayBuckets(t *testing.T) {
 	broken.CreatedAt = "not-a-time"
 	if got := hotScore(broken); got != 30 {
 		t.Fatalf("broken timestamp score = %v, want 30", got)
+	}
+}
+
+// TestPostModel_HotScoreViewDamping 浏览对数阻尼：100 倍浏览分数增幅远低于
+// 100 倍（旧版线性计入时 100 倍浏览就是 100 倍分数，刷量即霸榜）。
+func TestPostModel_HotScoreViewDamping(t *testing.T) {
+	mk := func(views int64) types.Post {
+		return types.Post{Type: "discussion", Status: "published",
+			ViewCount: views, CreatedAt: "not-a-time"}
+	}
+	// 0 → 100 浏览：+log2(101)≈6.66 分；100 → 10000 浏览：+log2(10001)-log2(101)≈6.63 分
+	// 每百倍浏览增量递减，第二段增幅略小于第一段，且远低于线性 100 倍。
+	first, second := hotScore(mk(100)), hotScore(mk(10000))
+	if second-first >= first {
+		t.Fatalf("view gain not sublinear: 0→100 adds %v, 100→10000 adds %v", first, second-first)
+	}
+	if got, want := hotScore(mk(10000)), math.Log2(10001); math.Abs(got-want) > want*0.01 {
+		t.Fatalf("views-only score = %v, want ~log2(10001)=%v", got, want)
+	}
+}
+
+// TestPostModel_HotForUser_BoostFollowed 个性化提权：关注话题/作者的帖子
+// 热度 ×1.5，同分之下排到非关注帖前；未命中关注集合的排序不变。
+func TestPostModel_HotForUser_BoostFollowed(t *testing.T) {
+	m := newPostModel(t, false)
+
+	// A（话题 9）分数略高于 B（话题 1，作者 7）：匿名热榜 A 在前；
+	// 关注话题 9 的用户视角下 B 需 ×1.5 —— 构造 B×1.5 后反超 A。
+	// A: 10 赞=30 分；B: 8 赞=24 分，24×1.5=36 > 30 → B 反超。
+	posts := []*types.Post{
+		{Id: 1, TopicId: 9, AuthorId: 2, AuthorName: "x", Title: "stranger", Content: "c",
+			Type: "discussion", Status: "published", LikeCount: 10,
+			CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z"},
+		{Id: 2, TopicId: 1, AuthorId: 7, AuthorName: "y", Title: "followed-author", Content: "c",
+			Type: "discussion", Status: "published", LikeCount: 8,
+			CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z"},
+		{Id: 3, TopicId: 2, AuthorId: 2, AuthorName: "x", Title: "followed-topic", Content: "c",
+			Type: "discussion", Status: "published", LikeCount: 4,
+			CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z"},
+	}
+	if err := m.Seed(posts); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	anon := m.Hot(10)
+	if anon[0].Title != "stranger" || anon[1].Title != "followed-author" {
+		t.Fatalf("anon order = [%s %s], want stranger first", anon[0].Title, anon[1].Title)
+	}
+
+	got := m.HotForUser([]int64{2}, []int64{7}, 10)
+	if got[0].Title != "followed-author" {
+		t.Fatalf("personalized top = %s, want followed-author (author boost)", got[0].Title)
+	}
+	// followed-topic 帖 4 赞=12 分，×1.5=18 > stranger 无提权后的相对位置保持：
+	// stranger 30 分仍高于 18，但它与 followed-topic 的差距应缩小——直接断言
+	// 提权帖都排在同分非提权帖之前的语义已由 top1 覆盖，这里验证顺序完整。
+	if got[1].Title != "stranger" || got[2].Title != "followed-topic" {
+		t.Fatalf("personalized order = [%s %s %s]", got[0].Title, got[1].Title, got[2].Title)
+	}
+
+	// 空关注集合 → 与匿名热榜一致
+	same := m.HotForUser(nil, nil, 10)
+	for i := range same {
+		if same[i].Id != anon[i].Id {
+			t.Fatalf("empty follows must equal anon: got[%d]=%d want=%d", i, same[i].Id, anon[i].Id)
+		}
 	}
 }
 

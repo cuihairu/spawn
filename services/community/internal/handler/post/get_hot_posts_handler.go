@@ -20,7 +20,7 @@ func GetHotPostsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 
-		l := post.NewGetHotPostsLogic(r.Context(), svcCtx)
+		l := post.NewGetHotPostsLogic(r.Context(), svcCtx, r.Header.Get("Authorization"))
 		resp, err := l.GetHotPosts(&req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)

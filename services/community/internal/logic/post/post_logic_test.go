@@ -5,12 +5,15 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/tappi/tappi/services/community/internal/config"
 	"github.com/tappi/tappi/services/community/internal/httperr"
 	"github.com/tappi/tappi/services/community/internal/model"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
+	"github.com/tappi/tappi/services/community/utils"
 )
 
 // newTestServiceContext 为逻辑层单测构造真实服务上下文：
@@ -303,7 +306,7 @@ func TestGetPosts(t *testing.T) {
 func TestGetHotPosts(t *testing.T) {
 	t.Run("default limit", func(t *testing.T) {
 		svcCtx := newTestServiceContext(t)
-		l := NewGetHotPostsLogic(context.Background(), svcCtx)
+		l := NewGetHotPostsLogic(context.Background(), svcCtx, "")
 		resp, err := l.GetHotPosts(&types.GetPostsReq{})
 		if err != nil {
 			t.Fatalf("GetHotPosts: %v", err)
@@ -318,13 +321,80 @@ func TestGetHotPosts(t *testing.T) {
 
 	t.Run("limit clamped to 100", func(t *testing.T) {
 		svcCtx := newTestServiceContext(t)
-		l := NewGetHotPostsLogic(context.Background(), svcCtx)
+		l := NewGetHotPostsLogic(context.Background(), svcCtx, "")
 		resp, err := l.GetHotPosts(&types.GetPostsReq{Limit: 1000})
 		if err != nil {
 			t.Fatalf("GetHotPosts: %v", err)
 		}
 		if resp.Total != 2 {
 			t.Fatalf("total = %d, want 2", resp.Total)
+		}
+	})
+
+	t.Run("invalid token falls back to anonymous", func(t *testing.T) {
+		svcCtx := newTestServiceContext(t)
+		l := NewGetHotPostsLogic(context.Background(), svcCtx, "Bearer not-a-token")
+		resp, err := l.GetHotPosts(&types.GetPostsReq{})
+		if err != nil {
+			t.Fatalf("invalid token must not error: %v", err)
+		}
+		if resp.Total != 2 {
+			t.Fatalf("total = %d, want 2", resp.Total)
+		}
+	})
+
+	t.Run("followed author post is boosted for logged-in caller", func(t *testing.T) {
+		svcCtx := newTestServiceContext(t)
+		// 关注流：用户 1001 关注作者 7。种子帖 2 约 203 分、种子帖 1 约 73 分，
+		// 构造分值须压过种子：作者帖 60 赞(180 分，关注提权 ×1.5=270)，
+		// 路人帖 70 赞(210 分)——匿名路人帖第一，登录后作者帖反超第一。
+		pAuthor, err := svcCtx.PostRepo.Create(1, 7, "作者甲", &types.CreatePostReq{Title: "关注帖", Content: "c"})
+		if err != nil {
+			t.Fatalf("seed author post: %v", err)
+		}
+		pStranger, err := svcCtx.PostRepo.Create(1, 8, "路人乙", &types.CreatePostReq{Title: "路人帖", Content: "c"})
+		if err != nil {
+			t.Fatalf("seed stranger post: %v", err)
+		}
+		for i := 0; i < 60; i++ {
+			if _, err := svcCtx.PostRepo.Like(pAuthor.Id, int64(200+i)); err != nil {
+				t.Fatalf("like author post: %v", err)
+			}
+		}
+		for i := 0; i < 70; i++ {
+			if _, err := svcCtx.PostRepo.Like(pStranger.Id, int64(300+i)); err != nil {
+				t.Fatalf("like stranger post: %v", err)
+			}
+		}
+		if !svcCtx.FollowRepo.FollowUser(1001, 7) {
+			t.Fatal("follow author should succeed")
+		}
+
+		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, utils.JWTClaims{
+			UserId: 1001, Username: "关注者",
+			RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))},
+		}).SignedString([]byte("test-jwt-secret"))
+		if err != nil {
+			t.Fatalf("sign token: %v", err)
+		}
+
+		l := NewGetHotPostsLogic(context.Background(), svcCtx, "Bearer "+token)
+		resp, err := l.GetHotPosts(&types.GetPostsReq{Limit: 100})
+		if err != nil {
+			t.Fatalf("GetHotPosts: %v", err)
+		}
+		if len(resp.Posts) < 2 || resp.Posts[0].Id != pAuthor.Id {
+			t.Fatalf("personalized top = %+v, want author post first (180 ×1.5 = 270 > 210)", resp.Posts[0])
+		}
+
+		// 同请求匿名视角：路人帖 15 分在前
+		anon := NewGetHotPostsLogic(context.Background(), svcCtx, "")
+		anonResp, err := anon.GetHotPosts(&types.GetPostsReq{Limit: 100})
+		if err != nil {
+			t.Fatalf("anon GetHotPosts: %v", err)
+		}
+		if len(anonResp.Posts) < 2 || anonResp.Posts[0].Id != pStranger.Id {
+			t.Fatalf("anon top = %+v, want stranger post first (210 > 203 seed)", anonResp.Posts[0])
 		}
 	})
 }

@@ -47,6 +47,7 @@ type PostStore interface {
 	ListByFollow(topicIds, authorIds []int64, limit, offset int64) ([]types.Post, int64)
 	ListLikedPosts(userId, limit, offset int64) ([]types.Post, int64)
 	Hot(limit int64) []types.Post
+	HotForUser(followedTopicIds, followedAuthorIds []int64, limit int64) []types.Post
 }
 
 var _ PostStore = (*PostModel)(nil)
@@ -657,6 +658,29 @@ func (m *PostModel) ListByFollow(topicIds, authorIds []int64, limit, offset int6
 // Hot 热榜：published 候选按置顶优先 + hotScore 降序，limit<=0 回落 20，
 // 返回 IsHot=true 的值副本。读失败返回 nil（与 List 的空集降级一致）。
 func (m *PostModel) Hot(limit int64) []types.Post {
+	return m.hotRanked(limit, nil)
+}
+
+// HotForUser 个性化热榜：命中关注话题或关注作者的帖子热度 ×1.5 提权，
+// 其余与 Hot 一致。关注集合由 logic 层从 FollowStore 取好后传入，
+// 模型层不感知关注关系。
+func (m *PostModel) HotForUser(followedTopicIds, followedAuthorIds []int64, limit int64) []types.Post {
+	topics := make(map[int64]bool, len(followedTopicIds))
+	for _, id := range followedTopicIds {
+		topics[id] = true
+	}
+	authors := make(map[int64]bool, len(followedAuthorIds))
+	for _, id := range followedAuthorIds {
+		authors[id] = true
+	}
+	return m.hotRanked(limit, func(p *types.Post) bool {
+		return topics[p.TopicId] || authors[p.AuthorId]
+	})
+}
+
+// hotRanked 热榜共用骨架：published 候选 → 置顶优先 + 加权分降序 → 截断
+// 并打 IsHot 标记。boost 为关注提权判定（nil = 纯热度分）。
+func (m *PostModel) hotRanked(limit int64, boost func(*types.Post) bool) []types.Post {
 	posts := m.allVisible()
 	if posts == nil {
 		return nil
@@ -675,7 +699,16 @@ func (m *PostModel) Hot(limit int64) []types.Post {
 		if pi.IsPinned != pj.IsPinned {
 			return pi.IsPinned
 		}
-		return hotScore(*pi) > hotScore(*pj)
+		si, sj := hotScore(*pi), hotScore(*pj)
+		if boost != nil {
+			if boost(pi) {
+				si *= 1.5
+			}
+			if boost(pj) {
+				sj *= 1.5
+			}
+		}
+		return si > sj
 	})
 
 	if limit <= 0 {
@@ -722,7 +755,10 @@ func (m *PostModel) allVisible() []types.Post {
 
 // hotScore 热度评分：互动加权后按帖龄时间衰减（分桶见下），与原文件仓一致。
 func hotScore(p types.Post) float64 {
-	base := float64(p.LikeCount*3 + p.CommentCount*5 + p.ShareCount*7 + p.ViewCount)
+	// 互动加权 + 浏览对数阻尼：浏览量取 log2(1+n)，刷量收益递减
+	// （旧版线性计入浏览，高浏览低互动帖会压过互动帖）。
+	base := float64(p.LikeCount*3+p.CommentCount*5+p.ShareCount*7) +
+		math.Log2(1+float64(p.ViewCount))
 
 	createdAt, err := time.Parse(time.RFC3339, p.CreatedAt)
 	if err != nil {
@@ -730,20 +766,9 @@ func hotScore(p types.Post) float64 {
 	}
 	hours := time.Since(createdAt).Hours()
 
-	decay := 1.0
-	switch {
-	case hours <= 24:
-		decay = 1
-	case hours <= 72:
-		decay = 2
-	case hours <= 24*7:
-		decay = 4
-	default:
-		decay = 8
-	}
-
-	decay *= math.Max(1, hours/24)
-	return base / decay
+	// 平滑重力衰减 (ageHours+2)^1.2：替代旧版「阶梯×线性」双重衰减，
+	// 单调且无断崖（旧版 24h/72h/7d 边界处分数跳变）。
+	return base / math.Pow(hours+2, 1.2)
 }
 
 // defaultSeedPosts 与原文件仓种子一致的两条演示帖子（时间戳取启动时刻）。
