@@ -98,6 +98,34 @@ type CommentsResp struct {
 	Total    int64      `json:"total"`
 }
 
+// 站内通知（点赞/评论/回复/关注四类）：content 冗余行为摘要供列表直接展示，
+// target_id 指向帖子/评论/被关注用户；is_read 由 read-all 端点批量翻转。
+type Notification struct {
+	Id        int64  `json:"id"`
+	UserId    int64  `json:"user_id"`
+	ActorId   int64  `json:"actor_id"`
+	ActorName string `json:"actor_name"`
+	Type      string `json:"type"` // like_post/comment_post/reply_comment/follow_user
+	TargetId  int64  `json:"target_id"`
+	Content   string `json:"content"`
+	IsRead    bool   `json:"is_read"`
+	CreatedAt string `json:"created_at"`
+}
+
+type ListNotificationsReq struct {
+	Limit  int64 `form:"limit,optional,default=20"`
+	Offset int64 `form:"offset,optional,default=0"`
+}
+
+type NotificationsResp struct {
+	Notifications []*Notification `json:"notifications"`
+	Total         int64           `json:"total"`
+}
+
+type UnreadCountResp struct {
+	Count int64 `json:"count"`
+}
+
 type GetPostReq struct {
 	Id int64 `path:"id"`
 }

@@ -230,3 +230,108 @@ func TestDeleteComment(t *testing.T) {
 		t.Fatalf("missing comment err=%v, want ErrCommentNotFound", err)
 	}
 }
+
+// listNotificationsOf 读某收件人的全部通知（触发点测试断言用）。
+func listNotificationsOf(t *testing.T, s *svc.ServiceContext, userId int64) []*types.Notification {
+	t.Helper()
+	list, _, err := s.NotificationRepo.ListByUser(userId, 50, 0)
+	if err != nil {
+		t.Fatalf("list notifications for %d: %v", userId, err)
+	}
+	return list
+}
+
+func TestCreateCommentNotifiesPostAuthor(t *testing.T) {
+	s := newTestServiceContext(t)
+	postId := hostPost(t, s) // 作者 7「作者甲」
+
+	if _, err := NewCreateCommentLogic(authContext(8, "读者乙"), s).CreateComment(&types.CreateCommentReq{
+		Id: postId, Content: "写得真好",
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	list := listNotificationsOf(t, s, 7)
+	if len(list) != 1 {
+		t.Fatalf("author notifications=%d, want 1", len(list))
+	}
+	if list[0].Type != "comment_post" || list[0].ActorId != 8 || list[0].TargetId != postId {
+		t.Fatalf("notification mismatch: %+v", list[0])
+	}
+	// 评论者自己与第三方均无通知
+	if got := listNotificationsOf(t, s, 8); len(got) != 0 {
+		t.Fatalf("commenter should not be notified: %+v", got)
+	}
+}
+
+func TestCreateCommentNoSelfNotification(t *testing.T) {
+	s := newTestServiceContext(t)
+	postId := hostPost(t, s) // 作者 7
+
+	if _, err := NewCreateCommentLogic(authContext(7, "作者甲"), s).CreateComment(&types.CreateCommentReq{
+		Id: postId, Content: "自评",
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if got := listNotificationsOf(t, s, 7); len(got) != 0 {
+		t.Fatalf("self-comment should not notify: %+v", got)
+	}
+}
+
+func TestCreateCommentReplyNotifiesBothParties(t *testing.T) {
+	s := newTestServiceContext(t)
+	postId := hostPost(t, s) // 帖子作者 7
+
+	parent, err := NewCreateCommentLogic(authContext(9, "读者丙"), s).CreateComment(&types.CreateCommentReq{
+		Id: postId, Content: "第一条评论",
+	})
+	if err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+
+	// 读者乙（8）回复读者丙（9）：帖子作者收到两条 comment_post（不同 actor 各一条），
+	// 被回复者收到 reply_comment
+	if _, err := NewCreateCommentLogic(authContext(8, "读者乙"), s).CreateComment(&types.CreateCommentReq{
+		Id: postId, Content: "回复你", ParentId: parent.Comment.Id,
+	}); err != nil {
+		t.Fatalf("create reply: %v", err)
+	}
+
+	authorList := listNotificationsOf(t, s, 7)
+	if len(authorList) != 2 {
+		t.Fatalf("author notifications=%d, want 2 comment_post (one per actor)", len(authorList))
+	}
+	for _, n := range authorList {
+		if n.Type != "comment_post" {
+			t.Fatalf("author should only get comment_post: %+v", authorList)
+		}
+	}
+
+	parentList := listNotificationsOf(t, s, 9)
+	if len(parentList) != 1 || parentList[0].Type != "reply_comment" {
+		t.Fatalf("parent notifications=%+v, want 1 reply_comment", parentList)
+	}
+}
+
+func TestCreateCommentReplyToPostAuthorSingleNotification(t *testing.T) {
+	s := newTestServiceContext(t)
+	postId := hostPost(t, s) // 帖子作者 7
+
+	// 帖子作者先评论，读者乙回复帖子作者 → 被回复者即帖子作者，只发一条 comment_post
+	parent, err := NewCreateCommentLogic(authContext(7, "作者甲"), s).CreateComment(&types.CreateCommentReq{
+		Id: postId, Content: "作者自评",
+	})
+	if err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+	if _, err := NewCreateCommentLogic(authContext(8, "读者乙"), s).CreateComment(&types.CreateCommentReq{
+		Id: postId, Content: "回复作者", ParentId: parent.Comment.Id,
+	}); err != nil {
+		t.Fatalf("create reply: %v", err)
+	}
+
+	list := listNotificationsOf(t, s, 7)
+	if len(list) != 1 || list[0].Type != "comment_post" {
+		t.Fatalf("author notifications=%+v, want exactly 1 comment_post", list)
+	}
+}

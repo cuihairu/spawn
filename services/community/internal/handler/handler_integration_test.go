@@ -12,6 +12,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/tappi/tappi/services/community/internal/config"
+	notification "github.com/tappi/tappi/services/community/internal/handler/notification"
 	"github.com/tappi/tappi/services/community/internal/handler/post"
 	"github.com/tappi/tappi/services/community/internal/handler/topic"
 	"github.com/tappi/tappi/services/community/internal/httperr"
@@ -189,5 +190,103 @@ func TestCreatePost_IncrementsTopicPostCount(t *testing.T) {
 	}
 	if topic1.PostCount != 1 {
 		t.Fatalf("expected topic post_count to be incremented, got %d", topic1.PostCount)
+	}
+}
+
+func TestNotificationEndpoints_Flow(t *testing.T) {
+	httpx.SetErrorHandlerCtx(httperr.ErrorHandler)
+
+	svcCtx, secret := newTestServiceContext(t)
+	authorToken := signToken(t, secret, 7, "作者甲")
+	likerToken := signToken(t, secret, 8, "读者乙")
+
+	// 作者发帖
+	create := svcCtx.Auth(post.CreatePostHandler(svcCtx))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/posts", bytes.NewBufferString(`{"topic_id":1,"title":"通知流","content":"正文"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+authorToken)
+	rr := httptest.NewRecorder()
+	create(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("create post: expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var created types.PostResp
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal PostResp: %v", err)
+	}
+	postId := strconv.FormatInt(created.Post.Id, 10)
+
+	// 读者点赞 → 触发作者通知
+	like := svcCtx.Auth(post.LikePostHandler(svcCtx))
+	likeReq := httptest.NewRequest(http.MethodPost, "/api/v1/posts/"+postId+"/like", nil)
+	likeReq = pathvar.WithVars(likeReq, map[string]string{"id": postId})
+	likeReq.Header.Set("Authorization", "Bearer "+likerToken)
+	likeRR := httptest.NewRecorder()
+	like(likeRR, likeReq)
+	if likeRR.Code != http.StatusOK {
+		t.Fatalf("like: expected 200, got %d body=%s", likeRR.Code, likeRR.Body.String())
+	}
+
+	// 无 token 列表 → 401
+	list := svcCtx.Auth(notification.ListNotificationsHandler(svcCtx))
+	bareReq := httptest.NewRequest(http.MethodGet, "/api/v1/notifications", nil)
+	bareRR := httptest.NewRecorder()
+	list(bareRR, bareReq)
+	if bareRR.Code != http.StatusUnauthorized {
+		t.Fatalf("list without token: expected 401, got %d", bareRR.Code)
+	}
+
+	// 作者列表 → 1 条 like_post
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/notifications?limit=20&offset=0", nil)
+	listReq.Header.Set("Authorization", "Bearer "+authorToken)
+	listRR := httptest.NewRecorder()
+	list(listRR, listReq)
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("list: expected 200, got %d body=%s", listRR.Code, listRR.Body.String())
+	}
+	var listed types.NotificationsResp
+	if err := json.Unmarshal(listRR.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("unmarshal NotificationsResp: %v", err)
+	}
+	if listed.Total != 1 || len(listed.Notifications) != 1 || listed.Notifications[0].Type != "like_post" {
+		t.Fatalf("notifications mismatch: %#v", listed)
+	}
+
+	// 未读数 → 1
+	unread := svcCtx.Auth(notification.GetUnreadCountHandler(svcCtx))
+	unreadReq := httptest.NewRequest(http.MethodGet, "/api/v1/notifications/unread-count", nil)
+	unreadReq.Header.Set("Authorization", "Bearer "+authorToken)
+	unreadRR := httptest.NewRecorder()
+	unread(unreadRR, unreadReq)
+	if unreadRR.Code != http.StatusOK {
+		t.Fatalf("unread-count: expected 200, got %d body=%s", unreadRR.Code, unreadRR.Body.String())
+	}
+	var unreadResp types.UnreadCountResp
+	if err := json.Unmarshal(unreadRR.Body.Bytes(), &unreadResp); err != nil {
+		t.Fatalf("unmarshal UnreadCountResp: %v", err)
+	}
+	if unreadResp.Count != 1 {
+		t.Fatalf("unread count=%d, want 1", unreadResp.Count)
+	}
+
+	// 全部已读 → 未读数归零
+	markRead := svcCtx.Auth(notification.MarkAllReadHandler(svcCtx))
+	markReq := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/read-all", nil)
+	markReq.Header.Set("Authorization", "Bearer "+authorToken)
+	markRR := httptest.NewRecorder()
+	markRead(markRR, markReq)
+	if markRR.Code != http.StatusOK {
+		t.Fatalf("read-all: expected 200, got %d body=%s", markRR.Code, markRR.Body.String())
+	}
+	unreadReq2 := httptest.NewRequest(http.MethodGet, "/api/v1/notifications/unread-count", nil)
+	unreadReq2.Header.Set("Authorization", "Bearer "+authorToken)
+	unreadRR2 := httptest.NewRecorder()
+	unread(unreadRR2, unreadReq2)
+	var unreadResp2 types.UnreadCountResp
+	if err := json.Unmarshal(unreadRR2.Body.Bytes(), &unreadResp2); err != nil {
+		t.Fatalf("unmarshal UnreadCountResp: %v", err)
+	}
+	if unreadResp2.Count != 0 {
+		t.Fatalf("unread count after read-all=%d, want 0", unreadResp2.Count)
 	}
 }

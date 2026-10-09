@@ -167,6 +167,29 @@ type (
 		Comments []*Comment `json:"comments"`
 		Total    int64      `json:"total"`
 	}
+	// 站内通知（点赞/评论/回复/关注四类）：content 冗余行为摘要供列表直接展示
+	Notification {
+		Id        int64  `json:"id"`
+		UserId    int64  `json:"user_id"`
+		ActorId   int64  `json:"actor_id"`
+		ActorName string `json:"actor_name"`
+		Type      string `json:"type"` // like_post/comment_post/reply_comment/follow_user
+		TargetId  int64  `json:"target_id"`
+		Content   string `json:"content"`
+		IsRead    bool   `json:"is_read"`
+		CreatedAt string `json:"created_at"`
+	}
+	ListNotificationsReq {
+		Limit  int64 `form:"limit,optional,default=20"`
+		Offset int64 `form:"offset,optional,default=0"`
+	}
+	NotificationsResp {
+		Notifications []*Notification `json:"notifications"`
+		Total         int64           `json:"total"`
+	}
+	UnreadCountResp {
+		Count int64 `json:"count"`
+	}
 )
 
 @server (
@@ -272,5 +295,21 @@ service community-api {
 
 	@handler GetFollowingUsers
 	get /users/following returns (FollowingUsersResp)
+}
+
+@server (
+	prefix:     /api/v1
+	group:      notification
+	middleware: Auth
+)
+service community-api {
+	@handler ListNotifications
+	get /notifications (ListNotificationsReq) returns (NotificationsResp)
+
+	@handler GetUnreadCount
+	get /notifications/unread-count returns (UnreadCountResp)
+
+	@handler MarkAllRead
+	post /notifications/read-all returns (CommonResp)
 }
 
