@@ -36,6 +36,12 @@ func RegisterCommunityProxyRoutes(server *rest.Server, serverCtx *svc.ServiceCon
 		{Method: http.MethodPost, Path: "/api/v1/posts/:id/like", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/posts/:id/share", Handler: h},
 
+		// 帖子评论（M3 web 对等补齐）：发评/删评登录语义由 community 校验，
+		// 列表公开；删评挂帖子子资源（/api/v1/comments/:id 已属 content-service）。
+		{Method: http.MethodGet, Path: "/api/v1/posts/:id/comments", Handler: h},
+		{Method: http.MethodPost, Path: "/api/v1/posts/:id/comments", Handler: h},
+		{Method: http.MethodDelete, Path: "/api/v1/posts/:id/comments/:cid", Handler: h},
+
 		{Method: http.MethodGet, Path: "/api/v1/users/following", Handler: h},
 		{Method: http.MethodGet, Path: "/api/v1/users/likes", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/users/:user_id/follow", Handler: h},
