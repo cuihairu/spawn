@@ -37,5 +37,9 @@ type Config struct {
 			BaseURL string `json:",env=COMMUNITY_SERVICE_URL"`
 			Timeout int64  `json:",default=5000"`
 		}
+		DataPanel struct {
+			BaseURL string `json:",env=DATA_PANEL_URL"`
+			Timeout int64  `json:",default=5000"`
+		}
 	}
 }

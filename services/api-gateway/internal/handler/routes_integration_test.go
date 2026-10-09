@@ -16,6 +16,7 @@ import (
 	"github.com/tappi/tappi/services/api-gateway/internal/community"
 	"github.com/tappi/tappi/services/api-gateway/internal/config"
 	"github.com/tappi/tappi/services/api-gateway/internal/content"
+	"github.com/tappi/tappi/services/api-gateway/internal/datapanel"
 	"github.com/tappi/tappi/services/api-gateway/internal/games"
 	"github.com/tappi/tappi/services/api-gateway/internal/svc"
 	"github.com/tappi/tappi/services/api-gateway/internal/users"
@@ -78,10 +79,12 @@ type upstreamStubs struct {
 	user         *callLog
 	game         *callLog
 	community    *callLog
+	dataPanel    *callLog
 	userURL      string
 	gameURL      string
 	communityURL string
 	contentURL   string
+	dataPanelURL string
 }
 
 // newUpstreamStubs 启动上游 stub，故障开关只依赖请求本身（无共享可变状态，-race 安全）：
@@ -91,7 +94,7 @@ type upstreamStubs struct {
 func newUpstreamStubs(t *testing.T) *upstreamStubs {
 	t.Helper()
 
-	stubs := &upstreamStubs{user: &callLog{}, game: &callLog{}, community: &callLog{}}
+	stubs := &upstreamStubs{user: &callLog{}, game: &callLog{}, community: &callLog{}, dataPanel: &callLog{}}
 
 	userStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -215,10 +218,55 @@ func newUpstreamStubs(t *testing.T) *upstreamStubs {
 	}))
 	t.Cleanup(contentStub.Close)
 
+	dataPanelStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stubs.dataPanel.add(upstreamCall{
+			method: r.Method,
+			path:   r.URL.Path,
+			query:  r.URL.RawQuery,
+			auth:   r.Header.Get("Authorization"),
+			body: func() string {
+				b, _ := io.ReadAll(r.Body)
+				return string(b)
+			}(),
+		})
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/stats/users/1001/summary":
+			_, _ = w.Write([]byte(`{"summary":{"user_id":1001,"total_matches":42,"total_wins":25,` +
+				`"win_rate":0.5952,"total_kills":310,"total_deaths":180,"total_assists":95,` +
+				`"kd":1.7222,"total_score":12040,"total_rank_points":860,"game_count":2,` +
+				`"last_played_at":"2026-10-05T21:30:00Z"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/stats/users/1001/games":
+			_, _ = w.Write([]byte(`{"games":[{"game_id":"game-valorant","game_title":"Valorant",` +
+				`"matches":87,"wins":44,"win_rate":0.5057,"kills":620,"deaths":510,"assists":240,` +
+				`"kd":1.2157,"score":18900,"rank_points":1120,"last_played_at":"2026-10-05T21:30:00Z",` +
+				`"created_at":"2026-10-09T00:00:00Z","updated_at":"2026-10-09T00:00:00Z"}],"total":1}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/stats/users/1001/games/"):
+			if strings.HasSuffix(r.URL.Path, "/nope") {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"code":404,"message":"stat not found"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"stat":{"game_id":"game-valorant","game_title":"Valorant","matches":87}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/stats/records":
+			if r.Header.Get("Authorization") == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"message":"missing or invalid token"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"code":200,"message":"ok","stat":{"game_id":"game-valorant","matches":88}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("no such upstream endpoint"))
+		}
+	}))
+	t.Cleanup(dataPanelStub.Close)
+
 	stubs.userURL = userStub.URL
 	stubs.gameURL = gameStub.URL
 	stubs.communityURL = communityStub.URL
 	stubs.contentURL = contentStub.URL
+	stubs.dataPanelURL = dataPanelStub.URL
 	return stubs
 }
 
@@ -246,6 +294,8 @@ func newGatewayServer(t *testing.T, stubs *upstreamStubs) string {
 	c.Upstreams.Community.Timeout = 2000
 	c.Upstreams.Content.BaseURL = stubs.contentURL
 	c.Upstreams.Content.Timeout = 2000
+	c.Upstreams.DataPanel.BaseURL = stubs.dataPanelURL
+	c.Upstreams.DataPanel.Timeout = 2000
 
 	svcCtx := svc.NewServiceContext(c)
 	server := rest.MustNewServer(c.RestConf)
@@ -254,6 +304,7 @@ func newGatewayServer(t *testing.T, stubs *upstreamStubs) string {
 	community.RegisterCommunityProxyRoutes(server, svcCtx)
 	users.RegisterUserProxyRoutes(server, svcCtx)
 	games.RegisterGameProxyRoutes(server, svcCtx)
+	datapanel.RegisterDataPanelProxyRoutes(server, svcCtx)
 	go server.Start()
 	t.Cleanup(server.Stop)
 
@@ -275,6 +326,7 @@ func newGatewayServer(t *testing.T, stubs *upstreamStubs) string {
 	stubs.user.reset()
 	stubs.game.reset()
 	stubs.community.reset()
+	stubs.dataPanel.reset()
 	return base
 }
 
@@ -860,6 +912,80 @@ func TestRoutes_GamesListAndDetail(t *testing.T) {
 	got = call(t, http.MethodGet, base+"/games/nope", "", "")
 	if got.status != http.StatusNotFound {
 		t.Fatalf("missing status = %d, want 404", got.status)
+	}
+}
+
+// --- data-panel 反代：/api/v1/stats（战绩面板） ---
+
+func TestRoutes_StatsSummaryAndGames(t *testing.T) {
+	stubs := newUpstreamStubs(t)
+	base := newGatewayServer(t, stubs)
+
+	// 汇总公开透传。
+	got := call(t, http.MethodGet, base+"/api/v1/stats/users/1001/summary", "", "")
+	if got.status != http.StatusOK {
+		t.Fatalf("summary status = %d, body = %s", got.status, got.body)
+	}
+	if summary := object(t, got.json, "summary"); summary["total_matches"] != float64(42) ||
+		summary["game_count"] != float64(2) {
+		t.Fatalf("summary = %#v", summary)
+	}
+	sent := stubs.dataPanel.last(t)
+	if sent.method != http.MethodGet || sent.path != "/api/v1/stats/users/1001/summary" {
+		t.Fatalf("upstream request = %s %s", sent.method, sent.path)
+	}
+
+	// 明细列表：query 分页透传。
+	got = call(t, http.MethodGet, base+"/api/v1/stats/users/1001/games?limit=10&offset=0", "", "")
+	if got.status != http.StatusOK {
+		t.Fatalf("games status = %d, body = %s", got.status, got.body)
+	}
+	if games := list(t, got.json, "games"); len(games) != 1 {
+		t.Fatalf("games = %#v", games)
+	}
+	if q := stubs.dataPanel.last(t).query; q != "limit=10&offset=0" {
+		t.Fatalf("upstream query = %q, want limit=10&offset=0", q)
+	}
+
+	// 缺失游戏 → 上游 404 原样透传。
+	got = call(t, http.MethodGet, base+"/api/v1/stats/users/1001/games/nope", "", "")
+	if got.status != http.StatusNotFound {
+		t.Fatalf("missing game status = %d, want 404", got.status)
+	}
+}
+
+func TestRoutes_StatsRecordIngest(t *testing.T) {
+	stubs := newUpstreamStubs(t)
+	base := newGatewayServer(t, stubs)
+
+	// 摄入：Bearer 透传，body 原样转发（归属由 data-panel 从令牌取）。
+	got := call(t, http.MethodPost, base+"/api/v1/stats/records", "Bearer gw-token",
+		`{"game_id":"game-valorant","matches":1,"wins":1}`)
+	if got.status != http.StatusOK {
+		t.Fatalf("record status = %d, body = %s", got.status, got.body)
+	}
+	if got.json["code"] != float64(200) {
+		t.Fatalf("envelope = %#v", got.json)
+	}
+	if stat := object(t, got.json, "stat"); stat["matches"] != float64(88) {
+		t.Fatalf("stat = %#v", stat)
+	}
+	sent := stubs.dataPanel.last(t)
+	if sent.method != http.MethodPost || sent.path != "/api/v1/stats/records" {
+		t.Fatalf("upstream request = %s %s", sent.method, sent.path)
+	}
+	if sent.auth != "Bearer gw-token" {
+		t.Fatalf("upstream authorization = %q", sent.auth)
+	}
+	if !strings.Contains(sent.body, `"game_id":"game-valorant"`) {
+		t.Fatalf("upstream body = %q", sent.body)
+	}
+
+	// 匿名摄入 → 上游 401 原样透传。
+	got = call(t, http.MethodPost, base+"/api/v1/stats/records", "",
+		`{"game_id":"game-valorant","matches":1}`)
+	if got.status != http.StatusUnauthorized {
+		t.Fatalf("anon record status = %d, want 401", got.status)
 	}
 }
 

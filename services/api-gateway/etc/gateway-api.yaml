@@ -25,6 +25,9 @@ Upstreams:
   Community:
     BaseURL: "http://localhost:8892"
     Timeout: 5000
+  DataPanel:
+    BaseURL: "http://localhost:8896"
+    Timeout: 5000
 
 # Prometheus 指标端点（go-zero agent 自动暴露 /metrics）
 Prometheus:

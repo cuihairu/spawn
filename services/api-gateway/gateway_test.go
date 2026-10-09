@@ -52,6 +52,9 @@ Upstreams:
   Community:
     BaseURL: "http://localhost:18892"
     Timeout: 1000
+  DataPanel:
+    BaseURL: "http://localhost:18896"
+    Timeout: 1000
 `
 	if err := os.WriteFile(cfg, []byte(content), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)

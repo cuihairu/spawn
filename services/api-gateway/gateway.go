@@ -11,6 +11,7 @@ import (
 	"github.com/tappi/tappi/services/api-gateway/internal/community"
 	"github.com/tappi/tappi/services/api-gateway/internal/config"
 	"github.com/tappi/tappi/services/api-gateway/internal/content"
+	"github.com/tappi/tappi/services/api-gateway/internal/datapanel"
 	"github.com/tappi/tappi/services/api-gateway/internal/games"
 	"github.com/tappi/tappi/services/api-gateway/internal/handler"
 	"github.com/tappi/tappi/services/api-gateway/internal/svc"
@@ -48,6 +49,7 @@ func run() error {
 	community.RegisterCommunityProxyRoutes(server, ctx)
 	users.RegisterUserProxyRoutes(server, ctx)
 	games.RegisterGameProxyRoutes(server, ctx)
+	datapanel.RegisterDataPanelProxyRoutes(server, ctx)
 
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()
