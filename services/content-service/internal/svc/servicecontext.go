@@ -18,11 +18,12 @@ import (
 )
 
 type ServiceContext struct {
-	Config            config.Config
-	GuideRepository   model.GuideStore
-	CommentRepository model.CommentStore
-	Auth              *utils.Auth
-	GameCatalogClient *client.GameCatalogClient
+	Config             config.Config
+	GuideRepository    model.GuideStore
+	CommentRepository  model.CommentStore
+	FavoriteRepository model.FavoriteStore
+	Auth               *utils.Auth
+	GameCatalogClient  *client.GameCatalogClient
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -49,6 +50,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 
 	guideModel := model.NewGuideModel(db)
 	commentModel := model.NewCommentModel(db)
+	favoriteModel := model.NewFavoriteModel(db)
 
 	// 建表 + 空表写入内嵌种子（首次启动初始化演示内容）
 	if err := guideModel.CreateGuidesTable(); err != nil {
@@ -63,6 +65,9 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := commentModel.SeedIfEmpty(); err != nil {
 		panic(fmt.Sprintf("初始化评论种子数据失败: %v", err))
 	}
+	if err := favoriteModel.CreateFavoritesTable(); err != nil {
+		panic(fmt.Sprintf("创建收藏表失败: %v", err))
+	}
 
 	// 初始化认证工具
 	auth := utils.NewAuth(c.Auth.JWTSecret)
@@ -74,11 +79,12 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	)
 
 	return &ServiceContext{
-		Config:            c,
-		GuideRepository:   guideModel,
-		CommentRepository: commentModel,
-		Auth:              auth,
-		GameCatalogClient: gameCatalogClient,
+		Config:             c,
+		GuideRepository:    guideModel,
+		CommentRepository:  commentModel,
+		FavoriteRepository: favoriteModel,
+		Auth:               auth,
+		GameCatalogClient:  gameCatalogClient,
 	}
 }
 

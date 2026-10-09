@@ -99,6 +99,22 @@ type LikeGuideResponse struct {
 	Likes   int    `json:"likes"`
 }
 
+type FavoriteGuideRequest struct {
+	Id int64 `path:"id"`
+}
+
+type FavoriteGuideResponse struct {
+	Code      int    `json:"code"`
+	Message   string `json:"message"`
+	Favorited bool   `json:"favorited"`
+	Count     int64  `json:"count"`
+}
+
+type ListFavoritesRequest struct {
+	Page     int `form:"page,default=1"`
+	PageSize int `form:"page_size,default=20"`
+}
+
 type Comment struct {
 	Id         int64  `json:"id"`
 	TargetType string `json:"target_type"`

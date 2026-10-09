@@ -105,6 +105,22 @@ type LikeGuideResponse {
 	Likes   int    `json:"likes"`
 }
 
+type FavoriteGuideRequest {
+	Id int64 `path:"id"`
+}
+
+type FavoriteGuideResponse {
+	Code      int    `json:"code"`
+	Message   string `json:"message"`
+	Favorited bool   `json:"favorited"`
+	Count     int64  `json:"count"`
+}
+
+type ListFavoritesRequest {
+	Page     int `form:"page,default=1"`
+	PageSize int `form:"page_size,default=20"`
+}
+
 // ==================== 评论相关 ====================
 
 type Comment {
@@ -192,6 +208,18 @@ service content-api {
 
 	@handler LikeGuideHandler
 	post /guides/:id/like (LikeGuideRequest) returns (LikeGuideResponse)
+
+	@handler FavoriteGuideHandler
+	post /guides/:id/favorite (FavoriteGuideRequest) returns (FavoriteGuideResponse)
+
+	@handler UnfavoriteGuideHandler
+	delete /guides/:id/favorite (FavoriteGuideRequest) returns (FavoriteGuideResponse)
+
+	@handler GetFavoriteStatusHandler
+	get /guides/:id/favorite (FavoriteGuideRequest) returns (FavoriteGuideResponse)
+
+	@handler ListFavoritesHandler
+	get /guides/favorites (ListFavoritesRequest) returns (ListGuidesResponse)
 
 	@handler CreateCommentHandler
 	post /comments (CreateCommentRequest) returns (CreateCommentResponse)

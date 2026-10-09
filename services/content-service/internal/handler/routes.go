@@ -26,6 +26,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			},
 			{
 				Method:  http.MethodGet,
+				Path:    "/guides/favorites",
+				Handler: ListFavoritesHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
 				Path:    "/guides/:id",
 				Handler: GetGuideHandler(serverCtx),
 			},
@@ -43,6 +48,21 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 				Method:  http.MethodPost,
 				Path:    "/guides/:id/like",
 				Handler: LikeGuideHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodPost,
+				Path:    "/guides/:id/favorite",
+				Handler: FavoriteGuideHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodDelete,
+				Path:    "/guides/:id/favorite",
+				Handler: UnfavoriteGuideHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/guides/:id/favorite",
+				Handler: GetFavoriteStatusHandler(serverCtx),
 			},
 			{
 				Method:  http.MethodPost,
