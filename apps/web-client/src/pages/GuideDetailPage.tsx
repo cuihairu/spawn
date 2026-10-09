@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import type { Guide } from '../api/client'
-import { fetchGuideById, likeGuide, publishGuide } from '../api/client'
+import {
+  fetchGuideById,
+  fetchFavoriteStatus,
+  favoriteGuide,
+  likeGuide,
+  publishGuide,
+  unfavoriteGuide,
+} from '../api/client'
 import { renderMarkdown } from '../lib/markdown'
 import CommentList from '../components/comments/CommentList'
 import './guides.css'
@@ -18,6 +25,8 @@ const GuideDetailPage = ({ token, userId }: Props) => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [liked, setLiked] = useState(false)
+  const [favorited, setFavorited] = useState(false)
+  const [favoriteCount, setFavoriteCount] = useState(0)
   const [commentCount, setCommentCount] = useState(0)
 
   const loadGuide = useCallback(
@@ -28,6 +37,14 @@ const GuideDetailPage = ({ token, userId }: Props) => {
         const data = await fetchGuideById(guideId, token)
         setGuide(data)
         setCommentCount(0)
+        // 收藏状态与总数（匿名仅总数；失败不影响攻略展示）
+        try {
+          const fav = await fetchFavoriteStatus(guideId, token)
+          setFavorited(fav.favorited)
+          setFavoriteCount(fav.count)
+        } catch {
+          // 忽略收藏状态错误
+        }
       } catch (err) {
         setError((err as Error).message || '加载攻略失败')
       } finally {
@@ -42,6 +59,8 @@ const GuideDetailPage = ({ token, userId }: Props) => {
   if (id !== likedForId) {
     setLikedForId(id)
     setLiked(false)
+    setFavorited(false)
+    setFavoriteCount(0)
   }
 
   useEffect(() => {
@@ -61,6 +80,22 @@ const GuideDetailPage = ({ token, userId }: Props) => {
       setGuide({ ...guide, likeCount: guide.likeCount + 1 })
     } catch (err) {
       setError((err as Error).message || '点赞失败')
+    }
+  }
+
+  const handleFavorite = async () => {
+    if (!token || !guide) {
+      setError('请先登录')
+      return
+    }
+    try {
+      const next = favorited
+        ? await unfavoriteGuide(guide.id, token)
+        : await favoriteGuide(guide.id, token)
+      setFavorited(next.favorited)
+      setFavoriteCount(next.count)
+    } catch (err) {
+      setError((err as Error).message || (favorited ? '取消收藏失败' : '收藏失败'))
     }
   }
 
@@ -182,6 +217,14 @@ const GuideDetailPage = ({ token, userId }: Props) => {
             disabled={!token || liked || guide.status !== 'published'}
           >
             👍 {liked ? '已赞' : '点赞'} ({guide.likeCount})
+          </button>
+          <button
+            type="button"
+            className={`action-btn fav-btn ${favorited ? 'liked' : ''}`}
+            onClick={handleFavorite}
+            disabled={!token || guide.status !== 'published'}
+          >
+            {favorited ? '⭐ 已收藏' : '☆ 收藏'} ({favoriteCount})
           </button>
           <div className="guide-stats-bar">
             <span>👁️ {guide.viewCount} 阅读</span>

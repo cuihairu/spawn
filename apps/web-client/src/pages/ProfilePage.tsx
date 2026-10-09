@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   fetchGuides,
   fetchLikedPosts,
+  fetchMyFavorites,
   fetchPosts,
   type Guide,
   type Post,
@@ -18,10 +19,12 @@ interface Props {
 
 // 个人中心（M3 对 mobile 的 web 对等）：我的帖子（community author_id 过滤）、
 // 我的攻略（content-service author_id 过滤，带 Bearer 可见自己草稿）、
+// 我的收藏（GET /guides/favorites 收藏时间倒序）、
 // 我的点赞（GET /users/likes 点赞时间倒序）。
 const ProfilePage = ({ token, userId, nickname }: Props) => {
   const [myPosts, setMyPosts] = useState<Post[]>([])
   const [myGuides, setMyGuides] = useState<Guide[]>([])
+  const [myFavorites, setMyFavorites] = useState<Guide[]>([])
   const [likedPosts, setLikedPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -29,9 +32,10 @@ const ProfilePage = ({ token, userId, nickname }: Props) => {
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const [postsRes, guidesRes, likesRes] = await Promise.allSettled([
+    const [postsRes, guidesRes, favsRes, likesRes] = await Promise.allSettled([
       fetchPosts({ authorId: userId, limit: 20 }),
       fetchGuides({ authorId: userId, token, limit: 20 }),
+      fetchMyFavorites(token, 20),
       fetchLikedPosts(token, 20),
     ])
     const failures: string[] = []
@@ -39,6 +43,8 @@ const ProfilePage = ({ token, userId, nickname }: Props) => {
     else failures.push('我的帖子')
     if (guidesRes.status === 'fulfilled') setMyGuides(guidesRes.value)
     else failures.push('我的攻略')
+    if (favsRes.status === 'fulfilled') setMyFavorites(favsRes.value)
+    else failures.push('我的收藏')
     if (likesRes.status === 'fulfilled') setLikedPosts(likesRes.value.posts)
     else failures.push('我的点赞')
     setError(failures.length ? `部分内容加载失败：${failures.join('、')}` : null)
@@ -116,6 +122,28 @@ const ProfilePage = ({ token, userId, nickname }: Props) => {
                   <span>👁️ {guide.viewCount}</span>
                   <span>👍 {guide.likeCount}</span>
                   <span>🕒 {new Date(guide.updatedAt).toLocaleDateString('zh-CN')}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="community-card">
+        <h2>我的收藏（{myFavorites.length}）</h2>
+        {loading && myFavorites.length === 0 ? (
+          <div className="secondary-text">加载中...</div>
+        ) : myFavorites.length === 0 ? (
+          <div className="secondary-text">
+            还没有收藏攻略，去<Link to="/guides">攻略区</Link>逛逛
+          </div>
+        ) : (
+          <div className="feed-list">
+            {myFavorites.map((guide) => (
+              <Link key={guide.id} to={`/guides/${guide.id}`} className="feed-item">
+                <div className="feed-item-title">{guide.title}</div>
+                <div className="feed-item-summary">
+                  👤 {guide.authorName || `用户${guide.authorId}`} · 👍 {guide.likeCount}
                 </div>
               </Link>
             ))}

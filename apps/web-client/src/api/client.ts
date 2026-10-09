@@ -299,6 +299,12 @@ type GuideResponseDto = {
 
 type PublishGuideResponseDto = { code: number; message: string }
 type LikeGuideResponseDto = { code: number; message: string; likes: number }
+type FavoriteGuideResponseDto = {
+  code: number
+  message: string
+  favorited: boolean
+  count: number
+}
 
 function mapContentGuide(dto: ContentGuideDto): Guide {
   const isPublished = Boolean(dto.is_published)
@@ -436,6 +442,70 @@ export async function likeGuide(id: number, token: string): Promise<void> {
       Authorization: `Bearer ${token}`,
     },
   })
+}
+
+// ========== 攻略收藏相关 API ==========
+
+export async function favoriteGuide(
+  id: number,
+  token: string,
+): Promise<{ favorited: boolean; count: number }> {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
+  const payload = await request<FavoriteGuideResponseDto>(baseUrl, `/api/v1/guides/${id}/favorite`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+  if (payload.code !== 200) throw new Error(payload.message || '收藏失败')
+  return { favorited: payload.favorited, count: payload.count }
+}
+
+export async function unfavoriteGuide(
+  id: number,
+  token: string,
+): Promise<{ favorited: boolean; count: number }> {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
+  const payload = await request<FavoriteGuideResponseDto>(baseUrl, `/api/v1/guides/${id}/favorite`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+  if (payload.code !== 200) throw new Error(payload.message || '取消收藏失败')
+  return { favorited: payload.favorited, count: payload.count }
+}
+
+// 收藏状态：匿名只拿收藏总数，带 token 才含个人 favorited
+export async function fetchFavoriteStatus(
+  id: number,
+  token?: string,
+): Promise<{ favorited: boolean; count: number }> {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  const payload = await request<FavoriteGuideResponseDto>(baseUrl, `/api/v1/guides/${id}/favorite`, {
+    headers,
+  })
+  if (payload.code !== 200) throw new Error(payload.message || '查询收藏状态失败')
+  return { favorited: payload.favorited, count: payload.count }
+}
+
+export async function fetchMyFavorites(token: string, limit = 50): Promise<Guide[]> {
+  const baseUrl = apiGatewayUrl ?? contentServiceUrl
+  const pageSize = limit > 0 ? limit : 50
+  const response = await request<ListGuidesResponseDto>(
+    baseUrl,
+    `/api/v1/guides/favorites?page=1&page_size=${pageSize}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  )
+  return (response.data ?? []).map(mapContentGuide)
 }
 
 // ========== 评论相关 API ==========
