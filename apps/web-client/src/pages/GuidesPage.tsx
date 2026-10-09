@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import type { Guide } from '../api/client'
 import { fetchGuides } from '../api/client'
+import { markdownToPlainText } from '../lib/markdown'
 import './guides.css'
 
 interface Props {
@@ -191,9 +192,11 @@ const GuidesPage = ({ token, userId }: Props) => {
                 </div>
               </div>
               <p className="guide-preview">
-                {guide.content.length > 150
-                  ? `${guide.content.substring(0, 150)}...`
-                  : guide.content}
+                {(() => {
+                  const excerpt =
+                    guide.format === 'markdown' ? markdownToPlainText(guide.content) : guide.content
+                  return excerpt.length > 150 ? `${excerpt.substring(0, 150)}...` : excerpt
+                })()}
               </p>
               <div className="guide-meta">
                 <span className="guide-author">

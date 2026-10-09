@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import type { Guide } from '../api/client'
 import { createGuide, updateGuide, fetchGuideById, publishGuide } from '../api/client'
+import { renderMarkdown } from '../lib/markdown'
 import './guides.css'
 
 interface Props {
@@ -19,8 +20,10 @@ const GuideEditorPage = ({ token, userId }: Props) => {
     gameId: '',
     title: '',
     content: '',
+    format: 'text' as 'text' | 'markdown',
     tags: '',
   })
+  const [preview, setPreview] = useState(false)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -40,6 +43,7 @@ const GuideEditorPage = ({ token, userId }: Props) => {
           gameId: data.gameId,
           title: data.title,
           content: data.content,
+          format: data.format,
           tags: data.tags.join(', '),
         })
       } catch (err) {
@@ -81,6 +85,7 @@ const GuideEditorPage = ({ token, userId }: Props) => {
             gameId: form.gameId,
             title: form.title,
             content: form.content,
+            format: form.format,
             tags,
           },
           token,
@@ -91,6 +96,7 @@ const GuideEditorPage = ({ token, userId }: Props) => {
             gameId: form.gameId || 'default',
             title: form.title,
             content: form.content,
+            format: form.format,
             tags,
           },
           token,
@@ -177,14 +183,58 @@ const GuideEditorPage = ({ token, userId }: Props) => {
           <label htmlFor="content">
             内容 <span className="required">*</span>
           </label>
-          <textarea
-            id="content"
-            value={form.content}
-            onChange={(e) => setForm({ ...form, content: e.target.value })}
-            placeholder="分享你的游戏心得和技巧..."
-            rows={15}
-            required
-          />
+          {form.format === 'markdown' && (
+            <div className="editor-toolbar">
+              <button
+                type="button"
+                className={`toolbar-btn ${preview ? '' : 'active'}`}
+                onClick={() => setPreview(false)}
+              >
+                编辑
+              </button>
+              <button
+                type="button"
+                className={`toolbar-btn ${preview ? 'active' : ''}`}
+                onClick={() => setPreview(true)}
+              >
+                预览
+              </button>
+            </div>
+          )}
+          {form.format === 'markdown' && preview ? (
+            <div className="markdown-body markdown-preview">
+              {form.content.trim() ? (
+                <div dangerouslySetInnerHTML={{ __html: renderMarkdown(form.content) }} />
+              ) : (
+                <span className="preview-empty">暂无内容可预览</span>
+              )}
+            </div>
+          ) : (
+            <textarea
+              id="content"
+              value={form.content}
+              onChange={(e) => setForm({ ...form, content: e.target.value })}
+              placeholder={
+                form.format === 'markdown'
+                  ? '支持 Markdown 语法：# 标题、**加粗**、- 列表、```代码块``` 等'
+                  : '分享你的游戏心得和技巧...'
+              }
+              rows={15}
+              required
+            />
+          )}
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="format">内容格式</label>
+          <select
+            id="format"
+            value={form.format}
+            onChange={(e) => setForm({ ...form, format: e.target.value as 'text' | 'markdown' })}
+          >
+            <option value="text">纯文本</option>
+            <option value="markdown">Markdown</option>
+          </select>
         </div>
 
         <div className="form-group">

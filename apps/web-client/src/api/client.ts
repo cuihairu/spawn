@@ -26,6 +26,7 @@ export interface Guide {
   gameId: string
   title: string
   content: string
+  format: 'text' | 'markdown'
   authorId: number
   authorName?: string
   status: 'draft' | 'published'
@@ -56,6 +57,7 @@ export interface CreateGuideParams {
   gameId: string
   title: string
   content: string
+  format?: 'text' | 'markdown'
   tags?: string[]
 }
 
@@ -245,6 +247,7 @@ type ContentGuideDto = {
   game_title?: string
   title: string
   content: string
+  format?: string
   summary?: string
   cover_image?: string
   author_id: number
@@ -281,6 +284,7 @@ function mapContentGuide(dto: ContentGuideDto): Guide {
     gameId: dto.game_id,
     title: dto.title,
     content: dto.content,
+    format: dto.format === 'markdown' ? 'markdown' : 'text',
     authorId: dto.author_id,
     authorName: dto.author_name,
     status: isPublished ? 'published' : 'draft',
@@ -352,6 +356,7 @@ export async function createGuide(
       game_id: params.gameId,
       title: params.title,
       content: params.content,
+      format: params.format ?? 'text',
       tags: params.tags ?? [],
     }),
   })
@@ -370,6 +375,7 @@ export async function updateGuide(
   const body: Record<string, unknown> = {}
   if (params.title) body.title = params.title
   if (params.content) body.content = params.content
+  if (params.format) body.format = params.format
   if (params.tags) body.tags = params.tags
 
   const response = await request<GuideResponseDto>(baseUrl, `/api/v1/guides/${id}`, {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import type { Guide } from '../api/client'
 import { fetchGuideById, likeGuide, publishGuide } from '../api/client'
+import { renderMarkdown } from '../lib/markdown'
 import CommentList from '../components/comments/CommentList'
 import './guides.css'
 
@@ -161,7 +162,14 @@ const GuideDetailPage = ({ token, userId }: Props) => {
           </div>
         </header>
 
-        <div className="guide-content">{guide.content}</div>
+        {guide.format === 'markdown' ? (
+          <div
+            className="guide-content markdown-body"
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(guide.content) }}
+          />
+        ) : (
+          <div className="guide-content">{guide.content}</div>
+        )}
 
         <div className="guide-actions-bar">
           <button
