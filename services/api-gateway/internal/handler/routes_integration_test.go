@@ -175,10 +175,13 @@ func newUpstreamStubs(t *testing.T) *upstreamStubs {
 	t.Cleanup(gameStub.Close)
 
 	communityStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
 		stubs.community.add(upstreamCall{
 			method: r.Method,
 			path:   r.URL.Path,
 			query:  r.URL.RawQuery,
+			auth:   r.Header.Get("Authorization"),
+			body:   string(body),
 		})
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -201,6 +204,13 @@ func newUpstreamStubs(t *testing.T) *upstreamStubs {
 			_, _ = w.Write([]byte(`{"count":3}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/notifications/read-all":
 			_, _ = w.Write([]byte(`{"code":0,"message":"ok"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/posts/1/report":
+			_, _ = w.Write([]byte(`{"code":0,"message":"report submitted"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/moderation/reports":
+			_, _ = w.Write([]byte(`{"reports":[{"id":1,"reporter_id":8,"target_type":"post","target_id":1,` +
+				`"reason":"垃圾广告","status":"pending","created_at":"2026-10-10T00:00:00Z"}],"total":1}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/moderation/reports/1/handle":
+			_, _ = w.Write([]byte(`{"code":0,"message":"report handled"}`))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/posts/"):
 			_, _ = w.Write([]byte(`{"post":{"id":1,"title":"分享测试帖","content":"这是一段用于分享卡摘要的正文","author_name":"alice"}}`))
 		default:
@@ -1029,6 +1039,55 @@ func TestRoutes_NotificationsProxy(t *testing.T) {
 	}
 	sent = stubs.community.last(t)
 	if sent.method != http.MethodPost || sent.path != "/api/v1/notifications/read-all" {
+		t.Fatalf("upstream request = %s %s", sent.method, sent.path)
+	}
+}
+
+// --- community 反代：/api/v1/moderation（内容审核） ---
+
+func TestRoutes_ModerationProxy(t *testing.T) {
+	stubs := newUpstreamStubs(t)
+	base := newGatewayServer(t, stubs)
+
+	// 举报：POST 透传，Bearer 透传，body 原样转发。
+	got := call(t, http.MethodPost, base+"/api/v1/posts/1/report", "Bearer gw-token",
+		`{"reason":"垃圾广告"}`)
+	if got.status != http.StatusOK {
+		t.Fatalf("report status = %d, body = %s", got.status, got.body)
+	}
+	if got.json["message"] != "report submitted" {
+		t.Fatalf("report envelope = %#v", got.json)
+	}
+	sent := stubs.community.last(t)
+	if sent.method != http.MethodPost || sent.path != "/api/v1/posts/1/report" {
+		t.Fatalf("upstream request = %s %s", sent.method, sent.path)
+	}
+	if sent.auth != "Bearer gw-token" || !strings.Contains(sent.body, `"reason":"垃圾广告"`) {
+		t.Fatalf("upstream auth/body = %q / %q", sent.auth, sent.body)
+	}
+
+	// 队列查看：query 透传。
+	got = call(t, http.MethodGet, base+"/api/v1/moderation/reports?status=pending&limit=20&offset=0", "Bearer gw-token", "")
+	if got.status != http.StatusOK {
+		t.Fatalf("list reports status = %d, body = %s", got.status, got.body)
+	}
+	if reports := list(t, got.json, "reports"); len(reports) != 1 {
+		t.Fatalf("reports = %#v", reports)
+	}
+	sent = stubs.community.last(t)
+	if sent.method != http.MethodGet || sent.path != "/api/v1/moderation/reports" ||
+		sent.query != "status=pending&limit=20&offset=0" {
+		t.Fatalf("upstream request = %s %s?%s", sent.method, sent.path, sent.query)
+	}
+
+	// 处置：POST 透传。
+	got = call(t, http.MethodPost, base+"/api/v1/moderation/reports/1/handle", "Bearer gw-token",
+		`{"action":"resolve"}`)
+	if got.status != http.StatusOK {
+		t.Fatalf("handle status = %d, body = %s", got.status, got.body)
+	}
+	sent = stubs.community.last(t)
+	if sent.method != http.MethodPost || sent.path != "/api/v1/moderation/reports/1/handle" {
 		t.Fatalf("upstream request = %s %s", sent.method, sent.path)
 	}
 }
