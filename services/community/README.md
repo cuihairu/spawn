@@ -48,6 +48,15 @@ Community Service 是 spawn 社区平台的核心服务之一，提供帖子发�
 - `GET /api/v1/users/following` - 关注的用户列表（需认证）
 - `GET /api/v1/users/likes` - 我点赞过的帖子，按点赞时间倒序分页（需认证）
 
+### 站内通知
+- `GET /api/v1/notifications` - 我的通知列表，id 倒序分页（需认证）
+- `GET /api/v1/notifications/unread-count` - 未读通知数（需认证）
+- `POST /api/v1/notifications/read-all` - 全部标记已读（需认证）
+
+触发点：帖子被点赞（like_post）/被评论（comment_post）/评论被回复（reply_comment）/
+被关注（follow_user）。写入 `UNIQUE (user_id, actor_id, type, target_id)` 幂等去重，
+自我动作与「回复帖子作者本人」不重复通知；通知写失败不回滚主操作。
+
 标「需认证」的接口要求 `Authorization: Bearer <token>`。
 
 ## 数据模型
@@ -130,7 +139,8 @@ type Topic struct {
 
 ### API Gateway
 - 统一入口：`/api/v1/topics**`、`/api/v1/posts**`、`/api/v1/users/{following,likes}`、
-  `/api/v1/users/:user_id/follow` 反代路由（见 `services/api-gateway/internal/community/routes.go`）；
+  `/api/v1/users/:user_id/follow`、`/api/v1/notifications**` 反代路由
+  （见 `services/api-gateway/internal/community/routes.go`）；
   另有 integration client（热帖/话题列表/帖子详情）供网关 `/home/feed` 聚合与 `/s/p/:id` 分享卡
 
 ## 配置说明
@@ -231,7 +241,7 @@ ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]
 - [x] 添加单元测试
 
 ### 中期（1-2月）
-- [ ] 实现通知系统
+- [x] 实现通知系统
 - [ ] 添加内容审核功能
 - [ ] 实现图片上传服务
 - [ ] 优化热门推荐算法
