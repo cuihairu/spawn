@@ -3,7 +3,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { colors } from '../../constants/colors';
 
-// 底部 Tab：游戏 / 社区 / 我的（计划见 docs/mobile_plan.md 第 2 节）。
+// 底部 Tab：游戏 / 发现 / 社区 / 战绩 / 我的（计划见 docs/mobile_plan.md 第 2 节）。
 export default function TabsLayout() {
   return (
     <Tabs
@@ -37,6 +37,15 @@ export default function TabsLayout() {
           title: '社区',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="chatbubbles-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="stats"
+        options={{
+          title: '战绩',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="stats-chart-outline" size={size} color={color} />
           ),
         }}
       />
