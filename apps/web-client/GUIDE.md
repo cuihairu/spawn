@@ -179,7 +179,8 @@ Web Client 集成了以下后端服务：
   详情页按 format 渲染（marked + DOMPurify 净化防 XSS），编辑器带编辑/预览切换）
 - [x] 添加图片上传功能（发帖附图经网关 `POST /upload` 落盘换 URL，详情页
   `resolveImageUrl` 拼网关来源渲染）
-- [ ] 实现攻略搜索和高级筛选
+- [x] 实现攻略搜索和高级筛选（关键词搜索外新增标签筛选条与排序下拉：默认/
+  最新/最多点赞/最多浏览，content-service 列表接口支持 `tag`/`sort` 参数）
 - [ ] 添加用户个人主页
 - [ ] 支持攻略收藏功能
 - [x] 添加通知系统（社区站内通知：导航铃铛 + /notifications 通知中心）
