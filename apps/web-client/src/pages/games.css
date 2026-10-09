@@ -1,0 +1,254 @@
+.games-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  color: #f4f5fb;
+}
+
+.games-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.games-header h1 {
+  font-size: 2rem;
+  margin: 0 0 0.5rem;
+  color: #f4f5fb;
+}
+
+.games-search-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  max-width: 420px;
+}
+
+.games-search-form input[type='search'] {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  color: #f4f5fb;
+  font-size: 0.95rem;
+}
+
+.games-search-form input[type='search']:focus {
+  outline: none;
+  border-color: #7c6cf0;
+}
+
+.games-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.genre-chip {
+  padding: 0.35rem 0.85rem;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  color: #b8bcce;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.genre-chip:hover {
+  border-color: #7c6cf0;
+  color: #f4f5fb;
+}
+
+.genre-chip--active {
+  background-color: #7c6cf0;
+  border-color: #7c6cf0;
+  color: #ffffff;
+}
+
+.games-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.25rem;
+}
+
+.games-pagination {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 0 0.5rem;
+}
+
+.games-pagination-done {
+  color: #8b90a5;
+  font-size: 0.9rem;
+}
+
+.games-empty {
+  padding: 3rem 1rem;
+  text-align: center;
+  color: #8b90a5;
+}
+
+.games-empty p {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  color: #b8bcce;
+}
+
+.games-empty small {
+  font-size: 0.85rem;
+}
+
+/* ===== 游戏详情 ===== */
+
+.game-detail-hero {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.game-detail-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  width: 96px;
+  height: 96px;
+  flex-shrink: 0;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+}
+
+.game-detail-score-value {
+  color: #7c6cf0;
+  font-size: 1.8rem;
+  font-weight: 800;
+}
+
+.game-detail-score-label {
+  color: #8b90a5;
+  font-size: 0.75rem;
+}
+
+.game-detail-cover {
+  flex: 1;
+  height: 96px;
+  border-radius: 12px;
+  background-size: cover;
+  background-position: center;
+}
+
+.game-detail-section {
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.game-detail-section h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.75rem;
+  color: #f4f5fb;
+}
+
+.game-detail-section p {
+  color: #b8bcce;
+}
+
+.game-detail-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.game-detail-section-head h2 {
+  margin: 0;
+}
+
+.game-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.game-detail-chip {
+  padding: 0.3rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.03);
+  color: #b8bcce;
+  font-size: 0.85rem;
+}
+
+.game-detail-chip--accent {
+  border-color: #7c6cf0;
+  color: #a99cf5;
+}
+
+.game-detail-guides {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.game-detail-guide-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.game-detail-guides li:last-child .game-detail-guide-row {
+  border-bottom: none;
+}
+
+.game-detail-guide-title {
+  color: #f4f5fb;
+  font-size: 0.95rem;
+}
+
+.game-detail-guide-row:hover .game-detail-guide-title {
+  color: #a99cf5;
+}
+
+/* 游戏卡可点击化后的焦点反馈 */
+.game-card:focus-visible {
+  outline: 2px solid #7c6cf0;
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .games-page {
+    padding: 1.25rem;
+  }
+
+  .game-detail-hero {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .game-detail-score {
+    width: 100%;
+    flex-direction: row;
+    gap: 0.5rem;
+    height: auto;
+    padding: 0.75rem;
+  }
+
+  .game-detail-cover {
+    height: 140px;
+  }
+}

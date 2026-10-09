@@ -7,6 +7,8 @@ import CommunityPage from './pages/CommunityPage'
 import GuidesPage from './pages/GuidesPage'
 import GuideDetailPage from './pages/GuideDetailPage'
 import GuideEditorPage from './pages/GuideEditorPage'
+import GamesPage from './pages/GamesPage'
+import GameDetailPage from './pages/GameDetailPage'
 import PostDetailPage from './pages/PostDetailPage'
 import ProfilePage from './pages/ProfilePage'
 import './App.css'
@@ -51,6 +53,9 @@ function App() {
               <Link to="/discover" className="nav-link">
                 发现
               </Link>
+              <Link to="/games" className="nav-link">
+                游戏库
+              </Link>
               <Link to="/community" className="nav-link">
                 社区
               </Link>
@@ -76,6 +81,8 @@ function App() {
           <Routes>
             <Route path="/" element={<HomePage auth={auth} onAuthChange={handleAuthChange} />} />
             <Route path="/discover" element={<DiscoverPage />} />
+            <Route path="/games" element={<GamesPage />} />
+            <Route path="/games/:id" element={<GameDetailPage />} />
             <Route
               path="/profile"
               element={

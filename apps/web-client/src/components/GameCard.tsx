@@ -1,4 +1,5 @@
 import type { GameSummary } from '../api/client'
+import { Link } from 'react-router-dom'
 
 interface Props {
   game: GameSummary
@@ -9,7 +10,12 @@ const GameCard = ({ game, highlight = false }: Props) => {
   const displayScore = game.score ? game.score.toFixed(1) : '—'
 
   return (
-    <article className={`game-card ${highlight ? 'game-card--highlight' : ''}`}>
+    <Link
+      to={`/games/${game.id}`}
+      className={`game-card ${highlight ? 'game-card--highlight' : ''}`}
+      style={{ textDecoration: 'none' }}
+      aria-label={`查看游戏 ${game.title} 详情`}
+    >
       <div
         className="game-card__cover"
         style={{
@@ -37,7 +43,7 @@ const GameCard = ({ game, highlight = false }: Props) => {
           </div>
         ) : null}
       </div>
-    </article>
+    </Link>
   )
 }
 

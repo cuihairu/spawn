@@ -77,6 +77,18 @@ type GameDto = {
   platforms?: string[]
   score?: number
   tags?: string[]
+  release_date?: string
+  developer?: string
+  publisher?: string
+  trending_score?: number
+}
+
+// 游戏详情在列表字段之外补充发行信息与热度（game-catalog GET /games/:id）
+export interface GameDetail extends GameSummary {
+  releaseDate?: string
+  developer?: string
+  publisher?: string
+  trendingScore?: number
 }
 
 interface ApiResponse<T> {
@@ -181,6 +193,47 @@ function mapGameSummary(raw: GameDto): GameSummary {
     genres: raw.genres ?? [],
     platforms: raw.platforms ?? [],
     tags: raw.tags ?? [],
+  }
+}
+
+// 游戏库列表（game-catalog GET /games，支持关键词/类型过滤与分页）
+export async function fetchGames(
+  params?: {
+    keyword?: string
+    genre?: string
+    platform?: string
+    sort?: string
+    limit?: number
+    offset?: number
+  },
+): Promise<{ games: GameSummary[]; total: number }> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  const searchParams = new URLSearchParams()
+  if (params?.keyword) searchParams.set('keyword', params.keyword)
+  if (params?.genre) searchParams.set('genre', params.genre)
+  if (params?.platform) searchParams.set('platform', params.platform)
+  if (params?.sort) searchParams.set('sort', params.sort)
+  searchParams.set('limit', String(params?.limit && params.limit > 0 ? params.limit : 20))
+  searchParams.set('offset', String(params?.offset && params.offset > 0 ? params.offset : 0))
+
+  const payload = await request<{ games: GameDto[]; total: number }>(
+    baseUrl,
+    `/games?${searchParams.toString()}`,
+  )
+  return { games: (payload.games ?? []).map(mapGameSummary), total: payload.total ?? 0 }
+}
+
+// 游戏详情（game-catalog GET /games/:id，返回 { game } 包裹）
+export async function fetchGameById(id: string): Promise<GameDetail> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  const payload = await request<{ game: GameDto }>(baseUrl, `/games/${encodeURIComponent(id)}`)
+  const raw = payload.game
+  return {
+    ...mapGameSummary(raw),
+    releaseDate: raw.release_date,
+    developer: raw.developer,
+    publisher: raw.publisher,
+    trendingScore: raw.trending_score,
   }
 }
 

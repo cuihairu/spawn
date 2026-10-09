@@ -85,7 +85,7 @@ const DiscoverPage = () => {
           ) : (
             <div className="feed-game-list">
               {data.featured_games.map((game) => (
-                <div key={game.id} className="feed-game">
+                <Link key={game.id} to={`/games/${game.id}`} className="feed-game">
                   <div
                     className="feed-game-cover"
                     style={{
@@ -100,7 +100,7 @@ const DiscoverPage = () => {
                       <span className="feed-score">{game.score > 0 ? game.score.toFixed(1) : '—'}</span>
                     </div>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           )}

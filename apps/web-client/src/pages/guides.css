@@ -574,3 +574,17 @@
     width: 100%;
   }
 }
+
+/* 按游戏过滤提示条（从游戏详情「全部攻略」跳入） */
+.guide-game-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  margin-bottom: 1.25rem;
+  background-color: rgba(124, 108, 240, 0.12);
+  border: 1px solid rgba(124, 108, 240, 0.35);
+  border-radius: 8px;
+  color: #cfc8fa;
+  font-size: 0.9rem;
+}

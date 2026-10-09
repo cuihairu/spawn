@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import type { Guide } from '../api/client'
 import { fetchGuides } from '../api/client'
 import './guides.css'
@@ -16,6 +16,10 @@ const GuidesPage = ({ token, userId }: Props) => {
   const [keyword, setKeyword] = useState('')
   const [searchText, setSearchText] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // 游戏详情页跳转带 ?gameId=&title= 过滤本游戏攻略（对等 mobile /guides?game_id=）
+  const [searchParams, setSearchParams] = useSearchParams()
+  const gameId = searchParams.get('gameId') ?? ''
+  const gameTitle = searchParams.get('title') ?? gameId
 
   const loadGuides = useCallback(async () => {
     setLoading(true)
@@ -24,6 +28,7 @@ const GuidesPage = ({ token, userId }: Props) => {
       const params = {
         ...(filter === 'my' && userId ? { authorId: userId } : {}),
         ...(keyword ? { keyword } : {}),
+        ...(gameId ? { gameId } : {}),
         limit: 50,
         token,
       }
@@ -34,7 +39,7 @@ const GuidesPage = ({ token, userId }: Props) => {
     } finally {
       setLoading(false)
     }
-  }, [filter, keyword, token, userId])
+  }, [filter, keyword, gameId, token, userId])
 
   useEffect(() => {
     // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState.
@@ -111,6 +116,25 @@ const GuidesPage = ({ token, userId }: Props) => {
           )}
         </div>
       </div>
+
+      {gameId ? (
+        <div className="guide-game-filter">
+          <span>按游戏过滤中：{gameTitle}</span>
+          <button
+            type="button"
+            className="guide-search-clear"
+            aria-label="清除游戏过滤"
+            onClick={() => {
+              const next = new URLSearchParams(searchParams)
+              next.delete('gameId')
+              next.delete('title')
+              setSearchParams(next, { replace: true })
+            }}
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
 
       {error && (
         <div className="error-banner" role="alert">
