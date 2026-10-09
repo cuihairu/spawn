@@ -193,6 +193,14 @@ func newUpstreamStubs(t *testing.T) *upstreamStubs {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/topics":
 			_, _ = w.Write([]byte(`{"topics":[{"id":2,"name":"星陨圈","description":"不应下发",` +
 				`"post_count":30,"follower_count":88,"is_official":true}],"total":1}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/notifications":
+			_, _ = w.Write([]byte(`{"notifications":[{"id":2,"user_id":7,"actor_id":8,` +
+				`"actor_name":"读者乙","type":"like_post","target_id":101,"content":"点赞了你的帖子《好帖》",` +
+				`"is_read":false,"created_at":"2026-10-10T00:00:00Z"}],"total":1}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/notifications/unread-count":
+			_, _ = w.Write([]byte(`{"count":3}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/notifications/read-all":
+			_, _ = w.Write([]byte(`{"code":0,"message":"ok"}`))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/posts/"):
 			_, _ = w.Write([]byte(`{"post":{"id":1,"title":"分享测试帖","content":"这是一段用于分享卡摘要的正文","author_name":"alice"}}`))
 		default:
@@ -986,6 +994,42 @@ func TestRoutes_StatsRecordIngest(t *testing.T) {
 		`{"game_id":"game-valorant","matches":1}`)
 	if got.status != http.StatusUnauthorized {
 		t.Fatalf("anon record status = %d, want 401", got.status)
+	}
+}
+
+// --- community 反代：/api/v1/notifications（站内通知） ---
+
+func TestRoutes_NotificationsProxy(t *testing.T) {
+	stubs := newUpstreamStubs(t)
+	base := newGatewayServer(t, stubs)
+
+	// 列表：Bearer 透传，query 分页透传。
+	got := call(t, http.MethodGet, base+"/api/v1/notifications?limit=20&offset=0", "Bearer gw-token", "")
+	if got.status != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", got.status, got.body)
+	}
+	if list := list(t, got.json, "notifications"); len(list) != 1 {
+		t.Fatalf("notifications = %#v", list)
+	}
+	sent := stubs.community.last(t)
+	if sent.method != http.MethodGet || sent.path != "/api/v1/notifications" || sent.query != "limit=20&offset=0" {
+		t.Fatalf("upstream request = %s %s?%s", sent.method, sent.path, sent.query)
+	}
+
+	// 未读数。
+	got = call(t, http.MethodGet, base+"/api/v1/notifications/unread-count", "Bearer gw-token", "")
+	if got.status != http.StatusOK || got.json["count"] != float64(3) {
+		t.Fatalf("unread-count status = %d body = %#v", got.status, got.json)
+	}
+
+	// 全部已读：POST 透传。
+	got = call(t, http.MethodPost, base+"/api/v1/notifications/read-all", "Bearer gw-token", "")
+	if got.status != http.StatusOK || got.json["code"] != float64(0) {
+		t.Fatalf("read-all status = %d body = %#v", got.status, got.json)
+	}
+	sent = stubs.community.last(t)
+	if sent.method != http.MethodPost || sent.path != "/api/v1/notifications/read-all" {
+		t.Fatalf("upstream request = %s %s", sent.method, sent.path)
 	}
 }
 

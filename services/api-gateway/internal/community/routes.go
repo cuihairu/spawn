@@ -46,5 +46,10 @@ func RegisterCommunityProxyRoutes(server *rest.Server, serverCtx *svc.ServiceCon
 		{Method: http.MethodGet, Path: "/api/v1/users/likes", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/users/:user_id/follow", Handler: h},
 		{Method: http.MethodDelete, Path: "/api/v1/users/:user_id/follow", Handler: h},
+
+		// 站内通知（登录语义由 community 校验）
+		{Method: http.MethodGet, Path: "/api/v1/notifications", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/notifications/unread-count", Handler: h},
+		{Method: http.MethodPost, Path: "/api/v1/notifications/read-all", Handler: h},
 	})
 }
