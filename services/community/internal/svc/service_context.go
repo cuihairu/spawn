@@ -13,6 +13,7 @@ import (
 	"github.com/tappi/tappi/services/community/internal/config"
 	"github.com/tappi/tappi/services/community/internal/middleware"
 	"github.com/tappi/tappi/services/community/internal/model"
+	"github.com/tappi/tappi/services/community/internal/moderation"
 	"github.com/tappi/tappi/services/community/utils"
 	"github.com/zeromicro/go-zero/rest"
 
@@ -30,6 +31,17 @@ type ServiceContext struct {
 	FollowRepo       model.FollowStore
 	CommentRepo      model.CommentStore
 	NotificationRepo model.NotificationStore
+	ReportRepo       model.ReportStore
+
+	// BlockedWords 归一化后的敏感词表（空配置回落内置默认）；
+	// AdminSet 审核管理员 id 集合（配置预计算，举报队列查看与处置用）。
+	BlockedWords []string
+	AdminSet     map[int64]bool
+}
+
+// IsAdmin 判断用户是否为审核管理员。
+func (svcCtx *ServiceContext) IsAdmin(userId int64) bool {
+	return svcCtx.AdminSet[userId]
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -87,6 +99,20 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := notificationModel.CreateNotificationsTable(); err != nil {
 		panic(fmt.Sprintf("创建通知表失败: %v", err))
 	}
+	reportModel := model.NewReportModel(db)
+	if err := reportModel.CreateReportsTable(); err != nil {
+		panic(fmt.Sprintf("创建举报表失败: %v", err))
+	}
+
+	// 审核配置：敏感词空配置回落内置默认表；管理员集合预计算成 map 供 O(1) 判断。
+	blockedWords := moderation.NormalizeWords(c.Moderation.BlockedWords)
+	if len(blockedWords) == 0 {
+		blockedWords = moderation.NormalizeWords(moderation.DefaultBlockedWords)
+	}
+	adminSet := make(map[int64]bool, len(c.Moderation.AdminUserIds))
+	for _, id := range c.Moderation.AdminUserIds {
+		adminSet[id] = true
+	}
 
 	return &ServiceContext{
 		Config:           c,
@@ -97,6 +123,9 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		FollowRepo:       followModel,
 		CommentRepo:      commentModel,
 		NotificationRepo: notificationModel,
+		ReportRepo:       reportModel,
+		BlockedWords:     blockedWords,
+		AdminSet:         adminSet,
 	}
 }
 

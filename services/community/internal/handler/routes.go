@@ -8,6 +8,7 @@ import (
 
 	comment "github.com/tappi/tappi/services/community/internal/handler/comment"
 	follow "github.com/tappi/tappi/services/community/internal/handler/follow"
+	moderation "github.com/tappi/tappi/services/community/internal/handler/moderation"
 	notification "github.com/tappi/tappi/services/community/internal/handler/notification"
 	post "github.com/tappi/tappi/services/community/internal/handler/post"
 	topic "github.com/tappi/tappi/services/community/internal/handler/topic"
@@ -145,6 +146,30 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodPost,
 					Path:    "/notifications/read-all",
 					Handler: notification.MarkAllReadHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/api/v1"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPost,
+					Path:    "/posts/:id/report",
+					Handler: moderation.ReportPostHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/moderation/reports",
+					Handler: moderation.ListReportsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/moderation/reports/:id/handle",
+					Handler: moderation.HandleReportHandler(serverCtx),
 				},
 			}...,
 		),

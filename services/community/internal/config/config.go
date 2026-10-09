@@ -17,4 +17,11 @@ type Config struct {
 	Auth struct {
 		JWTSecret string `json:",env=JWT_SECRET"`
 	}
+
+	// 内容审核：BlockedWords 空则用内置默认敏感词表（阻塞式，命中即拒绝）；
+	// AdminUserIds 为审核管理员允许名单（可查看举报队列并处置）。
+	Moderation struct {
+		BlockedWords []string `json:",optional"`
+		AdminUserIds []int64  `json:",optional"`
+	}
 }

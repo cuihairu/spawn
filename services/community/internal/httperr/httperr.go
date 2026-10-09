@@ -62,7 +62,8 @@ func ErrorHandler(_ context.Context, err error) (int, any) {
 	}
 
 	switch {
-	case errors.Is(err, model.ErrPostNotFound), errors.Is(err, model.ErrTopicNotFound):
+	case errors.Is(err, model.ErrPostNotFound), errors.Is(err, model.ErrTopicNotFound),
+		errors.Is(err, model.ErrCommentNotFound), errors.Is(err, model.ErrReportNotFound):
 		return http.StatusNotFound, Response{Code: http.StatusNotFound, Message: err.Error()}
 	case errors.Is(err, model.ErrPermissionDenied):
 		return http.StatusForbidden, Response{Code: http.StatusForbidden, Message: "permission denied"}

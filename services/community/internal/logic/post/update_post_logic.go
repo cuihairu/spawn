@@ -5,9 +5,11 @@ package post
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/tappi/tappi/services/community/internal/httperr"
 	"github.com/tappi/tappi/services/community/internal/logic/common"
+	"github.com/tappi/tappi/services/community/internal/moderation"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
 
@@ -35,6 +37,10 @@ func (l *UpdatePostLogic) UpdatePost(req *types.UpdatePostReq) (resp *types.Post
 	}
 	if req == nil || req.Id <= 0 {
 		return nil, httperr.BadRequest("id required")
+	}
+	// 仅扫描本次提供的字段（未提供的字段保持原值，不参与过滤）。
+	if hit, ok := moderation.FirstHit(l.svcCtx.BlockedWords, req.Title+" "+req.Content); ok {
+		return nil, httperr.BadRequest(fmt.Sprintf("content contains blocked word: %q", hit))
 	}
 
 	p, err := l.svcCtx.PostRepo.Update(req.Id, userId, req)

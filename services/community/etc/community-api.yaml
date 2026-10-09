@@ -11,6 +11,13 @@ MySQL:
 Auth:
   JWTSecret: your-secret-key-change-in-production
 
+# 内容审核：BlockedWords 空则用内置默认敏感词表（命中即拒绝发帖/评论）；
+# AdminUserIds 为审核管理员允许名单（举报队列查看与处置）。
+# 1 = 首个注册账号，演示用；生产建议显式指定并收紧。
+Moderation:
+  BlockedWords: []
+  AdminUserIds: [1]
+
 # Prometheus 指标端点（go-zero agent 自动暴露 /metrics）
 Prometheus:
   Host: 0.0.0.0

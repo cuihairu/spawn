@@ -126,6 +126,41 @@ type UnreadCountResp struct {
 	Count int64 `json:"count"`
 }
 
+// 举报（内容审核）：target_type 为 post/comment；status 流转
+// pending → dismissed（驳回）/ resolved（处置，内容已移除）。
+type Report struct {
+	Id         int64  `json:"id"`
+	ReporterId int64  `json:"reporter_id"`
+	TargetType string `json:"target_type"`
+	TargetId   int64  `json:"target_id"`
+	Reason     string `json:"reason"`
+	Status     string `json:"status"`
+	HandledBy  int64  `json:"handled_by,omitempty"`
+	CreatedAt  string `json:"created_at"`
+	HandledAt  string `json:"handled_at,omitempty"`
+}
+
+type ReportPostReq struct {
+	Id     int64  `path:"id"`
+	Reason string `json:"reason,optional"`
+}
+
+type ListReportsReq struct {
+	Status string `form:"status,optional"`
+	Limit  int64  `form:"limit,optional,default=20"`
+	Offset int64  `form:"offset,optional,default=0"`
+}
+
+type HandleReportReq struct {
+	Id     int64  `path:"id"`
+	Action string `json:"action"` // dismiss/resolve
+}
+
+type ReportsResp struct {
+	Reports []*Report `json:"reports"`
+	Total   int64     `json:"total"`
+}
+
 type GetPostReq struct {
 	Id int64 `path:"id"`
 }

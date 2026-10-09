@@ -38,6 +38,8 @@ type PostStore interface {
 	IncrementViews(id int64) error
 	Update(id, requesterId int64, req *types.UpdatePostReq) (*types.Post, error)
 	Delete(id, requesterId int64) error
+	// RemoveByModerator 审核处置：不做作者校验，直接软删（status='deleted'）。
+	RemoveByModerator(id int64) error
 	Like(id, userId int64) (*types.Post, error)
 	Share(id int64) (*types.Post, error)
 	IncrementComments(id int64) (*types.Post, error)
@@ -348,6 +350,21 @@ func (m *PostModel) Delete(id, requesterId int64) error {
 		return fmt.Errorf("删除帖子失败: %w", err)
 	}
 
+	m.cache.Delete(postKey(id))
+	return nil
+}
+
+// RemoveByModerator 审核处置专用：不校验作者，直接软删并失效缓存。
+func (m *PostModel) RemoveByModerator(id int64) error {
+	if _, err := m.getFromDB(id); err != nil {
+		return err
+	}
+	if _, err := m.db.Exec(
+		`UPDATE posts SET status = 'deleted', updated_at = ? WHERE id = ?`,
+		time.Now().UTC().Format(time.RFC3339), id,
+	); err != nil {
+		return fmt.Errorf("移除帖子失败: %w", err)
+	}
 	m.cache.Delete(postKey(id))
 	return nil
 }

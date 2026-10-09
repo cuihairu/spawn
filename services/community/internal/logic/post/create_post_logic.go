@@ -5,10 +5,12 @@ package post
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/tappi/tappi/services/community/internal/httperr"
 	"github.com/tappi/tappi/services/community/internal/logic/common"
+	"github.com/tappi/tappi/services/community/internal/moderation"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
 
@@ -45,6 +47,9 @@ func (l *CreatePostLogic) CreatePost(req *types.CreatePostReq) (resp *types.Post
 	}
 	if strings.TrimSpace(req.Content) == "" {
 		return nil, httperr.BadRequest("content required")
+	}
+	if hit, ok := moderation.FirstHit(l.svcCtx.BlockedWords, req.Title+" "+req.Content); ok {
+		return nil, httperr.BadRequest(fmt.Sprintf("content contains blocked word: %q", hit))
 	}
 
 	if _, err := l.svcCtx.TopicRepo.Get(req.TopicId); err != nil {

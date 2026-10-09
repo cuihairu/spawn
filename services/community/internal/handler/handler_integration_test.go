@@ -12,6 +12,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/tappi/tappi/services/community/internal/config"
+	"github.com/tappi/tappi/services/community/internal/handler/moderation"
 	notification "github.com/tappi/tappi/services/community/internal/handler/notification"
 	"github.com/tappi/tappi/services/community/internal/handler/post"
 	"github.com/tappi/tappi/services/community/internal/handler/topic"
@@ -288,5 +289,112 @@ func TestNotificationEndpoints_Flow(t *testing.T) {
 	}
 	if unreadResp2.Count != 0 {
 		t.Fatalf("unread count after read-all=%d, want 0", unreadResp2.Count)
+	}
+}
+
+func TestModerationReportFlow(t *testing.T) {
+	httpx.SetErrorHandlerCtx(httperr.ErrorHandler)
+
+	svcCtx, secret := newTestServiceContext(t)
+	authorToken := signToken(t, secret, 7, "作者甲")
+	readerToken := signToken(t, secret, 8, "读者乙")
+	adminToken := signToken(t, secret, 1, "管理员")
+	svcCtx.AdminSet = map[int64]bool{1: true}
+
+	// 敏感词帖子 → 400 拒绝
+	create := svcCtx.Auth(post.CreatePostHandler(svcCtx))
+	badReq := httptest.NewRequest(http.MethodPost, "/api/v1/posts", bytes.NewBufferString(`{"topic_id":1,"title":"t","content":"卖外挂"}`))
+	badReq.Header.Set("Content-Type", "application/json")
+	badReq.Header.Set("Authorization", "Bearer "+authorToken)
+	badRR := httptest.NewRecorder()
+	create(badRR, badReq)
+	if badRR.Code != http.StatusBadRequest {
+		t.Fatalf("blocked word post: expected 400, got %d body=%s", badRR.Code, badRR.Body.String())
+	}
+
+	// 正常发帖
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/posts", bytes.NewBufferString(`{"topic_id":1,"title":"举报流","content":"正文"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+authorToken)
+	rr := httptest.NewRecorder()
+	create(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("create post: expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var created types.PostResp
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal PostResp: %v", err)
+	}
+	postId := strconv.FormatInt(created.Post.Id, 10)
+
+	// 读者举报 → 200
+	report := svcCtx.Auth(moderation.ReportPostHandler(svcCtx))
+	reportReq := httptest.NewRequest(http.MethodPost, "/api/v1/posts/"+postId+"/report", bytes.NewBufferString(`{"reason":"垃圾广告"}`))
+	reportReq.Header.Set("Content-Type", "application/json")
+	reportReq = pathvar.WithVars(reportReq, map[string]string{"id": postId})
+	reportReq.Header.Set("Authorization", "Bearer "+readerToken)
+	reportRR := httptest.NewRecorder()
+	report(reportRR, reportReq)
+	if reportRR.Code != http.StatusOK {
+		t.Fatalf("report: expected 200, got %d body=%s", reportRR.Code, reportRR.Body.String())
+	}
+
+	// 非 admin 查看队列 → 403
+	listReports := svcCtx.Auth(moderation.ListReportsHandler(svcCtx))
+	denyReq := httptest.NewRequest(http.MethodGet, "/api/v1/moderation/reports", nil)
+	denyReq.Header.Set("Authorization", "Bearer "+readerToken)
+	denyRR := httptest.NewRecorder()
+	listReports(denyRR, denyReq)
+	if denyRR.Code != http.StatusForbidden {
+		t.Fatalf("non-admin list reports: expected 403, got %d body=%s", denyRR.Code, denyRR.Body.String())
+	}
+
+	// admin 查看队列 → 1 条 pending
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/moderation/reports?status=pending", nil)
+	listReq.Header.Set("Authorization", "Bearer "+adminToken)
+	listRR := httptest.NewRecorder()
+	listReports(listRR, listReq)
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("admin list reports: expected 200, got %d body=%s", listRR.Code, listRR.Body.String())
+	}
+	var listed types.ReportsResp
+	if err := json.Unmarshal(listRR.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("unmarshal ReportsResp: %v", err)
+	}
+	if listed.Total != 1 || len(listed.Reports) != 1 || listed.Reports[0].Status != "pending" || listed.Reports[0].TargetId != created.Post.Id {
+		t.Fatalf("reports mismatch: %#v", listed)
+	}
+	reportId := strconv.FormatInt(listed.Reports[0].Id, 10)
+
+	// admin resolve → 帖子软删 + 状态 resolved
+	handle := svcCtx.Auth(moderation.HandleReportHandler(svcCtx))
+	handleReq := httptest.NewRequest(http.MethodPost, "/api/v1/moderation/reports/"+reportId+"/handle", bytes.NewBufferString(`{"action":"resolve"}`))
+	handleReq.Header.Set("Content-Type", "application/json")
+	handleReq = pathvar.WithVars(handleReq, map[string]string{"id": reportId})
+	handleReq.Header.Set("Authorization", "Bearer "+adminToken)
+	handleRR := httptest.NewRecorder()
+	handle(handleRR, handleReq)
+	if handleRR.Code != http.StatusOK {
+		t.Fatalf("resolve: expected 200, got %d body=%s", handleRR.Code, handleRR.Body.String())
+	}
+
+	get := post.GetPostHandler(svcCtx)
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/posts/"+postId, nil)
+	getReq = pathvar.WithVars(getReq, map[string]string{"id": postId})
+	getRR := httptest.NewRecorder()
+	get(getRR, getReq)
+	if getRR.Code != http.StatusNotFound {
+		t.Fatalf("resolved post: expected 404, got %d body=%s", getRR.Code, getRR.Body.String())
+	}
+
+	// 二次处置 → 400
+	rehandleReq := httptest.NewRequest(http.MethodPost, "/api/v1/moderation/reports/"+reportId+"/handle", bytes.NewBufferString(`{"action":"dismiss"}`))
+	rehandleReq.Header.Set("Content-Type", "application/json")
+	rehandleReq = pathvar.WithVars(rehandleReq, map[string]string{"id": reportId})
+	rehandleReq.Header.Set("Authorization", "Bearer "+adminToken)
+	rehandleRR := httptest.NewRecorder()
+	handle(rehandleRR, rehandleReq)
+	if rehandleRR.Code != http.StatusBadRequest {
+		t.Fatalf("re-handle: expected 400, got %d body=%s", rehandleRR.Code, rehandleRR.Body.String())
 	}
 }

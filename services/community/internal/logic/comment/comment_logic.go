@@ -2,11 +2,13 @@ package comment
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/tappi/tappi/services/community/internal/httperr"
 	"github.com/tappi/tappi/services/community/internal/logic/common"
+	"github.com/tappi/tappi/services/community/internal/moderation"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
 
@@ -37,6 +39,9 @@ func (l *CreateCommentLogic) CreateComment(req *types.CreateCommentReq) (resp *t
 	content := strings.TrimSpace(req.Content)
 	if content == "" {
 		return nil, httperr.BadRequest("content required")
+	}
+	if hit, ok := moderation.FirstHit(l.svcCtx.BlockedWords, content); ok {
+		return nil, httperr.BadRequest(fmt.Sprintf("content contains blocked word: %q", hit))
 	}
 
 	userId, username, err := common.UserFromContext(l.ctx)
