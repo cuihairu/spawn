@@ -56,6 +56,48 @@ type GetLikedPostsReq struct {
 	Offset int64 `form:"offset,optional,default=0"`
 }
 
+// 帖子评论（单层，parent_id 预留嵌套扩展）：reply_to_author_name 由服务端
+// 从被回复评论冗余，客户端直接展示「回复 @xxx」。
+type Comment struct {
+	Id                int64  `json:"id"`
+	PostId            int64  `json:"post_id"`
+	AuthorId          int64  `json:"author_id"`
+	AuthorName        string `json:"author_name"`
+	Content           string `json:"content"`
+	ParentId          int64  `json:"parent_id,omitempty"`
+	ReplyToAuthorName string `json:"reply_to_author_name,omitempty"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
+}
+
+type CreateCommentReq struct {
+	Id       int64  `path:"id"`
+	Content  string `json:"content"`
+	ParentId int64  `json:"parent_id,optional"`
+}
+
+type ListCommentsReq struct {
+	Id     int64 `path:"id"`
+	Limit  int64 `form:"limit,optional,default=50"`
+	Offset int64 `form:"offset,optional,default=0"`
+}
+
+type DeleteCommentReq struct {
+	// 帖子路径 + 评论 id 双段：网关上 content-service 已占 /api/v1/comments/:id，
+	// 社区评论删除挂在帖子子资源下避免跨服务路由冲突。
+	Id        int64 `path:"id"`
+	CommentId int64 `path:"cid"`
+}
+
+type CommentResp struct {
+	Comment *Comment `json:"comment"`
+}
+
+type CommentsResp struct {
+	Comments []*Comment `json:"comments"`
+	Total    int64      `json:"total"`
+}
+
 type GetPostReq struct {
 	Id int64 `path:"id"`
 }

@@ -109,6 +109,21 @@ type (
 		Limit  int64 `form:"limit,optional,default=20"`
 		Offset int64 `form:"offset,optional,default=0"`
 	}
+	// 帖子评论（单层，parent_id 预留嵌套扩展）
+	CreateCommentReq {
+		Id       int64  `path:"id"`
+		Content  string `json:"content"`
+		ParentId int64  `json:"parent_id,optional"`
+	}
+	ListCommentsReq {
+		Id     int64 `path:"id"`
+		Limit  int64 `form:"limit,optional,default=50"`
+		Offset int64 `form:"offset,optional,default=0"`
+	}
+	DeleteCommentReq {
+		Id        int64 `path:"id"`
+		CommentId int64 `path:"cid"`
+	}
 	// 响应
 	PostResp {
 		Post Post `json:"post"`
@@ -133,6 +148,24 @@ type (
 	CommonResp {
 		Code    int64  `json:"code"`
 		Message string `json:"message"`
+	}
+	Comment {
+		Id                int64  `json:"id"`
+		PostId            int64  `json:"post_id"`
+		AuthorId          int64  `json:"author_id"`
+		AuthorName        string `json:"author_name"`
+		Content           string `json:"content"`
+		ParentId          int64  `json:"parent_id,optional"`
+		ReplyToAuthorName string `json:"reply_to_author_name,optional"`
+		CreatedAt         string `json:"created_at"`
+		UpdatedAt         string `json:"updated_at"`
+	}
+	CommentResp {
+		Comment *Comment `json:"comment"`
+	}
+	CommentsResp {
+		Comments []*Comment `json:"comments"`
+		Total    int64      `json:"total"`
 	}
 )
 
@@ -162,6 +195,21 @@ service community-api {
 
 	@handler GetLikedPosts
 	get /users/likes (GetLikedPostsReq) returns (PostsResp)
+
+	@handler CreateComment
+	post /posts/:id/comments (CreateCommentReq) returns (CommentResp)
+
+	@handler DeleteComment
+	delete /posts/:id/comments/:cid (DeleteCommentReq) returns (CommonResp)
+}
+
+@server (
+	prefix: /api/v1
+	group:  comment
+)
+service community-api {
+	@handler ListComments
+	get /posts/:id/comments (ListCommentsReq) returns (CommentsResp)
 }
 
 @server (

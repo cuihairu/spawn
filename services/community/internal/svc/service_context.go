@@ -25,9 +25,10 @@ type ServiceContext struct {
 	Auth   rest.Middleware
 	Jwt    *utils.Auth
 
-	PostRepo   model.PostStore
-	TopicRepo  model.TopicStore
-	FollowRepo model.FollowStore
+	PostRepo    model.PostStore
+	TopicRepo   model.TopicStore
+	FollowRepo  model.FollowStore
+	CommentRepo model.CommentStore
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -77,14 +78,19 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := postModel.CreatePostLikesTable(); err != nil {
 		panic(fmt.Sprintf("创建点赞关系表失败: %v", err))
 	}
+	commentModel := model.NewCommentModel(db)
+	if err := commentModel.CreateCommentsTable(); err != nil {
+		panic(fmt.Sprintf("创建评论表失败: %v", err))
+	}
 
 	return &ServiceContext{
-		Config:     c,
-		Auth:       middleware.NewAuthMiddleware(jwtTool).Handle,
-		Jwt:        jwtTool,
-		PostRepo:   postModel,
-		TopicRepo:  topicModel,
-		FollowRepo: followModel,
+		Config:      c,
+		Auth:        middleware.NewAuthMiddleware(jwtTool).Handle,
+		Jwt:         jwtTool,
+		PostRepo:    postModel,
+		TopicRepo:   topicModel,
+		FollowRepo:  followModel,
+		CommentRepo: commentModel,
 	}
 }
 

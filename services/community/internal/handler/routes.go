@@ -6,6 +6,7 @@ package handler
 import (
 	"net/http"
 
+	comment "github.com/tappi/tappi/services/community/internal/handler/comment"
 	follow "github.com/tappi/tappi/services/community/internal/handler/follow"
 	post "github.com/tappi/tappi/services/community/internal/handler/post"
 	topic "github.com/tappi/tappi/services/community/internal/handler/topic"
@@ -78,8 +79,29 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/users/likes",
 					Handler: post.GetLikedPostsHandler(serverCtx),
 				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/posts/:id/comments",
+					Handler: comment.CreateCommentHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodDelete,
+					Path:    "/posts/:id/comments/:cid",
+					Handler: comment.DeleteCommentHandler(serverCtx),
+				},
 			}...,
 		),
+		rest.WithPrefix("/api/v1"),
+	)
+
+	server.AddRoutes(
+		[]rest.Route{
+			{
+				Method:  http.MethodGet,
+				Path:    "/posts/:id/comments",
+				Handler: comment.ListCommentsHandler(serverCtx),
+			},
+		},
 		rest.WithPrefix("/api/v1"),
 	)
 

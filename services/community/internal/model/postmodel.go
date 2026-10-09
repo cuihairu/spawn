@@ -40,6 +40,7 @@ type PostStore interface {
 	Delete(id, requesterId int64) error
 	Like(id, userId int64) (*types.Post, error)
 	Share(id int64) (*types.Post, error)
+	IncrementComments(id int64) (*types.Post, error)
 	List(filter PostListFilter) ([]types.Post, int64)
 	ListByFollow(topicIds, authorIds []int64, limit, offset int64) ([]types.Post, int64)
 	ListLikedPosts(userId, limit, offset int64) ([]types.Post, int64)
@@ -482,6 +483,24 @@ func (m *PostModel) Share(id int64) (*types.Post, error) {
 	}
 	if _, err := m.db.Exec(`UPDATE posts SET share_count = share_count + 1 WHERE id = ?`, id); err != nil {
 		return nil, fmt.Errorf("帖子分享计数自增失败: %w", err)
+	}
+
+	p, err := m.getFromDB(id)
+	if err != nil {
+		return nil, err
+	}
+
+	m.cache.Delete(postKey(id))
+	return p, nil
+}
+
+// IncrementComments 帖子评论计数自增（发评论后调用，无取消评论接口故单调累加）。
+func (m *PostModel) IncrementComments(id int64) (*types.Post, error) {
+	if _, err := m.getFromDB(id); err != nil {
+		return nil, err
+	}
+	if _, err := m.db.Exec(`UPDATE posts SET comment_count = comment_count + 1 WHERE id = ?`, id); err != nil {
+		return nil, fmt.Errorf("帖子评论计数自增失败: %w", err)
 	}
 
 	p, err := m.getFromDB(id)
