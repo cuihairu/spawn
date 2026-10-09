@@ -318,10 +318,21 @@ func TestGuideModelCreate(t *testing.T) {
 	if created.UpdatedAt != created.CreatedAt {
 		t.Fatalf("UpdatedAt %q must equal CreatedAt on create", created.UpdatedAt)
 	}
+	if created.Format != "text" {
+		t.Fatalf("format = %q, want text default", created.Format)
+	}
 
 	again, _ := repo.Create(&Guide{Title: "second", Content: "b"})
 	if again.Id != 5 {
 		t.Fatalf("second id = %d, want 5", again.Id)
+	}
+
+	md, err := repo.Create(&Guide{Title: "md", Content: "b", GameId: "game-a", Format: "markdown"})
+	if err != nil {
+		t.Fatalf("Create markdown: %v", err)
+	}
+	if md.Format != "markdown" {
+		t.Fatalf("format = %q, want markdown", md.Format)
 	}
 }
 
@@ -335,6 +346,7 @@ func TestGuideModelUpdate(t *testing.T) {
 	updated, err := repo.Update(1, map[string]interface{}{
 		"title":       "renamed",  // 非空 → 生效
 		"content":     "new body", // 非空 → 生效
+		"format":      "markdown", // string 类型即生效
 		"summary":     "",         // string 类型即生效（允许清空）
 		"cover_image": "",         // 同上
 		"tags":        []string{"x"},
@@ -344,6 +356,9 @@ func TestGuideModelUpdate(t *testing.T) {
 	}
 	if updated.Title != "renamed" || updated.Content != "new body" {
 		t.Fatalf("title/content not applied: %+v", updated)
+	}
+	if updated.Format != "markdown" {
+		t.Fatalf("format not applied: %+v", updated)
 	}
 	if updated.Summary != "" || updated.CoverImage != "" {
 		t.Fatalf("summary/cover_image must be clearable: %+v", updated)
@@ -357,7 +372,7 @@ func TestGuideModelUpdate(t *testing.T) {
 
 	// 更新结果落库且缓存已失效（Get 取到新值）
 	after, err := repo.Get(1)
-	if err != nil || after.Title != "renamed" || after.Summary != "" {
+	if err != nil || after.Title != "renamed" || after.Summary != "" || after.Format != "markdown" {
 		t.Fatalf("Get after update = %+v, %v", after, err)
 	}
 

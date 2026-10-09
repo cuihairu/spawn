@@ -13,6 +13,7 @@ type Guide {
 	GameTitle   string   `json:"game_title"`
 	Title       string   `json:"title"`
 	Content     string   `json:"content"`
+	Format      string   `json:"format,omitempty"` // text/markdown
 	Summary     string   `json:"summary"`
 	CoverImage  string   `json:"cover_image"`
 	AuthorId    int64    `json:"author_id"`
@@ -29,6 +30,7 @@ type CreateGuideRequest {
 	GameId     string   `json:"game_id"`
 	Title      string   `json:"title"`
 	Content    string   `json:"content"`
+	Format     string   `json:"format,optional"` // text/markdown，缺省 text
 	Summary    string   `json:"summary,optional"`
 	CoverImage string   `json:"cover_image,optional"`
 	Tags       []string `json:"tags,optional"`
@@ -44,6 +46,7 @@ type UpdateGuideRequest {
 	Id         int64    `path:"id"`
 	Title      string   `json:"title,optional"`
 	Content    string   `json:"content,optional"`
+	Format     string   `json:"format,optional"` // text/markdown
 	Summary    string   `json:"summary,optional"`
 	CoverImage string   `json:"cover_image,optional"`
 	Tags       []string `json:"tags,optional"`

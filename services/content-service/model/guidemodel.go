@@ -20,6 +20,7 @@ type Guide struct {
 	GameTitle   string   `json:"game_title"`
 	Title       string   `json:"title"`
 	Content     string   `json:"content"`
+	Format      string   `json:"format"` // text/markdown，缺省 text
 	Summary     string   `json:"summary"`
 	CoverImage  string   `json:"cover_image"`
 	AuthorId    int64    `json:"author_id"`
@@ -82,7 +83,7 @@ func NewGuideModel(db *sql.DB) *GuideModel {
 	}
 }
 
-const guideColumns = "id, game_id, game_title, title, content, summary, cover_image, author_id, author_name, tags, views, likes, is_published, created_at, updated_at"
+const guideColumns = "id, game_id, game_title, title, content, format, summary, cover_image, author_id, author_name, tags, views, likes, is_published, created_at, updated_at"
 
 // CreateGuidesTable 创建攻略表（开发使用）。先尝试 SQLite 方言，失败回落
 // MySQL（与 user-service.CreateUsersTable 同款双格式策略）。
@@ -94,6 +95,7 @@ func (m *GuideModel) CreateGuidesTable() error {
 			game_title VARCHAR(256) NOT NULL,
 			title VARCHAR(256) NOT NULL,
 			content TEXT NOT NULL,
+			format VARCHAR(16) NOT NULL DEFAULT 'text',
 			summary VARCHAR(1024) NOT NULL,
 			cover_image VARCHAR(512) NOT NULL,
 			author_id INTEGER NOT NULL DEFAULT 0,
@@ -115,6 +117,7 @@ func (m *GuideModel) CreateGuidesTable() error {
 				game_title VARCHAR(256) NOT NULL,
 				title VARCHAR(256) NOT NULL,
 				content TEXT NOT NULL,
+				format VARCHAR(16) NOT NULL DEFAULT 'text',
 				summary VARCHAR(1024) NOT NULL,
 				cover_image VARCHAR(512) NOT NULL,
 				author_id BIGINT NOT NULL DEFAULT 0,
@@ -163,12 +166,15 @@ func (m *GuideModel) SeedIfEmpty() error {
 
 func (m *GuideModel) insertRow(guide *Guide) error {
 	// Seed 显式保留 id（自增序从最大 id 之后继续），与原内存仓装载语义一致
+	if guide.Format == "" {
+		guide.Format = "text"
+	}
 	_, err := m.db.Exec(
-		`INSERT INTO guides (id, game_id, game_title, title, content, summary, cover_image,
+		`INSERT INTO guides (id, game_id, game_title, title, content, format, summary, cover_image,
 			author_id, author_name, tags, views, likes, is_published, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		guide.Id, guide.GameId, guide.GameTitle, guide.Title, guide.Content, guide.Summary,
-		guide.CoverImage, guide.AuthorId, guide.AuthorName,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		guide.Id, guide.GameId, guide.GameTitle, guide.Title, guide.Content, guide.Format,
+		guide.Summary, guide.CoverImage, guide.AuthorId, guide.AuthorName,
 		encodeStringList(guide.Tags), guide.Views, guide.Likes, boolToInt(guide.IsPublished),
 		guide.CreatedAt, guide.UpdatedAt,
 	)
@@ -221,7 +227,7 @@ func (m *GuideModel) getFromDB(id int64) (*Guide, error) {
 	var published int64
 	err := m.db.QueryRow(`SELECT `+guideColumns+` FROM guides WHERE id = ?`, id).
 		Scan(&guide.Id, &guide.GameId, &guide.GameTitle, &guide.Title, &guide.Content,
-			&guide.Summary, &guide.CoverImage, &guide.AuthorId, &guide.AuthorName,
+			&guide.Format, &guide.Summary, &guide.CoverImage, &guide.AuthorId, &guide.AuthorName,
 			&tags, &guide.Views, &guide.Likes, &published, &guide.CreatedAt, &guide.UpdatedAt)
 
 	if err == sql.ErrNoRows {
@@ -268,12 +274,15 @@ func (m *GuideModel) Create(guide *Guide) (*Guide, error) {
 	guide.Views = 0
 	guide.Likes = 0
 	guide.IsPublished = false
+	if guide.Format == "" {
+		guide.Format = "text"
+	}
 
 	result, err := m.db.Exec(
-		`INSERT INTO guides (game_id, game_title, title, content, summary, cover_image,
+		`INSERT INTO guides (game_id, game_title, title, content, format, summary, cover_image,
 			author_id, author_name, tags, views, likes, is_published, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		guide.GameId, guide.GameTitle, guide.Title, guide.Content, guide.Summary,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		guide.GameId, guide.GameTitle, guide.Title, guide.Content, guide.Format, guide.Summary,
 		guide.CoverImage, guide.AuthorId, guide.AuthorName,
 		encodeStringList(guide.Tags), guide.Views, guide.Likes, boolToInt(guide.IsPublished),
 		guide.CreatedAt, guide.UpdatedAt,
@@ -307,6 +316,9 @@ func (m *GuideModel) Update(id int64, updates map[string]interface{}) (*Guide, e
 	if content, ok := updates["content"].(string); ok && content != "" {
 		guide.Content = content
 	}
+	if format, ok := updates["format"].(string); ok {
+		guide.Format = format
+	}
 	if summary, ok := updates["summary"].(string); ok {
 		guide.Summary = summary
 	}
@@ -320,9 +332,9 @@ func (m *GuideModel) Update(id int64, updates map[string]interface{}) (*Guide, e
 	guide.UpdatedAt = time.Now().Format(time.RFC3339)
 
 	if _, err := m.db.Exec(
-		`UPDATE guides SET title = ?, content = ?, summary = ?, cover_image = ?, tags = ?, updated_at = ?
+		`UPDATE guides SET title = ?, content = ?, format = ?, summary = ?, cover_image = ?, tags = ?, updated_at = ?
 		 WHERE id = ?`,
-		guide.Title, guide.Content, guide.Summary, guide.CoverImage,
+		guide.Title, guide.Content, guide.Format, guide.Summary, guide.CoverImage,
 		encodeStringList(guide.Tags), guide.UpdatedAt, id,
 	); err != nil {
 		return nil, fmt.Errorf("更新攻略失败: %w", err)
@@ -403,7 +415,7 @@ func (m *GuideModel) all() ([]*Guide, error) {
 		var tags string
 		var published int64
 		if err := rows.Scan(&guide.Id, &guide.GameId, &guide.GameTitle, &guide.Title,
-			&guide.Content, &guide.Summary, &guide.CoverImage, &guide.AuthorId,
+			&guide.Content, &guide.Format, &guide.Summary, &guide.CoverImage, &guide.AuthorId,
 			&guide.AuthorName, &tags, &guide.Views, &guide.Likes, &published,
 			&guide.CreatedAt, &guide.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("读取攻略行失败: %w", err)

@@ -41,6 +41,14 @@ func (l *CreateGuideLogic) CreateGuide(req *types.CreateGuideRequest) (resp *typ
 		username = "未知用户"
 	}
 
+	format := normalizeGuideFormat(req.Format)
+	if format == "" {
+		return &types.CreateGuideResponse{
+			Code:    http.StatusBadRequest,
+			Message: "内容格式仅支持 text 或 markdown",
+		}, nil
+	}
+
 	// 从 game-catalog 服务获取游戏名称
 	gameTitle := req.GameId // 默认使用 gameId
 	gameInfo, err := l.svcCtx.GameCatalogClient.GetGameById(l.ctx, req.GameId)
@@ -58,6 +66,7 @@ func (l *CreateGuideLogic) CreateGuide(req *types.CreateGuideRequest) (resp *typ
 		GameTitle:  gameTitle,
 		Title:      req.Title,
 		Content:    req.Content,
+		Format:     format,
 		Summary:    req.Summary,
 		CoverImage: req.CoverImage,
 		AuthorId:   userId,

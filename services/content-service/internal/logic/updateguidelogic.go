@@ -73,6 +73,16 @@ func (l *UpdateGuideLogic) UpdateGuide(req *types.UpdateGuideRequest) (resp *typ
 	if len(req.Tags) > 0 {
 		updates["tags"] = req.Tags
 	}
+	if req.Format != "" {
+		format := normalizeGuideFormat(req.Format)
+		if format == "" {
+			return &types.UpdateGuideResponse{
+				Code:    http.StatusBadRequest,
+				Message: "内容格式仅支持 text 或 markdown",
+			}, nil
+		}
+		updates["format"] = format
+	}
 
 	updated, err := l.svcCtx.GuideRepository.Update(req.Id, updates)
 	if err != nil {

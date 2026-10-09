@@ -16,6 +16,7 @@ func modelGuideToType(m *model.Guide) types.Guide {
 		GameTitle:   m.GameTitle,
 		Title:       m.Title,
 		Content:     m.Content,
+		Format:      m.Format,
 		Summary:     m.Summary,
 		CoverImage:  m.CoverImage,
 		AuthorId:    m.AuthorId,
@@ -35,6 +36,18 @@ func modelGuidesToTypes(models []*model.Guide) []types.Guide {
 		result = append(result, modelGuideToType(m))
 	}
 	return result
+}
+
+// normalizeGuideFormat 校验攻略内容格式：空值归一为 text，仅允许 text/markdown，其余返回空串表示非法
+func normalizeGuideFormat(format string) string {
+	switch format {
+	case "", "text":
+		return "text"
+	case "markdown":
+		return "markdown"
+	default:
+		return ""
+	}
 }
 
 // Comment转换函数

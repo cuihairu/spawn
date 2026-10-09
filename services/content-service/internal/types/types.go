@@ -7,6 +7,7 @@ type Guide struct {
 	GameTitle   string   `json:"game_title"`
 	Title       string   `json:"title"`
 	Content     string   `json:"content"`
+	Format      string   `json:"format,omitempty"`
 	Summary     string   `json:"summary"`
 	CoverImage  string   `json:"cover_image"`
 	AuthorId    int64    `json:"author_id"`
@@ -23,6 +24,7 @@ type CreateGuideRequest struct {
 	GameId     string   `json:"game_id"`
 	Title      string   `json:"title"`
 	Content    string   `json:"content"`
+	Format     string   `json:"format,optional"`
 	Summary    string   `json:"summary,optional"`
 	CoverImage string   `json:"cover_image,optional"`
 	Tags       []string `json:"tags,optional"`
@@ -38,6 +40,7 @@ type UpdateGuideRequest struct {
 	Id         int64    `path:"id"`
 	Title      string   `json:"title,optional"`
 	Content    string   `json:"content,optional"`
+	Format     string   `json:"format,optional"`
 	Summary    string   `json:"summary,optional"`
 	CoverImage string   `json:"cover_image,optional"`
 	Tags       []string `json:"tags,optional"`
