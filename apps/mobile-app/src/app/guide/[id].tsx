@@ -22,6 +22,7 @@ import {
   type Guide,
 } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import MarkdownText from '../../components/MarkdownText';
 import { colors } from '../../constants/colors';
 
 const PAGE_SIZE = 20;
@@ -130,7 +131,11 @@ export default function GuideDetailScreen() {
             ))}
           </View>
         ) : null}
-        <Text style={styles.content}>{guide.content}</Text>
+        {guide.format === 'markdown' ? (
+          <MarkdownText content={guide.content} />
+        ) : (
+          <Text style={styles.content}>{guide.content}</Text>
+        )}
         <View style={styles.commentHead}>
           <Text style={styles.commentTitle}>评论</Text>
           <Text style={styles.commentTotal}>{commentTotal}</Text>

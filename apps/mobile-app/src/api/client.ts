@@ -203,6 +203,8 @@ export interface Guide {
   game_title: string;
   title: string;
   content: string;
+  // text/markdown（content-service 向后兼容字段，缺省按 text 渲染）
+  format?: string;
   summary: string;
   cover_image?: string;
   author_id: number;
