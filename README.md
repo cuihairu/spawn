@@ -84,8 +84,8 @@ Ports and metric details are documented in the "Monitoring & Metrics (Prometheus
 
 ### Next Steps
 
-1. Wrap up mobile M3 (see `docs/mobile_plan.md`): local gradle Android release packaging is in place (2026-10-04: `android.package` config + `build:android:release` script, aapt/apksigner static checks passed); remaining: on-device install and functional regression — local push and deep-link share cards are still unverified on real devices.
-2. api-gateway BFF phase two is done (2026-10-04): the `GET /home/feed` aggregation endpoint (featured games / hot posts / topics / guides in one request, per-group field trimming + per-upstream failure degradation) plus a mobile `fetchHomeFeed` consumption hook reserved; web-client keeps direct service calls unaffected. More aggregation shapes to come as needed.
+1. Mobile M0–M3 and the M4 first milestone are landed (2026-10-09, see `docs/mobile_plan.md`): Android release packaging works (`android.package` config + `build:android:release` script, aapt/apksigner static checks passed); the data-panel stats tab consumes the gateway `/api/v1/stats/*`. Remaining: on-device install and functional regression — local push, deep-link share cards, and the notification center are still unverified on real devices (this environment has no emulator/device; CI lint+typecheck + `expo export` bundle walkthroughs are the standing substitute).
+2. api-gateway BFF phase two is done (2026-10-04): the `GET /home/feed` aggregation endpoint (featured games / hot posts / topics / guides in one request, per-group field trimming + per-upstream failure degradation), consumed by both the web discover page and the mobile discover tab; web-client keeps direct service calls unaffected. More aggregation shapes to come as needed.
 3. `docs/architecture/` overall architecture and data-flow docs are complete (2026-10-04): `topology.md` records the current state (service boundaries/ports/gateway reverse-proxy routes/auth data flow/evolution roadmap), `overview.md` stays at the vision level; future architecture changes update the current-state doc along with each slice.
 
 ### Go-zero Development Conventions
@@ -138,7 +138,7 @@ Unified access layer combining BFF aggregation and a five-way reverse proxy; onl
 - `GET /users/:id/recommendations` - User recommendations
 - `GET /home/feed` - Home feed aggregation (featured games / hot posts / topics / guides, four concurrent calls with field trimming + per-upstream failure degradation)
 - `GET /s/p/:id` - Post share-card jump page (og meta + `spawn://` deep link + web entry)
-- Reverse proxy: community (posts/topics/follows/likes/post comments), content (guides/comments), users (register/profile), games (list/detail), data-panel (match stats) — full route coverage
+- Reverse proxy: community (posts/topics/follows/likes/post comments/notifications), content (guides/comments), users (register/profile), games (list/detail), data-panel (match stats) — full route coverage
 - Port: 8800
 
 #### 5. Data Panel Service (`services/data-panel`)
@@ -150,7 +150,7 @@ Match-stats aggregation for the player dashboard; go-zero with SQLite/MySQL dual
 - Port: 8896
 
 #### 6. Web Client (`apps/web-client`)
-React 19 + Vite + React Router 7 frontend. Pages: home (login & recommendations), discover (one-request home feed), games library + game detail, guide list/detail/editor, community (post feed with followed mode), post detail, profile, match-stats dashboard (KPI cards + per-game table via the gateway). Guides support "All/Mine" filtering with draft and published save states; guide comments support nested replies and likes; posts support like/share/comments (reply with parent comment, author-only delete); the games library offers keyword search, genre filtering, and pagination, with game cards linking to detail pages that surface related guides. Browsing works without login; write operations require login. Dark theme, responsive layout.
+React 19 + Vite + React Router 7 frontend. Pages: home (login & recommendations), discover (one-request home feed), games library + game detail, guide list/detail/editor, community (post feed with followed mode), post detail, notifications (nav bell with unread badge + `/notifications` center: like/comment/reply/follow, mark-all-read), profile, match-stats dashboard (KPI cards + per-game table via the gateway). Guides support "All/Mine" filtering with draft and published save states; guide comments support nested replies and likes; posts support like/share/comments (reply with parent comment, author-only delete); the games library offers keyword search, genre filtering, and pagination, with game cards linking to detail pages that surface related guides. Browsing works without login; write operations require login. Dark theme, responsive layout.
 
 ### Technical Highlights
 
@@ -193,4 +193,4 @@ cd apps/web-client && npm install && npm run dev
 | data-panel | 8896 | Match-stats panel service (ingest + query) | Done |
 | user-service-rpc | 8080 (gRPC) | User service RPC (cluster-internal) | Done |
 | web-client | 5173 | Web frontend | Done |
-| mobile-app | — | React Native (Expo) client | In progress (see `docs/mobile_plan.md`) |
+| mobile-app | — | React Native (Expo) client | In progress — M0–M3 + M4 milestone 1 landed (see `docs/mobile_plan.md`) |

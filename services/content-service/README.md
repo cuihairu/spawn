@@ -122,6 +122,30 @@ POST /api/v1/guides/:id/publish
 POST /api/v1/guides/:id/like
 ```
 
+#### 收藏攻略
+```bash
+POST /api/v1/guides/:id/favorite
+```
+需登录；重复收藏幂等（关系表唯一键，计数不重复累加）。
+
+#### 取消收藏
+```bash
+DELETE /api/v1/guides/:id/favorite
+```
+需登录；重复取消幂等。
+
+#### 收藏状态
+```bash
+GET /api/v1/guides/:id/favorite
+```
+匿名返回总数（`favorited` 恒 false）；带 Bearer 额外返回个人收藏状态。
+
+#### 我的收藏
+```bash
+GET /api/v1/guides/favorites?page=1&page_size=20
+```
+需登录；按收藏时间倒序（同秒按 guide_id 倒序）分页。
+
 ### 评论相关
 
 #### 发表评论
