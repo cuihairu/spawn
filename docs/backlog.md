@@ -31,19 +31,27 @@
 | 真机回归（本地推送/深链分享卡/通知中心） | 环境无设备无模拟器；替代口径 = CI 门禁 + `expo export --platform android` 产物走查 | mobile_plan 风险节 |
 | iOS 填空（TestFlight 侧载/Universal Links/APNs） | 外部凭据（Apple 团队/域名 AASA/推送证书） | mobile_plan 拍板记录 2026-10-09 |
 
-## 实机走查登记（2026-10-10 web 批：只登记不顺手改）
+## 实机走查登记（2026-10-10 web 批）
 
 > 口径：本机无浏览器自动化，替代口径 = 全栈拉起（六服务 + vite dev，`VITE_API_GATEWAY_URL` 指网关，compose 同款 JWT_SECRET）
 > + 按 `src/api/client.ts` 逐函数走通 API 契约（curl 同路径同载荷）+ SPA 深链 HTML 探活 + web 三连门禁（tsc/eslint/build）。
 > 四块结论：通知中心 / 收藏 / 图片上传 / 举报 **主链路全通**（含防重、幂等、越权 403、大小/类型闸、静态回源、read-all 归零）。
+> 2026-10-11 续批：技术项 2 条已修（下附提交）；剩 3 条属 API 契约 / 产品决策，**待拍板，未代拍板开工**。
 
-| # | 发现 | 等级 | 位置 |
+### 已修（2026-10-11）
+
+| 原# | 项 | Commit |
+|---|----|--------|
+| 3 | `fetchMyFavorites` 补 `code !== 200` 校验：HTTP 200 + 信封 code:401 不再静默渲染空收藏，ProfilePage 转「部分内容加载失败：我的收藏」横幅（与 content 域其余函数口径一致） | `c600193` |
+| 4 | 本地裸跑 JWT 密钥陷阱：content-service / community 的 etc yaml 默认 `Auth.JWTSecret` 与 user-service 对齐（`tappi-user-service-jwt-secret-key-2024`），README/ENHANCEMENT 配置快照同步；不设 JWT_SECRET 直接跑时登录态可直达内容/社区接口（裸跑三服务 + 登录令牌跨服务 curl 验证通过；compose 本就显式传 JWT_SECRET，容器行为不变） | `100291c` |
+
+### 待拍板（属契约/产品决策，不代拍板）
+
+| 原# | 发现 | 等级 | 位置 |
 |---|------|------|------|
-| 1 | web 端无注册入口：网关有 `POST /auth/register`，但 client.ts 无 register 函数、登录表单（HomePage「快速登录」）无注册链路，首次访客无法从 web 注册 | 中 | apps/web-client/src/api/client.ts、src/pages/HomePage.tsx |
-| 2 | 鉴权失败状态码口径不一：content/community 匿名访问（如 GET /api/v1/guides/favorites）回 HTTP 200 + 信封 code:401，而网关 /upload 匿名回 HTTP 401、moderation 队列越权回 HTTP 403；web 双口径都兼容，但跨服务不一致是隐患 | 低 | content-service/community 业务信封 vs api-gateway upload/moderation |
-| 3 | `fetchMyFavorites` 不查信封 code：HTTP 200 + code:401 时渲染成空收藏而非提示登录（现仅 ProfilePage 登录态调用，无实害）；与同文件其他函数 `code !== 200` 口径不一致 | 低 | apps/web-client/src/api/client.ts:496 |
-| 4 | 本地裸跑 JWT 密钥陷阱：默认 etc yaml 中 user-service 与 content/community 的 Auth.JWTSecret 三处互不相同（compose 靠 JWT_SECRET 统一），不设 env 直接 `go run` 时登录态在内容/社区接口全 401 | 低 | services/{user-service,content-service,community}/etc/*.yaml |
-| 5 | register/login 响应形状不一致：register 回信封 `{code,message,data:{user_id}}`，login 回裸 `{token,user_info}`；风格不统一（web 各自适配，能用） | 低 | user-service auth handler |
+| 1 | web 端无注册入口：网关有 `POST /auth/register`，但 client.ts 无 register 函数、登录表单（HomePage「快速登录」）无注册链路，首次访客无法从 web 注册。需拍板：是否要 web 注册入口（以及是否走邮箱验证/邀请制） | 中 | apps/web-client/src/api/client.ts、src/pages/HomePage.tsx |
+| 2 | 鉴权失败状态码口径不一：content/community 匿名访问（如 GET /api/v1/guides/favorites）回 HTTP 200 + 信封 code:401，而网关 /upload 匿名回 HTTP 401、moderation 队列越权回 HTTP 403。统一是跨服务契约变更，web/mobile 双端都在适配 | 低 | content-service/community 业务信封 vs api-gateway upload/moderation |
+| 5 | register/login 响应形状不一致：register 回信封 `{code,message,data:{user_id}}`，login 回裸 `{token,user_info}`。统一需同步改两端客户端，属契约变更 | 低 | user-service auth handler |
 
 ## 验收打磨轨道
 
