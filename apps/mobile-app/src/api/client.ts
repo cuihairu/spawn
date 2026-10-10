@@ -260,6 +260,58 @@ export async function fetchGuideById(id: number, token?: string | null): Promise
   });
 }
 
+// ========== 攻略收藏（content-service 收藏端点） ==========
+
+export interface FavoriteStatus {
+  favorited: boolean;
+  count: number;
+}
+
+interface FavoriteEnvelope extends ApiResponseEnvelope<unknown> {
+  favorited: boolean;
+  count: number;
+}
+
+// 收藏状态：匿名只拿总数（favorited 恒 false），带 token 才含个人状态
+export async function fetchFavoriteStatus(
+  id: number,
+  token?: string | null,
+): Promise<FavoriteStatus> {
+  const payload = await requestEnvelopeFull<FavoriteEnvelope>(
+    `${CONTENT_SERVICE_URL}/api/v1/guides/${id}/favorite`,
+    token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,
+  );
+  return { favorited: payload.favorited, count: payload.count };
+}
+
+export async function favoriteGuide(id: number, token: string): Promise<FavoriteStatus> {
+  const payload = await requestEnvelopeFull<FavoriteEnvelope>(
+    `${CONTENT_SERVICE_URL}/api/v1/guides/${id}/favorite`,
+    { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+  );
+  return { favorited: payload.favorited, count: payload.count };
+}
+
+export async function unfavoriteGuide(id: number, token: string): Promise<FavoriteStatus> {
+  const payload = await requestEnvelopeFull<FavoriteEnvelope>(
+    `${CONTENT_SERVICE_URL}/api/v1/guides/${id}/favorite`,
+    { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+  );
+  return { favorited: payload.favorited, count: payload.count };
+}
+
+// 我的收藏（收藏时间倒序，带 Bearer）
+export async function fetchMyFavorites(
+  token: string,
+  pageSize = 20,
+): Promise<{ guides: Guide[]; total: number }> {
+  const payload = await requestEnvelopeFull<GuideListEnvelope>(
+    `${CONTENT_SERVICE_URL}/api/v1/guides/favorites?page=1&page_size=${pageSize}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  return { guides: payload.data ?? [], total: payload.total };
+}
+
 export interface Comment {
   id: number;
   target_type: string;

@@ -13,6 +13,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   fetchCurrentUser,
   fetchGuides,
+  fetchMyFavorites,
   fetchLikedPosts,
   fetchPosts,
   type Guide,
@@ -38,6 +39,8 @@ export default function ProfileScreen() {
   const [postTotal, setPostTotal] = useState(0);
   const [myGuides, setMyGuides] = useState<Guide[]>([]);
   const [guideTotal, setGuideTotal] = useState(0);
+  const [myFavs, setMyFavs] = useState<Guide[]>([]);
+  const [favTotal, setFavTotal] = useState(0);
   const [myLiked, setMyLiked] = useState<Post[]>([]);
   const [likedTotal, setLikedTotal] = useState(0);
   const [sectionsLoading, setSectionsLoading] = useState(false);
@@ -72,15 +75,18 @@ export default function ProfileScreen() {
     if (!token || !user) return;
     setSectionsLoading(true);
     void (async () => {
-      const [posts, guides, liked] = await Promise.all([
+      const [posts, guides, favs, liked] = await Promise.all([
         fetchPosts({ authorId: user.id, limit: PAGE_SIZE }),
         fetchGuides({ authorId: user.id, pageSize: PAGE_SIZE }, token),
+        fetchMyFavorites(token, PAGE_SIZE),
         fetchLikedPosts(token, PAGE_SIZE, 0),
       ]);
       setMyPosts(posts.posts);
       setPostTotal(posts.total);
       setMyGuides(guides.guides);
       setGuideTotal(guides.total);
+      setMyFavs(favs.guides);
+      setFavTotal(favs.total);
       setMyLiked(liked.posts);
       setLikedTotal(liked.total);
       setSectionsError(null);
@@ -99,6 +105,8 @@ export default function ProfileScreen() {
         setPostTotal(0);
         setMyGuides([]);
         setGuideTotal(0);
+        setMyFavs([]);
+        setFavTotal(0);
         setMyLiked([]);
         setLikedTotal(0);
       });
@@ -255,6 +263,36 @@ export default function ProfileScreen() {
                 {guide.title}
               </Text>
               {!guide.is_published ? <Text style={styles.rowBadge}>草稿</Text> : null}
+              <Text style={styles.rowMeta}>{guide.created_at.slice(0, 10)}</Text>
+            </Pressable>
+          ))
+        )}
+      </View>
+
+      <View style={styles.section}>
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>我的收藏</Text>
+          <Text style={styles.sectionMeta}>
+            {favTotal > PAGE_SIZE
+              ? `共 ${favTotal} 篇 · 显示前 ${PAGE_SIZE}`
+              : favTotal > 0
+                ? `共 ${favTotal} 篇`
+                : ''}
+          </Text>
+        </View>
+        {sectionsLoading && myFavs.length === 0 ? (
+          <Text style={styles.sectionEmpty}>加载中...</Text>
+        ) : myFavs.length === 0 ? (
+          <Text style={styles.sectionEmpty}>还没有收藏攻略（详情页点 ☆ 收藏）</Text>
+        ) : (
+          myFavs.map((guide) => (
+            <Pressable
+              key={guide.id}
+              style={styles.row}
+              onPress={() => router.push(`/guide/${guide.id}`)}>
+              <Text style={styles.rowTitle} numberOfLines={1}>
+                {guide.title}
+              </Text>
               <Text style={styles.rowMeta}>{guide.created_at.slice(0, 10)}</Text>
             </Pressable>
           ))

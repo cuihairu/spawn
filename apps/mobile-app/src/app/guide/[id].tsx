@@ -17,8 +17,12 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   createComment,
   fetchComments,
+  fetchFavoriteStatus,
   fetchGuideById,
+  favoriteGuide,
+  unfavoriteGuide,
   type Comment,
+  type FavoriteStatus,
   type Guide,
 } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
@@ -36,6 +40,8 @@ export default function GuideDetailScreen() {
   const [guide, setGuide] = useState<Guide | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentTotal, setCommentTotal] = useState(0);
+  const [fav, setFav] = useState<FavoriteStatus>({ favorited: false, count: 0 });
+  const [favBusy, setFavBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -59,6 +65,10 @@ export default function GuideDetailScreen() {
     }).finally(() => {
       setLoading(false);
     });
+    // 收藏状态独立取（匿名只有总数；失败降级为 0，不阻塞正文）
+    void fetchFavoriteStatus(guideId, token)
+      .then(setFav)
+      .catch(() => setFav({ favorited: false, count: 0 }));
   }, [guideId, token]);
 
   useEffect(() => {
@@ -68,6 +78,27 @@ export default function GuideDetailScreen() {
   const refresh = () => {
     setLoading(true);
     setNonce((n) => n + 1);
+  };
+
+  // 收藏/取消收藏：未登录先去登录页（同评论入口语义）
+  const toggleFavorite = () => {
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+    if (favBusy) return;
+    setFavBusy(true);
+    void (async () => {
+      const next = fav.favorited
+        ? await unfavoriteGuide(guideId, token)
+        : await favoriteGuide(guideId, token);
+      setFav(next);
+      setError(null);
+    })().catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : '收藏操作失败');
+    }).finally(() => {
+      setFavBusy(false);
+    });
   };
 
   const loadMoreComments = () => {
@@ -121,6 +152,11 @@ export default function GuideDetailScreen() {
         <View style={styles.statRow}>
           <Text style={styles.statText}>👁 {guide.views} 阅读</Text>
           <Text style={styles.statText}>👍 {guide.likes} 赞</Text>
+          <Pressable onPress={toggleFavorite} disabled={favBusy} hitSlop={6}>
+            <Text style={[styles.statText, styles.favText, fav.favorited && styles.favActive]}>
+              {fav.favorited ? '⭐ 已收藏' : '☆ 收藏'} {fav.count}
+            </Text>
+          </Pressable>
         </View>
         {guide.tags?.length ? (
           <View style={styles.tagRow}>
@@ -329,6 +365,13 @@ const styles = StyleSheet.create({
   statText: {
     color: colors.textMuted,
     fontSize: 12,
+  },
+  favText: {
+    color: colors.text,
+  },
+  favActive: {
+    color: colors.primary,
+    fontWeight: '600',
   },
   tagRow: {
     flexDirection: 'row',
