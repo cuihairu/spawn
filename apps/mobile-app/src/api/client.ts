@@ -323,6 +323,47 @@ export async function fetchMyFavorites(
   return { guides: payload.data ?? [], total: payload.total };
 }
 
+// ========== 攻略创作（移动端写攻略入口） ==========
+
+export interface CreateGuidePayload {
+  gameId: string;
+  title: string;
+  content: string;
+  format?: string;
+  summary?: string;
+  tags?: string[];
+}
+
+// 创建攻略（默认草稿；对齐 content-service CreateGuideRequest 契约）
+export async function createGuide(payload: CreateGuidePayload, token: string): Promise<Guide> {
+  return requestEnvelope<Guide>(`${CONTENT_SERVICE_URL}/api/v1/guides`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      game_id: payload.gameId,
+      title: payload.title,
+      content: payload.content,
+      ...(payload.format ? { format: payload.format } : {}),
+      ...(payload.summary ? { summary: payload.summary } : {}),
+      ...(payload.tags?.length ? { tags: payload.tags } : {}),
+    }),
+  });
+}
+
+// 发布攻略（草稿 → 已发布）
+export async function publishGuide(id: number, token: string): Promise<void> {
+  await requestEnvelopeFull<ApiResponseEnvelope<unknown>>(
+    `${CONTENT_SERVICE_URL}/api/v1/guides/${id}/publish`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+}
+
 export interface Comment {
   id: number;
   target_type: string;

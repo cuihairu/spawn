@@ -252,7 +252,9 @@ export default function ProfileScreen() {
         {sectionsLoading && myGuides.length === 0 ? (
           <Text style={styles.sectionEmpty}>加载中...</Text>
         ) : myGuides.length === 0 ? (
-          <Text style={styles.sectionEmpty}>还没有写过攻略（创作入口在 Web 端）</Text>
+          <Pressable onPress={() => router.push('/guide-compose')}>
+            <Text style={styles.sectionEmptyLink}>还没有写过攻略，去写一篇 ›</Text>
+          </Pressable>
         ) : (
           myGuides.map((guide) => (
             <Pressable

@@ -13,6 +13,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { fetchGuides, type Guide } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 import { colors } from '../constants/colors';
 
 const PAGE_SIZE = 20;
@@ -27,6 +28,7 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
 // 攻略列表（Stack /guides，可带 game_id 只看某游戏；游戏 Tab 入口不带 = 攻略广场）。
 // 支持关键词搜索、标签筛选与排序（对等 web 攻略区高级筛选）。
 export default function GuidesScreen() {
+  const { token } = useAuth();
   const { game_id: gameId, title } = useLocalSearchParams<{ game_id?: string; title?: string }>();
   const [guides, setGuides] = useState<Guide[]>([]);
   const [total, setTotal] = useState(0);
@@ -113,7 +115,13 @@ export default function GuidesScreen() {
         <Text style={styles.headerTitle} numberOfLines={1}>
           {title ? `${title} · 攻略` : '攻略广场'}
         </Text>
-        <View style={styles.back} />
+        {token ? (
+          <Pressable style={styles.back} onPress={() => router.push('/guide-compose')} hitSlop={8}>
+            <Ionicons name="create-outline" size={20} color={colors.primary} />
+          </Pressable>
+        ) : (
+          <View style={styles.back} />
+        )}
       </View>
 
       <FlatList
