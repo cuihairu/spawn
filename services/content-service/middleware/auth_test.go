@@ -150,6 +150,57 @@ func TestAuthMiddleware_EmptyBearerToken401(t *testing.T) {
 	}
 }
 
+// TestAuthMiddleware_WriteWithValidToken 写接口带有效令牌 → 放行并注入用户信息。
+func TestAuthMiddleware_WriteWithValidToken(t *testing.T) {
+	t.Parallel()
+
+	secret := "test-secret"
+	svcCtx := &svc.ServiceContext{Auth: utils.NewAuth(secret)}
+	mw := AuthMiddleware(svcCtx)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/guides", nil)
+	req.Header.Set("Authorization", "Bearer "+signToken(t, secret, 456, "bob"))
+	rr := httptest.NewRecorder()
+
+	var gotUserId int64
+	var gotUsername string
+	mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUserId, _ = r.Context().Value("user_id").(int64)
+		gotUsername, _ = r.Context().Value("username").(string)
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	if gotUserId != 456 || gotUsername != "bob" {
+		t.Fatalf("context = (%d, %q), want (456, \"bob\")", gotUserId, gotUsername)
+	}
+}
+
+// TestAuthMiddleware_WriteInvalidToken401 写接口令牌解析失败 → 401 且不放行。
+func TestAuthMiddleware_WriteInvalidToken401(t *testing.T) {
+	t.Parallel()
+
+	svcCtx := &svc.ServiceContext{Auth: utils.NewAuth("test-secret")}
+	mw := AuthMiddleware(svcCtx)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/guides", nil)
+	req.Header.Set("Authorization", "Bearer invalid.token.value")
+	rr := httptest.NewRecorder()
+
+	mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next must not run for invalid token on write path")
+	})).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "无效的令牌") {
+		t.Fatalf("body = %s, want 无效的令牌", rr.Body.String())
+	}
+}
+
 // TestSkipAuth_ReadOnlyFallback GET 且路径不在 /guides、/comments 前缀内 →
 // 走到最后的 return（false）；guides/comments 前缀放行。
 func TestSkipAuth_ReadOnlyFallback(t *testing.T) {

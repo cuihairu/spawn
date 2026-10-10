@@ -408,6 +408,12 @@ func TestRoutes_ParseErrors(t *testing.T) {
 		{"create comment bad json", http.MethodPost, "/api/v1/comments", `{bad`},
 		{"like comment bad id", http.MethodPost, "/api/v1/comments/abc/like", ""},
 		{"delete comment bad id", http.MethodDelete, "/api/v1/comments/abc", ""},
+		{"list favorites bad page", http.MethodGet, "/api/v1/guides/favorites?page=abc", ""},
+		{"favorite status bad id", http.MethodGet, "/api/v1/guides/abc/favorite", ""},
+		{"favorite guide bad id", http.MethodPost, "/api/v1/guides/abc/favorite", ""},
+		{"unfavorite guide bad id", http.MethodDelete, "/api/v1/guides/abc/favorite", ""},
+		{"favorite guide bad json", http.MethodPost, "/api/v1/guides/1/favorite", `{bad`},
+		{"unfavorite guide bad json", http.MethodDelete, "/api/v1/guides/1/favorite", `{bad`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
