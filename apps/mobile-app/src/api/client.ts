@@ -226,6 +226,9 @@ export interface GuideListResult {
 export interface GuidesQuery {
   gameId?: string;
   authorId?: number;
+  keyword?: string;
+  tag?: string;
+  sort?: string;
   page?: number;
   pageSize?: number;
 }
@@ -246,6 +249,9 @@ export async function fetchGuides(
   // author_id 过滤：我的攻略（个人中心）；带 token 时中间件可选鉴权注入
   // ctx，作者查自己可见草稿（content-service ListGuidesLogic 契约）
   if (query.authorId) params.set('author_id', String(query.authorId));
+  if (query.keyword) params.set('keyword', query.keyword);
+  if (query.tag) params.set('tag', query.tag);
+  if (query.sort) params.set('sort', query.sort);
   const payload = await requestEnvelopeFull<GuideListEnvelope>(
     `${CONTENT_SERVICE_URL}/api/v1/guides?${params.toString()}`,
     token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,

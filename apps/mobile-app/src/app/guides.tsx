@@ -6,6 +6,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -16,7 +17,15 @@ import { colors } from '../constants/colors';
 
 const PAGE_SIZE = 20;
 
+const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: '默认' },
+  { value: 'newest', label: '最新' },
+  { value: 'likes', label: '最多点赞' },
+  { value: 'views', label: '最多浏览' },
+];
+
 // 攻略列表（Stack /guides，可带 game_id 只看某游戏；游戏 Tab 入口不带 = 攻略广场）。
+// 支持关键词搜索、标签筛选与排序（对等 web 攻略区高级筛选）。
 export default function GuidesScreen() {
   const { game_id: gameId, title } = useLocalSearchParams<{ game_id?: string; title?: string }>();
   const [guides, setGuides] = useState<Guide[]>([]);
@@ -24,11 +33,16 @@ export default function GuidesScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const [keywordInput, setKeywordInput] = useState('');
+  const [keyword, setKeyword] = useState('');
+  const [sort, setSort] = useState('');
+  const [tag, setTag] = useState('');
+  const [allTags, setAllTags] = useState<string[]>([]);
 
   const load = useCallback(() => {
     setLoading(true);
     void (async () => {
-      const result = await fetchGuides({ gameId, page: 1, pageSize: PAGE_SIZE });
+      const result = await fetchGuides({ gameId, keyword, tag, sort, page: 1, pageSize: PAGE_SIZE });
       setGuides(result.guides);
       setTotal(result.total);
       setError(null);
@@ -37,11 +51,27 @@ export default function GuidesScreen() {
     }).finally(() => {
       setLoading(false);
     });
-  }, [gameId]);
+  }, [gameId, keyword, tag, sort]);
 
   useEffect(() => {
     queueMicrotask(load);
   }, [load, nonce]);
+
+  // 标签聚合：不带标签条件拉一批已发布攻略取去重标签（失败仅隐藏筛选行）
+  useEffect(() => {
+    void (async () => {
+      const sample = await fetchGuides({ page: 1, pageSize: 100 });
+      const seen = new Map<string, number>();
+      for (const guide of sample.guides) {
+        for (const item of guide.tags ?? []) {
+          seen.set(item, (seen.get(item) ?? 0) + 1);
+        }
+      }
+      setAllTags([...seen.keys()].sort((a, b) => a.localeCompare(b)));
+    })().catch(() => {
+      // 聚合失败静默，列表不受影响
+    });
+  }, []);
 
   const refresh = () => {
     setLoading(true);
@@ -53,7 +83,14 @@ export default function GuidesScreen() {
     setLoading(true);
     void (async () => {
       const nextPage = Math.floor(guides.length / PAGE_SIZE) + 1;
-      const result = await fetchGuides({ gameId, page: nextPage, pageSize: PAGE_SIZE });
+      const result = await fetchGuides({
+        gameId,
+        keyword,
+        tag,
+        sort,
+        page: nextPage,
+        pageSize: PAGE_SIZE,
+      });
       setGuides((prev) => [...prev, ...result.guides]);
       setTotal(result.total);
     })().catch((err: unknown) => {
@@ -61,6 +98,10 @@ export default function GuidesScreen() {
     }).finally(() => {
       setLoading(false);
     });
+  };
+
+  const submitSearch = () => {
+    setKeyword(keywordInput.trim());
   };
 
   return (
@@ -86,9 +127,52 @@ export default function GuidesScreen() {
         onEndReached={loadMore}
         onEndReachedThreshold={0.4}
         ListHeaderComponent={
-          <Text style={styles.resultMeta}>
-            {title ? `《${title}》相关攻略` : '全部攻略'} · 共 {total} 篇
-          </Text>
+          <View>
+            <View style={styles.searchRow}>
+              <TextInput
+                style={styles.searchInput}
+                value={keywordInput}
+                onChangeText={setKeywordInput}
+                onSubmitEditing={submitSearch}
+                placeholder="搜索攻略标题、摘要或正文"
+                placeholderTextColor={colors.textMuted}
+                returnKeyType="search"
+              />
+              <Pressable style={styles.searchBtn} onPress={submitSearch}>
+                <Text style={styles.searchBtnText}>搜索</Text>
+              </Pressable>
+            </View>
+            <View style={styles.chipRow}>
+              {SORT_OPTIONS.map((option) => (
+                <Pressable
+                  key={option.value}
+                  style={[styles.chip, sort === option.value && styles.chipActive]}
+                  onPress={() => setSort(option.value)}>
+                  <Text style={[styles.chipText, sort === option.value && styles.chipTextActive]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            {allTags.length > 0 ? (
+              <View style={styles.chipRow}>
+                {allTags.slice(0, 12).map((item) => (
+                  <Pressable
+                    key={item}
+                    style={[styles.chip, tag === item && styles.chipActive]}
+                    onPress={() => setTag(tag === item ? '' : item)}>
+                    <Text
+                      style={[styles.chipText, tag === item && styles.chipTextActive]}>
+                      #{item}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+            <Text style={styles.resultMeta}>
+              {title ? `《${title}》相关攻略` : '全部攻略'} · 共 {total} 篇
+            </Text>
+          </View>
         }
         ListEmptyComponent={
           loading ? (
@@ -183,6 +267,59 @@ const styles = StyleSheet.create({
     fontSize: 12,
     paddingTop: 4,
     paddingBottom: 2,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingBottom: 10,
+  },
+  searchInput: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 8,
+    color: colors.text,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+  },
+  searchBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  searchBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingBottom: 8,
+  },
+  chip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  chipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  chipText: {
+    color: colors.text,
+    fontSize: 12,
+  },
+  chipTextActive: {
+    color: '#fff',
+    fontWeight: '600',
   },
   card: {
     backgroundColor: colors.card,
