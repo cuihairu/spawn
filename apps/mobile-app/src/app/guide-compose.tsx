@@ -22,6 +22,7 @@ import {
   type Game,
 } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import MarkdownText from '../components/MarkdownText';
 import { colors } from '../constants/colors';
 
 // 写攻略（Stack /guide-compose）：选游戏（必填）+ 标题 + 正文（text/markdown）
@@ -44,6 +45,8 @@ export default function GuideComposeScreen() {
   const [submitting, setSubmitting] = useState(false);
   // 编辑模式：原攻略是否草稿（保存后需补发布，移动端草稿唯一发布路径）
   const [wasDraft, setWasDraft] = useState(false);
+  // Markdown 预览开关（仅 markdown 格式显示；切回纯文本自动退出预览）
+  const [previewing, setPreviewing] = useState(false);
 
   // 游戏目录一次性加载（选游戏为创建攻略必填项；编辑模式不展示——游戏不可改）
   useEffect(() => {
@@ -190,7 +193,10 @@ export default function GuideComposeScreen() {
             <Pressable
               key={item}
               style={[styles.chip, format === item && styles.chipActive]}
-              onPress={() => setFormat(item)}>
+              onPress={() => {
+                setFormat(item);
+                if (item === 'text') setPreviewing(false);
+              }}>
               <Text style={[styles.chipText, format === item && styles.chipTextActive]}>
                 {item === 'text' ? '纯文本' : 'Markdown'}
               </Text>
@@ -211,16 +217,40 @@ export default function GuideComposeScreen() {
         <Text style={styles.label}>
           正文{format === 'markdown' ? '（支持 Markdown：# 标题、**加粗**、`代码`、列表）' : ''}
         </Text>
-        <TextInput
-          style={styles.contentInput}
-          value={content}
-          onChangeText={setContent}
-          placeholder="写下你的攻略心得..."
-          placeholderTextColor={colors.textMuted}
-          multiline
-          maxLength={20000}
-          textAlignVertical="top"
-        />
+        {format === 'markdown' ? (
+          <View style={styles.chipWrap}>
+            <Pressable
+              style={[styles.chip, !previewing && styles.chipActive]}
+              onPress={() => setPreviewing(false)}>
+              <Text style={[styles.chipText, !previewing && styles.chipTextActive]}>编辑</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.chip, previewing && styles.chipActive]}
+              onPress={() => setPreviewing(true)}>
+              <Text style={[styles.chipText, previewing && styles.chipTextActive]}>预览</Text>
+            </Pressable>
+          </View>
+        ) : null}
+        {format === 'markdown' && previewing ? (
+          <View style={styles.previewCard}>
+            {content.trim() ? (
+              <MarkdownText content={content} />
+            ) : (
+              <Text style={styles.previewEmpty}>暂无内容，回编辑区写下正文</Text>
+            )}
+          </View>
+        ) : (
+          <TextInput
+            style={styles.contentInput}
+            value={content}
+            onChangeText={setContent}
+            placeholder="写下你的攻略心得..."
+            placeholderTextColor={colors.textMuted}
+            multiline
+            maxLength={20000}
+            textAlignVertical="top"
+          />
+        )}
 
         <Text style={styles.label}>摘要（可选）</Text>
         <TextInput
@@ -364,6 +394,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     minHeight: 60,
     marginTop: 6,
+  },
+  previewCard: {
+    backgroundColor: colors.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 120,
+    marginTop: 6,
+  },
+  previewEmpty: {
+    color: colors.textMuted,
+    fontSize: 13,
   },
   error: {
     color: colors.primary,
