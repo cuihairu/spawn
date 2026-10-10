@@ -143,7 +143,9 @@ export default function GuideDetailScreen() {
       <View style={styles.article}>
         <Text style={styles.title}>{guide.title}</Text>
         <View style={styles.metaRow}>
-          <Text style={styles.metaText}>{guide.author_name}</Text>
+          <Pressable onPress={() => router.push(`/user/${guide.author_id}`)} hitSlop={4}>
+            <Text style={[styles.metaText, styles.authorLink]}>{guide.author_name}</Text>
+          </Pressable>
           <Text style={styles.metaDot}>·</Text>
           <Text style={styles.metaText}>{guide.game_title}</Text>
           <Text style={styles.metaDot}>·</Text>
@@ -372,6 +374,9 @@ const styles = StyleSheet.create({
   favActive: {
     color: colors.primary,
     fontWeight: '600',
+  },
+  authorLink: {
+    color: colors.primary,
   },
   tagRow: {
     flexDirection: 'row',

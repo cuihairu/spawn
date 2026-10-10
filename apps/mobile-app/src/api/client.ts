@@ -172,6 +172,11 @@ export async function fetchCurrentUser(userId: number, token: string): Promise<U
   });
 }
 
+// 公开用户资料：GET /users/:id 免鉴权（邮箱字段取到也不展示）
+export async function fetchPublicUser(userId: number): Promise<UserInfo> {
+  return requestEnvelope<UserInfo>(`${USER_SERVICE_URL}/users/${userId}`);
+}
+
 // ========== 游戏目录（:8890） ==========
 
 export async function fetchGames(query: GamesQuery = {}): Promise<GameListResult> {
