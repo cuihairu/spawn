@@ -16,10 +16,12 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import {
   createComment,
+  deleteComment,
   fetchComments,
   fetchFavoriteStatus,
   fetchGuideById,
   favoriteGuide,
+  likeComment,
   unfavoriteGuide,
   type Comment,
   type FavoriteStatus,
@@ -47,6 +49,25 @@ export default function GuideDetailScreen() {
   const [nonce, setNonce] = useState(0);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  // 回复目标（设为某条评论后，发表即该评论的子回复）
+  const [replyTo, setReplyTo] = useState<Comment | null>(null);
+
+  // 平铺列表按 parent_id 组树（web CommentList 同款规则：父缺失则升根）
+  const buildTree = (
+    flat: Comment[],
+  ): (Comment & { replies: Comment[] })[] => {
+    const byId = new Map<number, Comment & { replies: Comment[] }>();
+    for (const item of flat) byId.set(item.id, { ...item, replies: [] });
+    const roots: (Comment & { replies: Comment[] })[] = [];
+    for (const item of byId.values()) {
+      if (item.parent_id && byId.has(item.parent_id)) {
+        byId.get(item.parent_id)!.replies.push(item);
+      } else {
+        roots.push(item);
+      }
+    }
+    return roots;
+  };
 
   const load = useCallback(() => {
     if (!Number.isFinite(guideId)) return;
@@ -125,10 +146,11 @@ export default function GuideDetailScreen() {
     }
     setSending(true);
     void (async () => {
-      const created = await createComment(guideId, content, token);
+      const created = await createComment(guideId, content, token, replyTo?.id);
       setComments((prev) => [created, ...prev]);
       setCommentTotal((n) => n + 1);
       setDraft('');
+      setReplyTo(null);
       setError(null);
     })().catch((err: unknown) => {
       setError(err instanceof Error ? err.message : '发表评论失败');
@@ -136,6 +158,73 @@ export default function GuideDetailScreen() {
       setSending(false);
     });
   };
+
+  // 点赞评论：乐观 +1，失败回滚（后端单调累加，无取消接口）
+  const onCommentLike = (comment: Comment) => {
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+    setComments((prev) =>
+      prev.map((item) => (item.id === comment.id ? { ...item, likes: item.likes + 1 } : item)),
+    );
+    void likeComment(comment.id, token).catch((err: unknown) => {
+      setComments((prev) =>
+        prev.map((item) => (item.id === comment.id ? { ...item, likes: item.likes - 1 } : item)),
+      );
+      setError(err instanceof Error ? err.message : '点赞失败');
+    });
+  };
+
+  // 删除评论（仅作者本人）：移除后其子回复按组树规则升为顶级
+  const onDeleteComment = (comment: Comment) => {
+    if (!token || sending) return;
+    setSending(true);
+    void (async () => {
+      await deleteComment(comment.id, token);
+      setComments((prev) => prev.filter((item) => item.id !== comment.id));
+      setError(null);
+    })().catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : '删除失败');
+    }).finally(() => {
+      setSending(false);
+    });
+  };
+
+  // 评论卡（递归渲染嵌套回复；depth 控制缩进）
+  const renderCommentCard = (comment: Comment & { replies?: Comment[] }, depth: number) => (
+    <View key={comment.id} style={[styles.commentCard, depth > 0 && styles.commentNested]}>
+      <View style={styles.commentTop}>
+        <Text style={styles.commentAuthor}>{comment.user_name}</Text>
+        <Text style={styles.commentTime}>{comment.created_at.slice(0, 10)}</Text>
+      </View>
+      <Text style={styles.commentContent}>{comment.content}</Text>
+      <View style={styles.commentActions}>
+        <Pressable onPress={() => onCommentLike(comment)} hitSlop={6}>
+          <Text style={styles.commentLikeBtn}>👍 {comment.likes > 0 ? comment.likes : '赞'}</Text>
+        </Pressable>
+        {token ? (
+          <Pressable
+            onPress={() => {
+              setReplyTo(comment);
+              setDraft('');
+            }}
+            disabled={sending}
+            hitSlop={6}>
+            <Text style={styles.commentReplyBtn}>回复</Text>
+          </Pressable>
+        ) : null}
+        {user && user.id === comment.user_id ? (
+          <Pressable onPress={() => onDeleteComment(comment)} disabled={sending} hitSlop={6}>
+            <Text style={styles.commentDeleteBtn}>删除</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      {comment.replies?.length
+        ? comment.replies.map((reply) => renderCommentCard(reply as Comment & { replies?: Comment[] }, depth + 1))
+        : null}
+    </View>
+  );
 
   const renderHeader = () => {
     if (!guide) return null;
@@ -222,7 +311,7 @@ export default function GuideDetailScreen() {
         </View>
       ) : (
         <FlatList
-          data={comments}
+          data={buildTree(comments)}
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.listContent}
           keyboardDismissMode="on-drag"
@@ -252,37 +341,38 @@ export default function GuideDetailScreen() {
               </View>
             ) : null
           }
-          renderItem={({ item }) => (
-            <View style={styles.commentCard}>
-              <View style={styles.commentTop}>
-                <Text style={styles.commentAuthor}>{item.user_name}</Text>
-                <Text style={styles.commentTime}>{item.created_at.slice(0, 10)}</Text>
-              </View>
-              <Text style={styles.commentContent}>{item.content}</Text>
-              {item.likes > 0 ? (
-                <Text style={styles.commentLikes}>👍 {item.likes}</Text>
-              ) : null}
-            </View>
-          )}
+          renderItem={({ item }) => renderCommentCard(item, 0)}
         />
       )}
 
       <View style={styles.composer}>
-        <TextInput
-          style={styles.composerInput}
-          value={draft}
-          onChangeText={setDraft}
-          placeholder={token ? '写下你的评论...' : '登录后参与评论'}
-          placeholderTextColor={colors.textMuted}
-          multiline
-          maxLength={500}
-        />
-        <Pressable
-          style={[styles.sendBtn, (!draft.trim() || sending) && styles.sendBtnDisabled]}
-          onPress={sendComment}
-          disabled={!draft.trim() || sending}>
-          <Text style={styles.sendText}>{sending ? '...' : '发送'}</Text>
-        </Pressable>
+        {replyTo ? (
+          <View style={styles.replyBar}>
+            <Text style={styles.replyBarText} numberOfLines={1}>
+              回复 @{replyTo.user_name}
+            </Text>
+            <Pressable onPress={() => setReplyTo(null)} hitSlop={8}>
+              <Ionicons name="close" size={16} color={colors.textMuted} />
+            </Pressable>
+          </View>
+        ) : null}
+        <View style={styles.composerRow}>
+          <TextInput
+            style={styles.composerInput}
+            value={draft}
+            onChangeText={setDraft}
+            placeholder={token ? (replyTo ? `回复 @${replyTo.user_name}...` : '写下你的评论...') : '登录后参与评论'}
+            placeholderTextColor={colors.textMuted}
+            multiline
+            maxLength={500}
+          />
+          <Pressable
+            style={[styles.sendBtn, (!draft.trim() || sending) && styles.sendBtnDisabled]}
+            onPress={sendComment}
+            disabled={!draft.trim() || sending}>
+            <Text style={styles.sendText}>{sending ? '...' : '发送'}</Text>
+          </Pressable>
+        </View>
       </View>
       {error && guide ? (
         <Text style={styles.inlineError} accessibilityRole="alert">
@@ -482,18 +572,55 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
   },
+  commentActions: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  commentLikeBtn: {
+    color: colors.textMuted,
+    fontSize: 12,
+  },
+  commentReplyBtn: {
+    color: colors.primary,
+    fontSize: 12,
+  },
+  commentDeleteBtn: {
+    color: '#ff6b6b',
+    fontSize: 12,
+  },
+  commentNested: {
+    marginLeft: 20,
+    borderTopWidth: 0,
+    paddingTop: 0,
+    marginTop: 8,
+  },
   footer: {
     paddingVertical: 16,
   },
   composer: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  replyBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    gap: 8,
+  },
+  replyBarText: {
+    flex: 1,
+    color: colors.primary,
+    fontSize: 12,
+  },
+  composerRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.card,
   },
   composerInput: {
     flex: 1,
