@@ -560,6 +560,62 @@ export async function markAllNotificationsRead(token: string): Promise<void> {
   );
 }
 
+// ========== 帖子评论（community 域，区别于攻略评论的 content 域 createComment） ==========
+
+export interface PostComment {
+  id: number;
+  post_id: number;
+  author_id: number;
+  author_name?: string;
+  content: string;
+  parent_id?: number;
+  reply_to_author_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// 帖子评论列表（平铺，回复靠 reply_to_author_name 前缀区分；匿名可读）
+export async function fetchPostComments(
+  postId: number,
+  limit = 50,
+  offset = 0,
+): Promise<{ comments: PostComment[]; total: number }> {
+  const payload = await request<{ comments: PostComment[]; total: number }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/posts/${postId}/comments?limit=${limit}&offset=${offset}`,
+  );
+  return { comments: payload.comments ?? [], total: payload.total ?? 0 };
+}
+
+// 发表评论/回复（parent_id 为被回复评论 id；需 Bearer）
+export async function createPostComment(
+  postId: number,
+  content: string,
+  parentId: number | undefined,
+  token: string,
+): Promise<PostComment> {
+  const payload = await request<{ comment: PostComment }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/posts/${postId}/comments`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ content, parent_id: parentId }),
+    },
+  );
+  return payload.comment;
+}
+
+// 删除评论（仅作者本人；计数契约单调不回退，调用方不回退展示计数）
+export async function deletePostComment(
+  postId: number,
+  commentId: number,
+  token: string,
+): Promise<void> {
+  await request<{ code: number; message: string }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/posts/${postId}/comments/${commentId}`,
+    { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+  );
+}
+
 // ========== 统一上传入口（api-gateway POST /upload）==========
 // 帖子图片先经网关落 uploads 卷，返回 "/uploads/<hash>.<ext>" 相对 URL；
 // 业务侧只存 URL，渲染时用 resolveImageUrl 拼网关来源。

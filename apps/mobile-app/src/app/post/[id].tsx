@@ -2,11 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   Share,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -14,22 +17,26 @@ import * as Linking from 'expo-linking';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import {
+  createPostComment,
+  deletePostComment,
   fetchFollowingUserIds,
   fetchPostById,
+  fetchPostComments,
   followUser,
   likePost,
   resolveImageUrl,
   sharePost,
   unfollowUser,
   type Post,
+  type PostComment,
 } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { emitPostsChanged } from '../../lib/postsBus';
 import { colors } from '../../constants/colors';
 
 // 帖子详情（Stack /post/[id]）：正文 + 计数展示 + 点赞/分享 + 关注作者
-//（成功后广播社区流刷新；关注状态取自 GET /users/following + 会话内乐观切换）。
-// 后端无帖子评论接口，comment_count 仅作展示。
+//（成功后广播社区流刷新；关注状态取自 GET /users/following + 会话内乐观切换）
+// + 帖子评论（community 域：平铺列表，回复带 @前缀，作者可删，计数单调不回退）。
 export default function PostDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { token, user } = useAuth();
@@ -40,6 +47,11 @@ export default function PostDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [comments, setComments] = useState<PostComment[]>([]);
+  const [commentTotal, setCommentTotal] = useState(0);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [replyTo, setReplyTo] = useState<PostComment | null>(null);
+  const [commentBusy, setCommentBusy] = useState(false);
 
   // 已关注用户集合（仅登录时拉取；失败按空集降级——按钮显示「关注」）
   useEffect(() => {
@@ -59,8 +71,13 @@ export default function PostDetailScreen() {
     if (!Number.isFinite(postId)) return;
     setLoading(true);
     void (async () => {
-      const detail = await fetchPostById(postId);
+      const [detail, commentPage] = await Promise.all([
+        fetchPostById(postId),
+        fetchPostComments(postId, 50, 0),
+      ]);
       setPost(detail);
+      setComments(commentPage.comments);
+      setCommentTotal(commentPage.total);
       setError(null);
     })().catch((err: unknown) => {
       setError(err instanceof Error ? err.message : '加载帖子失败');
@@ -154,6 +171,45 @@ export default function PostDetailScreen() {
       });
   };
 
+  // 发表评论/回复：乐观前置 + 计数 +1（与 web 同款单调契约，删除不回退）
+  const submitComment = () => {
+    const content = commentDraft.trim();
+    if (!content || commentBusy) return;
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+    setCommentBusy(true);
+    void (async () => {
+      const created = await createPostComment(postId, content, replyTo?.id, token);
+      setComments((prev) => [created, ...prev]);
+      setCommentTotal((n) => n + 1);
+      setPost((prev) => (prev ? { ...prev, comment_count: prev.comment_count + 1 } : prev));
+      setCommentDraft('');
+      setReplyTo(null);
+      setActionError(null);
+    })().catch((err: unknown) => {
+      setActionError(err instanceof Error ? err.message : '发表评论失败');
+    }).finally(() => {
+      setCommentBusy(false);
+    });
+  };
+
+  // 删除评论（仅作者本人；计数保持不动——单调契约）
+  const deleteComment = (comment: PostComment) => {
+    if (!token || commentBusy) return;
+    setCommentBusy(true);
+    void (async () => {
+      await deletePostComment(postId, comment.id, token);
+      setComments((prev) => prev.filter((item) => item.id !== comment.id));
+      setActionError(null);
+    })().catch((err: unknown) => {
+      setActionError(err instanceof Error ? err.message : '删除失败');
+    }).finally(() => {
+      setCommentBusy(false);
+    });
+  };
+
   if (loading && !post) {
     return (
       <View style={styles.container}>
@@ -192,7 +248,9 @@ export default function PostDetailScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
         <Pressable style={styles.back} onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="chevron-back" size={20} color={colors.text} />
@@ -277,9 +335,91 @@ export default function PostDetailScreen() {
             <Text style={styles.actionText}>分享 {post.share_count}</Text>
           </Pressable>
         </View>
-        <Text style={styles.hint}>评论功能随帖子评论接口在后续里程碑提供</Text>
+
+        <View style={styles.commentSection}>
+          <Text style={styles.commentTitle}>评论（{commentTotal}）</Text>
+          {comments.length === 0 ? (
+            <Text style={styles.commentEmpty}>还没有评论，来抢沙发</Text>
+          ) : (
+            comments.map((comment) => (
+              <View key={comment.id} style={styles.commentCard}>
+                <View style={styles.commentTop}>
+                  <Text style={styles.commentAuthor}>
+                    {comment.author_name ?? `用户${comment.author_id}`}
+                  </Text>
+                  <Text style={styles.commentTime}>{comment.created_at.slice(0, 10)}</Text>
+                </View>
+                <Text style={styles.commentContent}>
+                  {comment.reply_to_author_name ? `回复 @${comment.reply_to_author_name}：` : ''}
+                  {comment.content}
+                </Text>
+                {token ? (
+                  <View style={styles.commentActions}>
+                    <Pressable
+                      onPress={() => {
+                        setReplyTo(comment);
+                        setCommentDraft('');
+                      }}
+                      disabled={commentBusy}
+                      hitSlop={6}>
+                      <Text style={styles.commentReplyBtn}>回复</Text>
+                    </Pressable>
+                    {user?.id === comment.author_id ? (
+                      <Pressable
+                        onPress={() => deleteComment(comment)}
+                        disabled={commentBusy}
+                        hitSlop={6}>
+                        <Text style={styles.commentDeleteBtn}>删除</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
+            ))
+          )}
+        </View>
       </ScrollView>
-    </View>
+
+      {token ? (
+        <View style={styles.composer}>
+          {replyTo ? (
+            <View style={styles.replyBar}>
+              <Text style={styles.replyBarText} numberOfLines={1}>
+                回复 @{replyTo.author_name ?? `用户${replyTo.author_id}`}
+              </Text>
+              <Pressable onPress={() => setReplyTo(null)} hitSlop={8}>
+                <Ionicons name="close" size={16} color={colors.textMuted} />
+              </Pressable>
+            </View>
+          ) : null}
+          <View style={styles.composerRow}>
+            <TextInput
+              style={styles.composerInput}
+              value={commentDraft}
+              onChangeText={setCommentDraft}
+              placeholder={
+                replyTo
+                  ? `回复 @${replyTo.author_name ?? `用户${replyTo.author_id}`}...`
+                  : '写下你的评论...'
+              }
+              placeholderTextColor={colors.textMuted}
+              multiline
+              maxLength={500}
+            />
+            <Pressable
+              style={[styles.sendBtn, (!commentDraft.trim() || commentBusy) && styles.sendBtnDisabled]}
+              onPress={submitComment}
+              disabled={!commentDraft.trim() || commentBusy}>
+              <Text style={styles.sendText}>{commentBusy ? '...' : '发表'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.loginHintBar}>
+          <Text style={styles.loginHintText}>登录后可评论</Text>
+        </View>
+      )}
+    </KeyboardAvoidingView>
   );
 }
 
@@ -499,9 +639,122 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  hint: {
+  commentSection: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    gap: 10,
+  },
+  commentTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  commentEmpty: {
+    color: colors.textMuted,
+    fontSize: 13,
+    paddingVertical: 12,
+    textAlign: 'center',
+  },
+  commentCard: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 10,
+    gap: 4,
+  },
+  commentTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  commentAuthor: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  commentTime: {
     color: colors.textMuted,
     fontSize: 11,
-    textAlign: 'center',
+  },
+  commentContent: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  commentActions: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  commentReplyBtn: {
+    color: colors.primary,
+    fontSize: 12,
+  },
+  commentDeleteBtn: {
+    color: '#ff6b6b',
+    fontSize: 12,
+  },
+  composer: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  replyBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    gap: 8,
+  },
+  replyBarText: {
+    flex: 1,
+    color: colors.primary,
+    fontSize: 12,
+  },
+  composerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  composerInput: {
+    flex: 1,
+    color: colors.text,
+    backgroundColor: colors.background,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    maxHeight: 96,
+  },
+  sendBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  sendBtnDisabled: {
+    opacity: 0.5,
+  },
+  sendText: {
+    color: '#1a1105',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  loginHintBar: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  loginHintText: {
+    color: colors.textMuted,
+    fontSize: 13,
   },
 });
