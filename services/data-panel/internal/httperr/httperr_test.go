@@ -59,6 +59,9 @@ func TestError_NilReceiver(t *testing.T) {
 	if e.Error() != "" {
 		t.Fatalf("nil receiver Error() = %q, want empty", e.Error())
 	}
+	if got := BadRequest("boom").Error(); got != "boom" {
+		t.Fatalf("Error() = %q, want message", got)
+	}
 }
 
 func TestConstructors(t *testing.T) {
@@ -71,6 +74,7 @@ func TestConstructors(t *testing.T) {
 		code    int64
 		message string
 	}{
+		{"bad request", BadRequest("bad input"), http.StatusBadRequest, http.StatusBadRequest, "bad input"},
 		{"forbidden", Forbidden("denied"), http.StatusForbidden, http.StatusForbidden, "denied"},
 		{"not found", NotFound("gone"), http.StatusNotFound, http.StatusNotFound, "gone"},
 		{"internal fallback", Internal("   "), http.StatusInternalServerError, http.StatusInternalServerError, "internal server error"},
