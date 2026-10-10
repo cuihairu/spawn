@@ -10,17 +10,28 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { createGuide, fetchGames, publishGuide, type Game } from '../api/client';
+import {
+  createGuide,
+  fetchGames,
+  fetchGuideById,
+  publishGuide,
+  updateGuide,
+  type Game,
+} from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { colors } from '../constants/colors';
 
 // 写攻略（Stack /guide-compose）：选游戏（必填）+ 标题 + 正文（text/markdown）
 // + 摘要/标签（可选），提交即创建草稿并发布，成功后跳攻略详情。
+// 编辑模式（/guide-compose?edit=<id>，作者本人）：预填原内容，游戏不可改
+// （后端 UpdateGuideRequest 无 game_id），保存走 PUT 部分更新。
 export default function GuideComposeScreen() {
   const { token } = useAuth();
+  const { edit_id: editIdParam } = useLocalSearchParams<{ edit_id?: string }>();
+  const editId = editIdParam && Number.isFinite(Number(editIdParam)) ? Number(editIdParam) : null;
   const [games, setGames] = useState<Game[]>([]);
   const [gamesLoading, setGamesLoading] = useState(true);
   const [gameId, setGameId] = useState<string | null>(null);
@@ -32,8 +43,13 @@ export default function GuideComposeScreen() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // 游戏目录一次性加载（选游戏为创建攻略必填项）
+  // 游戏目录一次性加载（选游戏为创建攻略必填项；编辑模式不展示——游戏不可改）
   useEffect(() => {
+    if (editId !== null) {
+      // 同步置态须绕开 effect 直达栈（M1 起的纪律）
+      queueMicrotask(() => setGamesLoading(false));
+      return;
+    }
     void (async () => {
       const result = await fetchGames({ limit: 50 });
       setGames(result.games);
@@ -44,7 +60,24 @@ export default function GuideComposeScreen() {
     }).finally(() => {
       setGamesLoading(false);
     });
-  }, []);
+  }, [editId]);
+
+  // 编辑模式：拉原攻略预填（作者鉴权由后端 403 兜底，失败展示错误）
+  useEffect(() => {
+    if (editId === null || !token) return;
+    void (async () => {
+      const guide = await fetchGuideById(editId, token);
+      setGameId(guide.game_id);
+      setTitle(guide.title);
+      setContent(guide.content);
+      setFormat(guide.format === 'markdown' ? 'markdown' : 'text');
+      setSummary(guide.summary ?? '');
+      setTagsInput((guide.tags ?? []).join(', '));
+      setError(null);
+    })().catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : '加载攻略失败');
+    });
+  }, [editId, token]);
 
   const submit = () => {
     const trimmedTitle = title.trim();
@@ -54,7 +87,7 @@ export default function GuideComposeScreen() {
       router.push('/login');
       return;
     }
-    if (!gameId) {
+    if (editId === null && !gameId) {
       setError('请选择一个游戏');
       return;
     }
@@ -69,9 +102,24 @@ export default function GuideComposeScreen() {
         .map((item) => item.trim())
         .filter(Boolean)
         .slice(0, 5);
+      if (editId !== null) {
+        await updateGuide(
+          editId,
+          {
+            title: trimmedTitle,
+            content: trimmedContent,
+            format,
+            summary: summary.trim() || undefined,
+            tags: tags.length ? tags : undefined,
+          },
+          token,
+        );
+        router.replace(`/guide/${editId}`);
+        return;
+      }
       const created = await createGuide(
         {
-          gameId,
+          gameId: gameId as string,
           title: trimmedTitle,
           content: trimmedContent,
           format,
@@ -80,7 +128,7 @@ export default function GuideComposeScreen() {
         },
         token,
       );
-      // 创建即发布（草稿态在移动端没有后续编辑入口）
+      // 创建即发布（详情页作者可再编辑）
       await publishGuide(created.id, token);
       router.replace(`/guide/${created.id}`);
     })().catch((err: unknown) => {
@@ -97,33 +145,37 @@ export default function GuideComposeScreen() {
         <Pressable style={styles.back} onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="close" size={20} color={colors.text} />
         </Pressable>
-        <Text style={styles.headerTitle}>写攻略</Text>
+        <Text style={styles.headerTitle}>{editId !== null ? '编辑攻略' : '写攻略'}</Text>
         <Pressable
           style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
           onPress={submit}
           disabled={submitting}>
-          <Text style={styles.submitText}>{submitting ? '...' : '发布'}</Text>
+          <Text style={styles.submitText}>{submitting ? '...' : editId !== null ? '保存' : '发布'}</Text>
         </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.label}>选择游戏</Text>
-        {gamesLoading ? (
-          <ActivityIndicator color={colors.primary} style={styles.spinner} />
-        ) : (
-          <View style={styles.chipWrap}>
-            {games.map((game) => (
-              <Pressable
-                key={game.id}
-                style={[styles.chip, gameId === game.id && styles.chipActive]}
-                onPress={() => setGameId(game.id)}>
-                <Text style={[styles.chipText, gameId === game.id && styles.chipTextActive]}>
-                  {game.title}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
+        {editId === null ? (
+          <>
+            <Text style={styles.label}>选择游戏</Text>
+            {gamesLoading ? (
+              <ActivityIndicator color={colors.primary} style={styles.spinner} />
+            ) : (
+              <View style={styles.chipWrap}>
+                {games.map((game) => (
+                  <Pressable
+                    key={game.id}
+                    style={[styles.chip, gameId === game.id && styles.chipActive]}
+                    onPress={() => setGameId(game.id)}>
+                    <Text style={[styles.chipText, gameId === game.id && styles.chipTextActive]}>
+                      {game.title}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </>
+        ) : null}
 
         <Text style={styles.label}>格式</Text>
         <View style={styles.chipWrap}>

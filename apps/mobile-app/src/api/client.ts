@@ -364,6 +364,36 @@ export async function publishGuide(id: number, token: string): Promise<void> {
   );
 }
 
+export interface UpdateGuidePayload {
+  title?: string;
+  content?: string;
+  format?: string;
+  summary?: string;
+  tags?: string[];
+}
+
+// 更新攻略（作者本人；部分更新，后端对空字段跳过不改——与 web 编辑器同契约）
+export async function updateGuide(
+  id: number,
+  payload: UpdateGuidePayload,
+  token: string,
+): Promise<Guide> {
+  return requestEnvelope<Guide>(`${CONTENT_SERVICE_URL}/api/v1/guides/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      ...(payload.title ? { title: payload.title } : {}),
+      ...(payload.content ? { content: payload.content } : {}),
+      ...(payload.format ? { format: payload.format } : {}),
+      ...(payload.summary ? { summary: payload.summary } : {}),
+      ...(payload.tags?.length ? { tags: payload.tags } : {}),
+    }),
+  });
+}
+
 export interface Comment {
   id: number;
   target_type: string;

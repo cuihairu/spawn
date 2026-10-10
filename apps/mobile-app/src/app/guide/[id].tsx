@@ -35,7 +35,7 @@ const PAGE_SIZE = 20;
 // 评论列表作 FlatList 主体，正文作头部组件，保证分页/刷新手势成立。
 export default function GuideDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const guideId = Number(id);
   const [guide, setGuide] = useState<Guide | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -159,6 +159,14 @@ export default function GuideDetailScreen() {
               {fav.favorited ? '⭐ 已收藏' : '☆ 收藏'} {fav.count}
             </Text>
           </Pressable>
+          {user && user.id === guide.author_id ? (
+            <Pressable
+              onPress={() => router.push(`/guide-compose?edit=${guide.id}`)}
+              hitSlop={6}
+              accessibilityLabel="编辑攻略">
+              <Text style={[styles.statText, styles.favText]}>✏️ 编辑</Text>
+            </Pressable>
+          ) : null}
         </View>
         {guide.tags?.length ? (
           <View style={styles.tagRow}>
