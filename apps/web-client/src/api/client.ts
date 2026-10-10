@@ -505,6 +505,9 @@ export async function fetchMyFavorites(token: string, limit = 50): Promise<Guide
       },
     },
   )
+  if (response.code !== 200) {
+    throw new Error(response.message || '收藏列表加载失败')
+  }
   return (response.data ?? []).map(mapContentGuide)
 }
 
