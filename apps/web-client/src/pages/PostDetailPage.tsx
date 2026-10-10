@@ -7,6 +7,7 @@ import {
   fetchPostById,
   fetchPostComments,
   likePost,
+  reportPost,
   resolveImageUrl,
   sharePost,
   updatePost,
@@ -35,6 +36,8 @@ const PostDetailPage = ({ token, userId }: Props) => {
   const [commentDraft, setCommentDraft] = useState('')
   const [replyTo, setReplyTo] = useState<PostComment | null>(null)
   const [commentBusy, setCommentBusy] = useState(false)
+  const [reporting, setReporting] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const load = useCallback(async (postId: number) => {
     setLoading(true)
@@ -118,6 +121,28 @@ const PostDetailPage = ({ token, userId }: Props) => {
   }
 
   const isAuthor = Boolean(post && userId && post.authorId === userId)
+
+  // 举报帖子（内容审核入口，非作者可见）：reason 可选，取消输入则不提交；
+  // 同人同帖重复举报后端幂等去重。
+  const handleReport = async () => {
+    if (!token || !post) {
+      setError('请先登录')
+      return
+    }
+    const reason = window.prompt('举报理由（可留空）')
+    if (reason === null) return
+    setReporting(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await reportPost(post.id, token, reason.trim() || undefined)
+      setNotice('举报已提交，感谢反馈')
+    } catch (err) {
+      setError((err as Error).message || '举报失败')
+    } finally {
+      setReporting(false)
+    }
+  }
 
   const handleStartEdit = () => {
     if (!post) return
@@ -304,12 +329,22 @@ const PostDetailPage = ({ token, userId }: Props) => {
           <button type="button" className="secondary-btn" onClick={handleShare}>
             🔁 分享 ({post.shareCount})
           </button>
+          {!isAuthor ? (
+            <button type="button" className="secondary-btn" onClick={handleReport} disabled={reporting}>
+              🚩 举报
+            </button>
+          ) : null}
         </div>
       </div>
 
       {error && (
         <div className="error-banner" role="alert">
           {error}
+        </div>
+      )}
+      {notice && (
+        <div className="notice-banner" role="status">
+          {notice}
         </div>
       )}
 

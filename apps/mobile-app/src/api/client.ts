@@ -725,6 +725,15 @@ export async function sharePost(id: number, token: string): Promise<void> {
   });
 }
 
+// 举报帖子（内容审核入口）：reason 可选；同人同帖重复举报后端幂等去重。
+export async function reportPost(id: number, token: string, reason?: string): Promise<void> {
+  await request(`${COMMUNITY_SERVICE_URL}/api/v1/posts/${id}/report`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ reason: reason ?? '' }),
+  });
+}
+
 // ========== 关注关系 + 关注流（M3，均需 Bearer） ==========
 
 // 关注流：关注话题 ∪ 关注作者的帖子，created_at 倒序，limit/offset 分页；

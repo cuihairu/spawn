@@ -1108,6 +1108,16 @@ export async function sharePost(id: number, token: string): Promise<void> {
   })
 }
 
+// 举报帖子（内容审核入口）：reason 可选；同人同帖重复举报后端幂等去重。
+export async function reportPost(id: number, token: string, reason?: string): Promise<void> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  await request<CommonResp>(baseUrl, `/api/v1/posts/${id}/report`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ reason: reason ?? '' }),
+  })
+}
+
 // ========== 战绩面板相关 API（data-panel，经网关反代） ==========
 
 // 单款游戏战绩行（data-panel GET /api/v1/stats/users/:id/games/:game_id）

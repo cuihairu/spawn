@@ -24,6 +24,7 @@ import {
   fetchPostComments,
   followUser,
   likePost,
+  reportPost,
   resolveImageUrl,
   sharePost,
   unfollowUser,
@@ -47,6 +48,11 @@ export default function PostDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // 举报（内容审核入口）：行内理由输入条，提交后收起
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reporting, setReporting] = useState(false);
   const [comments, setComments] = useState<PostComment[]>([]);
   const [commentTotal, setCommentTotal] = useState(0);
   const [commentDraft, setCommentDraft] = useState('');
@@ -195,6 +201,23 @@ export default function PostDetailScreen() {
     });
   };
 
+  // 举报帖子（仅非作者；reason 可选，后端同人同帖幂等去重）
+  const submitReport = () => {
+    if (!token || reporting) return;
+    setReporting(true);
+    setActionError(null);
+    void (async () => {
+      await reportPost(postId, token, reportReason.trim() || undefined);
+      setReportOpen(false);
+      setReportReason('');
+      setNotice('举报已提交，感谢反馈');
+    })().catch((err: unknown) => {
+      setActionError(err instanceof Error ? err.message : '举报失败');
+    }).finally(() => {
+      setReporting(false);
+    });
+  };
+
   // 删除评论（仅作者本人；计数保持不动——单调契约）
   const deleteComment = (comment: PostComment) => {
     if (!token || commentBusy) return;
@@ -324,6 +347,7 @@ export default function PostDetailScreen() {
             {actionError}
           </Text>
         ) : null}
+        {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
         <View style={styles.actionRow}>
           <Pressable style={styles.actionBtn} onPress={onLike}>
@@ -334,7 +358,46 @@ export default function PostDetailScreen() {
             <Ionicons name="arrow-redo-outline" size={20} color={colors.primary} />
             <Text style={styles.actionText}>分享 {post.share_count}</Text>
           </Pressable>
+          {user?.id !== post.author_id ? (
+            <Pressable
+              style={styles.actionBtn}
+              onPress={() => {
+                setReportOpen((open) => !open);
+                setReportReason('');
+                setNotice(null);
+              }}
+              hitSlop={6}>
+              <Ionicons name="flag-outline" size={20} color={colors.textMuted} />
+              <Text style={styles.actionText}>举报</Text>
+            </Pressable>
+          ) : null}
         </View>
+
+        {reportOpen ? (
+          <View style={styles.reportBar}>
+            <TextInput
+              style={styles.reportInput}
+              value={reportReason}
+              onChangeText={setReportReason}
+              placeholder="举报理由（可选）"
+              placeholderTextColor={colors.textMuted}
+              maxLength={200}
+            />
+            <Pressable
+              style={[styles.reportSubmit, reporting && styles.reportSubmitDisabled]}
+              onPress={submitReport}
+              disabled={reporting}
+              hitSlop={6}>
+              <Text style={styles.reportSubmitText}>{reporting ? '...' : '提交'}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setReportOpen(false)}
+              disabled={reporting}
+              hitSlop={6}>
+              <Text style={styles.reportCancel}>取消</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <View style={styles.commentSection}>
           <Text style={styles.commentTitle}>评论（{commentTotal}）</Text>
@@ -617,6 +680,46 @@ const styles = StyleSheet.create({
     color: '#ff6b6b',
     fontSize: 12,
     textAlign: 'center',
+  },
+  notice: {
+    color: colors.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  reportBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.card,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  reportInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 13,
+    paddingVertical: 4,
+  },
+  reportSubmit: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  reportSubmitDisabled: {
+    opacity: 0.5,
+  },
+  reportSubmitText: {
+    color: '#1a1105',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  reportCancel: {
+    color: colors.textMuted,
+    fontSize: 13,
   },
   actionRow: {
     flexDirection: 'row',

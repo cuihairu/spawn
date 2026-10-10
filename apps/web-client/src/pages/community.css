@@ -235,6 +235,15 @@
   border: 1px solid rgba(255, 89, 107, 0.5);
 }
 
+.notice-banner {
+  padding: 1rem;
+  margin: 1rem 0;
+  background-color: rgba(74, 222, 128, 0.12);
+  color: #a7e8b8;
+  border-radius: 8px;
+  border: 1px solid rgba(74, 222, 128, 0.4);
+}
+
 .post-tags {
   display: flex;
   flex-wrap: wrap;
