@@ -14,6 +14,10 @@ func newClosedFavoriteModel(t *testing.T) *FavoriteModel {
 	return favs
 }
 
+// TestCreateFavoritesTable_ClosedDBErrors 关闭库 → SQLite 建表失败 →
+// MySQL 回落（ENGINE=InnoDB）同样失败 → 双方言连败返回错误。
+// 注：MySQL 回落的「成功」分支在 SQLite 测试环境不可达——SQLite 方言建表
+// 恒成功，回落仅在连败时触达，SQL 方言仅静态核对（community 侧同款口径）。
 func TestCreateFavoritesTable_ClosedDBErrors(t *testing.T) {
 	favs := newClosedFavoriteModel(t)
 	if err := favs.CreateFavoritesTable(); err == nil {
@@ -21,6 +25,9 @@ func TestCreateFavoritesTable_ClosedDBErrors(t *testing.T) {
 	}
 }
 
+// TestFavoriteModel_Add_ClosedDBErrors 关闭库 → INSERT OR IGNORE 失败 →
+// INSERT IGNORE 回落同样失败 → 双方言连败返回错误。MySQL 回落「成功」
+// 分支在 SQLite 测试环境不可达（同 CreateFavoritesTable 注）。
 func TestFavoriteModel_Add_ClosedDBErrors(t *testing.T) {
 	favs := newClosedFavoriteModel(t)
 	if err := favs.Add(1, 10); err == nil {
