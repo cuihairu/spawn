@@ -56,3 +56,11 @@ npm run dev
 
 攻略搜索、Markdown 编辑器、图片上传、用户个人主页、攻略收藏、通知系统。
 后两项依赖后端能力，前端单独做不了。
+
+> 更新（2026-10-10）：以上六项均已落地——攻略搜索/高级筛选（`GuidesPage` +
+> `fetchGuides` 的 keyword/tag/sort）、Markdown 编辑器（`GuideEditorPage` +
+> `src/lib/markdown.ts`，创建/编辑可选 text|markdown）、图片上传（`CommunityPage`
+> 经网关 `POST /upload`）、用户个人主页（`UserProfilePage`）、攻略收藏
+> （`favoriteGuide`/`fetchMyFavorites` 等四个 API + 详情页收藏按钮）、通知系统
+> （`NotificationsPage` + 导航铃铛 + 未读徽标）。当前功能面与清单见
+> [GUIDE.md](./GUIDE.md)（六项均已勾选）。
