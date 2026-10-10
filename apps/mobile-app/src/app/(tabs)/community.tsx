@@ -18,12 +18,14 @@ import {
   fetchFollowingTopics,
   fetchPosts,
   fetchTopics,
+  fetchUnreadNotificationCount,
   likePost,
   sharePost,
   type Post,
   type Topic,
 } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import { onNotificationsChanged } from '../../lib/notificationBus';
 import { onPostsChanged } from '../../lib/postsBus';
 import { colors } from '../../constants/colors';
 
@@ -47,6 +49,8 @@ export default function CommunityScreen() {
   const [error, setError] = useState<string | null>(null);
   // 筛选切换/发帖返回/关注关系变化后自增，驱动流重载
   const [nonce, setNonce] = useState(0);
+  // 铃铛未读数：登录后拉取，30s 轮询兜底 + 通知页已读广播即时刷新
+  const [unread, setUnread] = useState(0);
 
   // 话题条一次性加载（失败不阻塞帖子流）
   useEffect(() => {
@@ -60,6 +64,33 @@ export default function CommunityScreen() {
 
   // 发帖成功/关注关系变化后广播，触发流刷新
   useEffect(() => onPostsChanged(() => setNonce((n) => n + 1)), []);
+
+  // 铃铛徽标：登录后拉未读数，30s 轮询 + 通知页已读广播即时刷新（失败静默降级）
+  useEffect(() => {
+    if (!token) {
+      // 退出登录后清零（同步置态须绕开 effect 直达栈，M1 起的纪律）
+      queueMicrotask(() => setUnread(0));
+      return;
+    }
+    let cancelled = false;
+    const loadUnread = () => {
+      void fetchUnreadNotificationCount(token)
+        .then((count) => {
+          if (!cancelled) setUnread(count);
+        })
+        .catch(() => {
+          // 徽标是辅助信息，静默降级
+        });
+    };
+    loadUnread();
+    const timer = setInterval(loadUnread, 30_000);
+    const off = onNotificationsChanged(loadUnread);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      off();
+    };
+  }, [token]);
 
   // 首屏与筛选切换：发起加载推迟到微任务，effect 同步栈内不 setState（M1 同款纪律）
   const load = useCallback(() => {
@@ -211,6 +242,20 @@ export default function CommunityScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>社区</Text>
+        {token ? (
+          <Pressable
+            style={styles.bellBtn}
+            onPress={() => router.push('/notifications')}
+            hitSlop={8}
+            accessibilityLabel="通知中心">
+            <Ionicons name="notifications-outline" size={20} color={colors.text} />
+            {unread > 0 ? (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unread > 99 ? '99+' : unread}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+        ) : null}
         <Pressable style={styles.composeBtn} onPress={openCompose} hitSlop={8}>
           <Ionicons name="create-outline" size={16} color="#1a1105" />
           <Text style={styles.composeBtnText}>发帖</Text>
@@ -343,6 +388,31 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: colors.text,
     fontSize: 22,
+    fontWeight: '700',
+  },
+  bellBtn: {
+    marginLeft: 'auto',
+    marginRight: 12,
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badge: {
+    position: 'absolute',
+    top: 0,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#ff6b6b',
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
     fontWeight: '700',
   },
   composeBtn: {

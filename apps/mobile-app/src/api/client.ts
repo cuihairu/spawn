@@ -486,6 +486,50 @@ export async function fetchPostById(id: number): Promise<Post> {
   return payload.post;
 }
 
+// ========== 站内通知（community 域）：字段 snake 直传，三端点全需 Bearer ==========
+
+export interface AppNotification {
+  id: number;
+  user_id: number;
+  actor_id: number;
+  actor_name?: string;
+  type: string; // like_post/comment_post/reply_comment/follow_user
+  target_id: number;
+  content: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+// 我的通知（id 倒序分页；列表页免二次取帖，content 已含冗余摘要）
+export async function fetchNotifications(
+  token: string,
+  limit = 20,
+  offset = 0,
+): Promise<{ notifications: AppNotification[]; total: number }> {
+  const payload = await request<{ notifications: AppNotification[]; total: number }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/notifications?limit=${limit}&offset=${offset}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  return { notifications: payload.notifications ?? [], total: payload.total ?? 0 };
+}
+
+// 未读数（社区 Tab 铃铛徽标轮询用）
+export async function fetchUnreadNotificationCount(token: string): Promise<number> {
+  const payload = await request<{ count: number }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/notifications/unread-count`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  return payload.count ?? 0;
+}
+
+// 全部已读（幂等，无未读同样 ok）
+export async function markAllNotificationsRead(token: string): Promise<void> {
+  await request<{ code: number; message: string }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/notifications/read-all`,
+    { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+  );
+}
+
 // ========== 统一上传入口（api-gateway POST /upload）==========
 // 帖子图片先经网关落 uploads 卷，返回 "/uploads/<hash>.<ext>" 相对 URL；
 // 业务侧只存 URL，渲染时用 resolveImageUrl 拼网关来源。
