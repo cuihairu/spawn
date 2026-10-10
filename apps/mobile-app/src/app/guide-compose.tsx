@@ -42,6 +42,8 @@ export default function GuideComposeScreen() {
   const [tagsInput, setTagsInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // 编辑模式：原攻略是否草稿（保存后需补发布，移动端草稿唯一发布路径）
+  const [wasDraft, setWasDraft] = useState(false);
 
   // 游戏目录一次性加载（选游戏为创建攻略必填项；编辑模式不展示——游戏不可改）
   useEffect(() => {
@@ -67,6 +69,7 @@ export default function GuideComposeScreen() {
     if (editId === null || !token) return;
     void (async () => {
       const guide = await fetchGuideById(editId, token);
+      setWasDraft(!guide.is_published);
       setGameId(guide.game_id);
       setTitle(guide.title);
       setContent(guide.content);
@@ -114,6 +117,10 @@ export default function GuideComposeScreen() {
           },
           token,
         );
+        // 草稿保存后补发布（幂等，已发布再调同样 ok）
+        if (wasDraft) {
+          await publishGuide(editId, token);
+        }
         router.replace(`/guide/${editId}`);
         return;
       }

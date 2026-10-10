@@ -141,7 +141,12 @@ export default function GuideDetailScreen() {
     if (!guide) return null;
     return (
       <View style={styles.article}>
-        <Text style={styles.title}>{guide.title}</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>{guide.title}</Text>
+          {user && user.id === guide.author_id && !guide.is_published ? (
+            <Text style={styles.draftBadge}>草稿</Text>
+          ) : null}
+        </View>
         <View style={styles.metaRow}>
           <Pressable onPress={() => router.push(`/user/${guide.author_id}`)} hitSlop={4}>
             <Text style={[styles.metaText, styles.authorLink]}>{guide.author_name}</Text>
@@ -349,10 +354,26 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   title: {
+    flex: 1,
     color: colors.text,
     fontSize: 20,
     fontWeight: '700',
     lineHeight: 28,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  draftBadge: {
+    color: colors.primary,
+    fontSize: 11,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    overflow: 'hidden',
   },
   metaRow: {
     flexDirection: 'row',
