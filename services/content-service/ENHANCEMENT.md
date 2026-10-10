@@ -35,7 +35,7 @@ Auth struct {
 **`etc/content-api.yaml`**
 ```yaml
 Auth:
-  JWTSecret: "your-secret-key-here-change-in-production"
+  JWTSecret: "tappi-user-service-jwt-secret-key-2024"
 ```
 
 ### 业务逻辑更新

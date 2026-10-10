@@ -171,7 +171,7 @@ MySQL:
   DataSource: "file:data/community.db"
 
 Auth:
-  JWTSecret: your-secret-key-change-in-production
+  JWTSecret: tappi-user-service-jwt-secret-key-2024
 
 # 内容审核：BlockedWords 空则用内置默认敏感词表；AdminUserIds 为管理员允许名单
 Moderation:

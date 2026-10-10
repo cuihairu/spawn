@@ -8,8 +8,9 @@ Timeout: 30000
 MySQL:
   DataSource: "file:data/community.db"
 
+# JWT 校验密钥（与 user-service 共享；生产环境用 JWT_SECRET 环境变量覆盖）
 Auth:
-  JWTSecret: your-secret-key-change-in-production
+  JWTSecret: tappi-user-service-jwt-secret-key-2024
 
 # 内容审核：BlockedWords 空则用内置默认敏感词表（命中即拒绝发帖/评论）；
 # AdminUserIds 为审核管理员允许名单（举报队列查看与处置）。

@@ -9,7 +9,7 @@ MySQL:
 
 # JWT 校验密钥（与 user-service 共享；生产环境用 JWT_SECRET 环境变量覆盖）
 Auth:
-  JWTSecret: "your-secret-key-here-change-in-production"
+  JWTSecret: "tappi-user-service-jwt-secret-key-2024"
 
 Services:
   GameCatalog:
