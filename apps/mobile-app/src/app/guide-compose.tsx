@@ -85,7 +85,8 @@ export default function GuideComposeScreen() {
     });
   }, [editId, token]);
 
-  const submit = () => {
+  // publish=false 即存草稿（仅创建模式提供入口）
+  const submit = (publish: boolean) => {
     const trimmedTitle = title.trim();
     const trimmedContent = content.trim();
     if (submitting) return;
@@ -138,11 +139,16 @@ export default function GuideComposeScreen() {
         },
         token,
       );
+      // 存草稿：不发布，回上一页（草稿在个人中心「我的攻略」带徽标，可再编辑发布）
+      if (!publish) {
+        router.back();
+        return;
+      }
       // 创建即发布（详情页作者可再编辑）
       await publishGuide(created.id, token);
       router.replace(`/guide/${created.id}`);
     })().catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : '发布攻略失败');
+      setError(publish ? '发布攻略失败' : '存草稿失败');
       setSubmitting(false);
     });
   };
@@ -158,7 +164,7 @@ export default function GuideComposeScreen() {
         <Text style={styles.headerTitle}>{editId !== null ? '编辑攻略' : '写攻略'}</Text>
         <Pressable
           style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
-          onPress={submit}
+          onPress={() => submit(true)}
           disabled={submitting}>
           <Text style={styles.submitText}>{submitting ? '...' : editId !== null ? '保存' : '发布'}</Text>
         </Pressable>
@@ -273,6 +279,15 @@ export default function GuideComposeScreen() {
           placeholderTextColor={colors.textMuted}
           maxLength={100}
         />
+
+        {editId === null ? (
+          <Pressable
+            style={[styles.draftBtn, submitting && styles.submitBtnDisabled]}
+            onPress={() => submit(false)}
+            disabled={submitting}>
+            <Text style={styles.draftBtnText}>存草稿，稍后再发</Text>
+          </Pressable>
+        ) : null}
 
         {error ? (
           <Text style={styles.error} accessibilityRole="alert">
@@ -405,6 +420,18 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   previewEmpty: {
+    color: colors.textMuted,
+    fontSize: 13,
+  },
+  draftBtn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    alignItems: 'center',
+    paddingVertical: 10,
+    marginTop: 10,
+  },
+  draftBtnText: {
     color: colors.textMuted,
     fontSize: 13,
   },
