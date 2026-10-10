@@ -78,12 +78,17 @@ func newHandlerTestServer(t *testing.T) (string, func(int64, string) string) {
 	if err := commentModel.Seed(comments); err != nil {
 		t.Fatalf("seed comments: %v", err)
 	}
+	favoriteModel := model.NewFavoriteModel(db)
+	if err := favoriteModel.CreateFavoritesTable(); err != nil {
+		t.Fatalf("create favorites table: %v", err)
+	}
 
 	svcCtx := &svc.ServiceContext{
-		GuideRepository:   guideModel,
-		CommentRepository: commentModel,
-		Auth:              utils.NewAuth(testSecret),
-		GameCatalogClient: client.NewGameCatalogClient(gameStub.URL, 2*time.Second),
+		GuideRepository:    guideModel,
+		CommentRepository:  commentModel,
+		FavoriteRepository: favoriteModel,
+		Auth:               utils.NewAuth(testSecret),
+		GameCatalogClient:  client.NewGameCatalogClient(gameStub.URL, 2*time.Second),
 	}
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -326,6 +331,61 @@ func TestRoutes_PublishAndLikeGuide(t *testing.T) {
 	}
 	if likes := num(t, body, "likes"); likes != 6 {
 		t.Fatalf("likes = %v, want 6 (seed 5 + 1)", body["likes"])
+	}
+}
+
+// TestRoutes_FavoriteGuideFlow 收藏端到端：收藏 → 状态（本人/匿名）→
+// 我的收藏列表 → 取消收藏幂等。含认证矩阵：无令牌写操作 401。
+func TestRoutes_FavoriteGuideFlow(t *testing.T) {
+	base, sign := newHandlerTestServer(t)
+
+	// 无令牌 POST → 中间件 401
+	status, _ := do(t, http.MethodPost, base+"/api/v1/guides/1/favorite", "", "")
+	if status != http.StatusUnauthorized {
+		t.Fatalf("favorite without token status = %d, want 401", status)
+	}
+
+	// 收藏
+	status, body := do(t, http.MethodPost, base+"/api/v1/guides/1/favorite", sign(1001, "alice"), "")
+	if status != http.StatusOK || num(t, body, "code") != 200 {
+		t.Fatalf("favorite: status=%d body=%v", status, body)
+	}
+	if body["favorited"] != true || num(t, body, "count") != 1 {
+		t.Fatalf("favorited=%v count=%v, want true/1", body["favorited"], body["count"])
+	}
+
+	// 状态（本人）
+	_, body = do(t, http.MethodGet, base+"/api/v1/guides/1/favorite", sign(1001, "alice"), "")
+	if num(t, body, "code") != 200 || body["favorited"] != true || num(t, body, "count") != 1 {
+		t.Fatalf("status self: body=%v", body)
+	}
+
+	// 状态（匿名）：只有总数
+	_, body = do(t, http.MethodGet, base+"/api/v1/guides/1/favorite", "", "")
+	if num(t, body, "code") != 200 || body["favorited"] != false || num(t, body, "count") != 1 {
+		t.Fatalf("status anon: body=%v", body)
+	}
+
+	// 我的收藏列表
+	_, body = do(t, http.MethodGet, base+"/api/v1/guides/favorites", sign(1001, "alice"), "")
+	if num(t, body, "code") != 200 || num(t, body, "total") != 1 {
+		t.Fatalf("favorites list: body=%v", body)
+	}
+
+	// 取消收藏（幂等再删一次）
+	status, body = do(t, http.MethodDelete, base+"/api/v1/guides/1/favorite", sign(1001, "alice"), "")
+	if status != http.StatusOK || num(t, body, "code") != 200 || body["favorited"] != false {
+		t.Fatalf("unfavorite: status=%d body=%v", status, body)
+	}
+	status, body = do(t, http.MethodDelete, base+"/api/v1/guides/1/favorite", sign(1001, "alice"), "")
+	if status != http.StatusOK || num(t, body, "code") != 200 {
+		t.Fatalf("re-unfavorite: status=%d body=%v", status, body)
+	}
+
+	// 匿名拉我的收藏列表 → logic 层 401 信封（HTTP 仍 200）
+	_, body = do(t, http.MethodGet, base+"/api/v1/guides/favorites", "", "")
+	if num(t, body, "code") != http.StatusUnauthorized {
+		t.Fatalf("favorites list anon: body=%v, want code 401", body)
 	}
 }
 
