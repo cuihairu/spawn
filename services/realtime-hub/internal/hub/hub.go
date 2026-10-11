@@ -328,13 +328,16 @@ func (h *Hub) sendToClients(clients []*Client, data []byte) {
 	}
 }
 
-// clientMsg 客户端上行控制消息（watch/unwatch/query）。
+// clientMsg 客户端上行控制消息（watch/unwatch/query/signal）。
 type clientMsg struct {
-	Action  string  `json:"action"`
-	UserIds []int64 `json:"user_ids"`
+	Action  string          `json:"action"`
+	UserIds []int64         `json:"user_ids"`
+	To      int64           `json:"to"`   // signal：目标用户
+	Room    string          `json:"room"` // signal：端上协商关联 id（透传）
+	Data    json.RawMessage `json:"data"` // signal：信令体（透传）
 }
 
-// readPump 消费客户端上行：watch/unwatch/query 三类控制消息，
+// readPump 消费客户端上行：watch/unwatch/query/signal 四类控制消息，
 // 其余静默忽略（畸形 JSON 同样忽略，连接不断）；读超时由 pong 刷新。
 func (h *Hub) readPump(c *Client) {
 	defer h.Leave(c)
@@ -365,6 +368,8 @@ func (h *Hub) handleClientMsg(c *Client, data []byte) {
 		h.Unwatch(c, msg.UserIds)
 	case "query":
 		h.replyPresence(c, msg.UserIds)
+	case "signal":
+		h.relaySignal(c, msg)
 	}
 }
 
