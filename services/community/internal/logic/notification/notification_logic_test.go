@@ -144,3 +144,13 @@ func TestMarkAllRead_Unauthorized(t *testing.T) {
 		t.Fatalf("want 401 for missing auth, got nil")
 	}
 }
+
+// TestListNotifications_NilRequestNormalized 直接逻辑调用缺请求体时按空请求
+// 处理（handler 链路 httpx.Parse 恒给非 nil，守卫分支）。
+func TestListNotifications_NilRequestNormalized(t *testing.T) {
+	s := newTestServiceContext(t)
+	resp, err := NewListNotificationsLogic(authContext(7, "作者甲"), s).ListNotifications(nil)
+	if err != nil || resp == nil {
+		t.Fatalf("list=%v err=%v, want ok with nil request", resp, err)
+	}
+}

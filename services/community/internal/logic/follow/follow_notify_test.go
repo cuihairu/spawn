@@ -1,8 +1,10 @@
 package follow
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/tappi/tappi/services/community/internal/model"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
 )
@@ -55,5 +57,24 @@ func TestFollowUserFollowerNotNotified(t *testing.T) {
 	}
 	if got := listFollowNotificationsOf(t, s, 8); len(got) != 0 {
 		t.Fatalf("follower should not be notified: %+v", got)
+	}
+}
+
+// failingNotificationStoreForFollow 仅 Create 投毒的通知仓储，覆盖关注通知
+// 写失败不中断关注的记日志分支。
+type failingNotificationStoreForFollow struct {
+	model.NotificationStore
+	err error
+}
+
+func (s failingNotificationStoreForFollow) Create(n *types.Notification) error { return s.err }
+
+// TestFollowUserNotificationFailureStillSucceeds 通知写失败不阻止关注本体。
+func TestFollowUserNotificationFailureStillSucceeds(t *testing.T) {
+	s := newFollowSvcCtx(t)
+	s.NotificationRepo = failingNotificationStoreForFollow{NotificationStore: s.NotificationRepo, err: errors.New("notifier on fire")}
+
+	if _, err := NewFollowUserLogic(authCtx(8), s).FollowUser(&types.FollowUserReq{UserId: 7}); err != nil {
+		t.Fatalf("follow must still succeed: %v", err)
 	}
 }

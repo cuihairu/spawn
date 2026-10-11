@@ -1,8 +1,10 @@
 package post
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/tappi/tappi/services/community/internal/model"
 	"github.com/tappi/tappi/services/community/internal/svc"
 	"github.com/tappi/tappi/services/community/internal/types"
 )
@@ -75,5 +77,42 @@ func TestLikePostNotificationDeduped(t *testing.T) {
 	list := listPostNotificationsOf(t, s, authorId)
 	if len(list) != 1 {
 		t.Fatalf("author notifications=%d, want 1 (unique key dedup)", len(list))
+	}
+}
+
+// failingNotificationStoreForPost 仅 Create 投毒的通知仓储，覆盖点赞通知
+// 写失败不中断点赞的记日志分支。
+type failingNotificationStoreForPost struct {
+	model.NotificationStore
+	err error
+}
+
+func (s failingNotificationStoreForPost) Create(n *types.Notification) error { return s.err }
+
+// TestLikePostNotificationFailureStillSucceeds 通知写失败不阻止点赞本体。
+func TestLikePostNotificationFailureStillSucceeds(t *testing.T) {
+	s := newTestServiceContext(t)
+	p, err := s.PostRepo.Create(1, 7, "作者甲", &types.CreatePostReq{Title: "好帖", Content: "正文"})
+	if err != nil {
+		t.Fatalf("create post: %v", err)
+	}
+	s.NotificationRepo = failingNotificationStoreForPost{NotificationStore: s.NotificationRepo, err: errors.New("notifier on fire")}
+
+	if _, err := NewLikePostLogic(authContext(8, "读者乙"), s).LikePost(&types.LikePostReq{Id: p.Id}); err != nil {
+		t.Fatalf("like must still succeed: %v", err)
+	}
+}
+
+// TestTruncateRunesTruncates 通知摘要按 rune 截断（中文按字符不按字节），
+// 短串原样透传。
+func TestTruncateRunesTruncates(t *testing.T) {
+	if got := truncateRunes("一二三四五", 3); got != "一二三" {
+		t.Fatalf("truncateRunes cjk = %q, want 一二三", got)
+	}
+	if got := truncateRunes("abcdef", 2); got != "ab" {
+		t.Fatalf("truncateRunes ascii = %q, want ab", got)
+	}
+	if got := truncateRunes("短", 10); got != "短" {
+		t.Fatalf("truncateRunes passthrough = %q, want 短", got)
 	}
 }

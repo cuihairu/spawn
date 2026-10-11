@@ -553,3 +553,26 @@ func TestUpdatePost(t *testing.T) {
 		}
 	})
 }
+
+// TestGetHotPostsValidTokenWithoutFollowsFallsBackAnonymous 令牌有效但关注
+// 集合为空（话题与用户都未关注）→ 回落匿名热榜（省两次关注表查询）。
+func TestGetHotPostsValidTokenWithoutFollowsFallsBackAnonymous(t *testing.T) {
+	svcCtx := newTestServiceContext(t)
+	if _, err := svcCtx.PostRepo.Create(1, 7, "作者甲", &types.CreatePostReq{Title: "热帖", Content: "c"}); err != nil {
+		t.Fatalf("seed post: %v", err)
+	}
+
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, utils.JWTClaims{
+		UserId: 1002, Username: "无关注者",
+		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))},
+	}).SignedString([]byte("test-jwt-secret"))
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+
+	l := NewGetHotPostsLogic(context.Background(), svcCtx, "Bearer "+token)
+	resp, err := l.GetHotPosts(&types.GetPostsReq{})
+	if err != nil || resp == nil || len(resp.Posts) < 1 {
+		t.Fatalf("hot=%+v err=%v, want anonymous hot posts", resp, err)
+	}
+}

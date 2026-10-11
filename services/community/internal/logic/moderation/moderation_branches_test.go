@@ -125,3 +125,85 @@ func TestHandleReport_StatusUpdateError(t *testing.T) {
 		t.Fatalf("status update failure: err = nil, want error")
 	}
 }
+
+// failingReportListStore 仅 ListByStatus 投毒。
+type failingReportListStore struct {
+	model.ReportStore
+	err error
+}
+
+func (s failingReportListStore) ListByStatus(string, int64, int64) ([]*types.Report, int64, error) {
+	return nil, 0, s.err
+}
+
+// failingReportCreateStore 仅 Create 投毒。
+type failingReportCreateStore struct {
+	model.ReportStore
+	err error
+}
+
+func (s failingReportCreateStore) Create(*types.Report) error { return s.err }
+
+// --- 鉴权上下文缺失：handler 链路被 Auth 中间件拦截，logic 直调才可达 ---
+
+func TestListReports_WithoutAuthContextFails(t *testing.T) {
+	s := newTestServiceContext(t)
+	if _, err := NewListReportsLogic(context.Background(), s).
+		ListReports(&types.ListReportsReq{}); err == nil {
+		t.Fatal("list reports without auth context must fail")
+	}
+}
+
+func TestHandleReport_WithoutAuthContextFails(t *testing.T) {
+	s := newTestServiceContext(t)
+	if _, err := NewHandleReportLogic(context.Background(), s).
+		HandleReport(&types.HandleReportReq{Id: 1, Action: "dismiss"}); err == nil {
+		t.Fatal("handle report without auth context must fail")
+	}
+}
+
+// TestListReports_ListByStatusErrorPropagates 队列查询失败 → 错误透传。
+func TestListReports_ListByStatusErrorPropagates(t *testing.T) {
+	s := newTestServiceContext(t)
+	s.AdminSet = map[int64]bool{1: true}
+	s.ReportRepo = failingReportListStore{ReportStore: s.ReportRepo, err: errors.New("queue on fire")}
+
+	if _, err := NewListReportsLogic(authContext(1, "管理员"), s).
+		ListReports(&types.ListReportsReq{}); err == nil {
+		t.Fatal("list failure must propagate")
+	}
+}
+
+// TestHandleReport_ResolveUpdateStatusErrorPropagates resolve 路径：内容移除
+// 成功后状态落库失败 → 错误透传（dismiss 方向已有同款用例）。
+func TestHandleReport_ResolveUpdateStatusErrorPropagates(t *testing.T) {
+	s := newTestServiceContext(t)
+	s.AdminSet = map[int64]bool{1: true}
+	p, err := s.PostRepo.Create(1, 7, "作者甲", &types.CreatePostReq{Title: "违规帖", Content: "正文"})
+	if err != nil {
+		t.Fatalf("seed post: %v", err)
+	}
+	if err := s.ReportRepo.Create(&types.Report{
+		ReporterId: 8, TargetType: "post", TargetId: p.Id,
+		Reason: "违规", Status: "pending", CreatedAt: "2026-10-10T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("seed report: %v", err)
+	}
+	s.ReportRepo = failingReportStore{ReportStore: s.ReportRepo, updateErr: errors.New("status write on fire")}
+
+	if _, err := NewHandleReportLogic(authContext(1, "管理员"), s).
+		HandleReport(&types.HandleReportReq{Id: 1, Action: "resolve"}); err == nil {
+		t.Fatal("resolve status failure must propagate")
+	}
+}
+
+// TestReportPost_CreateErrorPropagates 举报写库失败 → 错误透传。
+func TestReportPost_CreateErrorPropagates(t *testing.T) {
+	s := newTestServiceContext(t)
+	s.ReportRepo = failingReportCreateStore{ReportStore: s.ReportRepo, err: errors.New("report write on fire")}
+
+	if _, err := NewReportPostLogic(authContext(8, "读者乙"), s).
+		ReportPost(&types.ReportPostReq{Id: 1, Reason: "违规"}); err == nil {
+		t.Fatal("report create failure must propagate")
+	}
+}
