@@ -13,7 +13,6 @@ import (
 )
 
 type UserService interface {
-	Login(ctx context.Context, payload integration.LoginPayload) (*integration.LoginResult, error)
 	GetRecommendations(ctx context.Context, userID int64, limit int64, genres string, token string) (*integration.RecommendationResponse, error)
 }
 

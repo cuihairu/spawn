@@ -1,15 +1,5 @@
 package types
 
-type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-type LoginResponse struct {
-	Token    string      `json:"token"`
-	UserInfo interface{} `json:"user_info"`
-}
-
 type FeaturedRequest struct {
 	Limit int64 `form:"limit,default=6"`
 }

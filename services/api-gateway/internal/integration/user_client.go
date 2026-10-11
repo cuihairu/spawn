@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,16 +14,6 @@ import (
 type UserServiceClient struct {
 	baseURL    string
 	httpClient *http.Client
-}
-
-type LoginPayload struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-type LoginResult struct {
-	Token    string      `json:"token"`
-	UserInfo interface{} `json:"user_info"`
 }
 
 type RecommendationResponse struct {
@@ -43,37 +32,6 @@ func NewUserServiceClient(baseURL string, timeout time.Duration) *UserServiceCli
 			Timeout: timeout,
 		},
 	}
-}
-
-func (c *UserServiceClient) Login(ctx context.Context, payload LoginPayload) (*LoginResult, error) {
-	endpoint := fmt.Sprintf("%s/auth/login", c.baseURL)
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		msg := readError(resp.Body)
-		return nil, fmt.Errorf("login failed: %s", msg)
-	}
-
-	var result LoginResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-	return &result, nil
 }
 
 func (c *UserServiceClient) GetRecommendations(ctx context.Context, userID int64, limit int64, genres string, token string) (*RecommendationResponse, error) {

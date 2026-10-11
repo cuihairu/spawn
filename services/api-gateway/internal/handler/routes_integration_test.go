@@ -112,10 +112,10 @@ func newUpstreamStubs(t *testing.T) *upstreamStubs {
 		case r.Method == http.MethodPost && r.URL.Path == "/auth/login":
 			if strings.Contains(string(body), `"username":"ghost"`) {
 				w.WriteHeader(http.StatusUnauthorized)
-				_, _ = w.Write([]byte(`{"message":"用户名或密码错误"}`))
+				_, _ = w.Write([]byte(`{"code":401,"message":"用户名或密码错误"}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"token":"gw-token","user_info":{"id":7,"username":"alice"}}`))
+			_, _ = w.Write([]byte(`{"code":200,"message":"登录成功","data":{"token":"gw-token","user_info":{"id":7,"username":"alice"}}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/auth/register":
 			if strings.Contains(string(body), `"username":"taken"`) {
 				// 业务失败走 HTTP 200 + 信封 code 409，客户端语义不变
@@ -406,22 +406,27 @@ func list(t *testing.T, m map[string]interface{}, key string) []interface{} {
 	return v
 }
 
-// --- POST /auth/login ---
+// --- POST /auth/login（user-service 反代，信封原样透传） ---
 
 func TestRoutes_Login(t *testing.T) {
 	stubs := newUpstreamStubs(t)
 	base := newGatewayServer(t, stubs)
 
-	// 成功：令牌与用户信息透传，同时校验网关→user-service 的线上契约。
+	// 成功：上游信封原样透传（code 200 + data.token/user_info），
+	// 同时校验网关→user-service 的线上契约。
 	got := call(t, http.MethodPost, base+"/auth/login", "",
 		`{"username":"alice","password":"pw"}`)
 	if got.status != http.StatusOK {
 		t.Fatalf("login status = %d, body = %s", got.status, got.body)
 	}
-	if got.json["token"] != "gw-token" {
-		t.Fatalf("token = %#v", got.json["token"])
+	if got.json["code"] != float64(200) {
+		t.Fatalf("envelope = %#v", got.json)
 	}
-	if userInfo := object(t, got.json, "user_info"); userInfo["username"] != "alice" {
+	data := object(t, got.json, "data")
+	if data["token"] != "gw-token" {
+		t.Fatalf("token = %#v", data["token"])
+	}
+	if userInfo := object(t, data, "user_info"); userInfo["username"] != "alice" {
 		t.Fatalf("user_info = %#v", userInfo)
 	}
 
@@ -437,7 +442,7 @@ func TestRoutes_Login(t *testing.T) {
 		Password string `json:"password"`
 	}
 	if err := json.Unmarshal([]byte(sent.body), &payload); err != nil {
-		t.Fatalf("上游请求体不是 LoginPayload JSON: %q (%v)", sent.body, err)
+		t.Fatalf("上游请求体不是登录 JSON: %q (%v)", sent.body, err)
 	}
 	if payload.Username != "alice" || payload.Password != "pw" {
 		t.Fatalf("上游请求体 = %q", sent.body)
@@ -448,38 +453,32 @@ func TestRoutes_LoginUpstreamFailure(t *testing.T) {
 	stubs := newUpstreamStubs(t)
 	base := newGatewayServer(t, stubs)
 
-	// 上游 401 → 客户端报 login failed → handler 走 httpx.ErrorCtx（HTTP 400）
+	// 上游 401 信封原样透传（客户端 request 走 401 分支），HTTP 状态不改写。
 	got := call(t, http.MethodPost, base+"/auth/login", "",
 		`{"username":"ghost","password":"pw"}`)
-	if got.status != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", got.status)
+	if got.status != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", got.status)
 	}
-	if !strings.Contains(got.body, "login failed") ||
-		!strings.Contains(got.body, "用户名或密码错误") {
-		t.Fatalf("body = %q, want login failed + 上游原文", got.body)
+	if got.json["code"] != float64(401) || got.json["message"] != "用户名或密码错误" {
+		t.Fatalf("envelope = %#v", got.json)
 	}
 }
 
-func TestRoutes_LoginParseErrors(t *testing.T) {
+// TestRoutes_LoginVerbatimBody 网关不做请求体校验：非法 JSON 原样转发，
+// 上游响应原样透传（与 /auth/register 同款语义）。
+func TestRoutes_LoginVerbatimBody(t *testing.T) {
 	stubs := newUpstreamStubs(t)
 	base := newGatewayServer(t, stubs)
 
-	// 非法 JSON → httpx.Parse 失败，且不得打到上游。
 	got := call(t, http.MethodPost, base+"/auth/login", "", `{bad json`)
-	if got.status != http.StatusBadRequest {
-		t.Fatalf("malformed body status = %d, want 400", got.status)
+	if got.status != http.StatusOK {
+		t.Fatalf("malformed body status = %d, want 200 透传 (body=%s)", got.status, got.body)
 	}
-	if n := stubs.user.count(t); n != 0 {
-		t.Fatalf("上游被调用 %d 次，parse 失败时不应有调用", n)
+	if got.json["code"] != float64(200) {
+		t.Fatalf("envelope = %#v", got.json)
 	}
-
-	// 缺少必填字段（username/password 无 optional 标签）同样 400。
-	got = call(t, http.MethodPost, base+"/auth/login", "", `{}`)
-	if got.status != http.StatusBadRequest {
-		t.Fatalf("empty object status = %d, want 400 (body=%s)", got.status, got.body)
-	}
-	if n := stubs.user.count(t); n != 0 {
-		t.Fatalf("上游被调用 %d 次，缺字段时不应有调用", n)
+	if sent := stubs.user.last(t); sent.body != `{bad json` {
+		t.Fatalf("upstream body = %q, want verbatim", sent.body)
 	}
 }
 

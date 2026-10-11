@@ -14,11 +14,6 @@ import (
 func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 	server.AddRoutes([]rest.Route{
 		{
-			Method:  http.MethodPost,
-			Path:    "/auth/login",
-			Handler: LoginHandler(serverCtx),
-		},
-		{
 			Method:  http.MethodGet,
 			Path:    "/games/featured",
 			Handler: FeaturedGamesHandler(serverCtx),

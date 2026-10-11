@@ -19,14 +19,6 @@ func TestGameCatalogClient_MalformedBaseURL(t *testing.T) {
 	}
 }
 
-func TestUserServiceClient_Login_MalformedBaseURL(t *testing.T) {
-	c := NewUserServiceClient("http://bad\nhost", time.Second)
-	_, err := c.Login(context.Background(), LoginPayload{Username: "a", Password: "b"})
-	if err == nil || !strings.Contains(err.Error(), "control character") {
-		t.Fatalf("err = %v, want url.Parse control-character failure", err)
-	}
-}
-
 func TestUserServiceClient_GetRecommendations_MalformedBaseURL(t *testing.T) {
 	c := NewUserServiceClient("http://bad\nhost", time.Second)
 	_, err := c.GetRecommendations(context.Background(), 1, 5, "RPG", "tok")
