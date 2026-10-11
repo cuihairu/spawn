@@ -1016,6 +1016,47 @@ data-panel 94.4% → 96.9%（`1f3c1d4`）、community 94.3% → 96.6%
 重测轮既有登记集（main ×2 / jwt 死分支 ×2 / model 双驱动与 rows.Err
 族），handler 面零块清零。
 
+**community 通知面零块对账轮（2026-10-11，96.6% → 98.5% coverpkg 口径）**：
+背景——community 的 2026-10-05 重测轮登记（19 块）早于通知系统与内容
+审核两切片落地，新增代码（notifications/reports 表模型、svc 尾段建表、
+三触发点、举报处置链路）不带覆盖，巡检快照 54 零块中 35 块游离于登记面
+之外。本轮以当前零块集为事实源逐块对账：30 块补测关闭，24 块归入登记
+（原 19 块块族全部存活 + 新增 5 块，非推翻原登记）。四批增量——
+- svc 梯子第七至九级（`dbb0548`）：启动序列尾段四表（点赞/评论/通知/
+  举报，通知表为通知系统新增段）。注意 precreateDB 不含 post_likes 段位
+  ——点赞表先于评论表，够不到尾段 panic，须先以 precreateTailTables 按
+  启动顺序补建；通知/举报表无种子步骤，纯建表 panic。外加 AdminSet
+  预计算臂（审核管理员名单传配置即达）；
+- notificationmodel/reportmodel 列表臂（`69ecd63`）：两模型同为
+  「COUNT 先行、具名 SELECT 后行」——关库连 COUNT 都过不去，缺列注入
+  （仅 user_id/status 列的表）让 COUNT 过、SELECT 报 no such column；
+  is_read/handled_by 存文本的脏行注入打 Scan 臂；
+- post/comment/wordfilter 臂（`36c0b1c`）：RemoveByModerator 与
+  IncrementComments 的 UPDATE 错误臂以只读库注入（关库连首查都过不去，
+  读成写败才够得到写路径）；IncrementComments 的「UPDATE 后二次重读」
+  错误臂首次采用触发器注入——行上 AFTER UPDATE 触发器把 view_count
+  污染成文本，UPDATE 本身成功而重读 Scan 必败；commentmodel scanComments
+  脏行（脏列不得撞 WHERE 过滤列，否则行被过滤根本进不了扫描）；
+  wordfilter FirstHit 空词条目 continue（词表直传未经 NormalizeWords
+  清洗的场景）；
+- logic 错误传播臂 ×20（`3fdd8b8`）：moderation 五臂（裸 context 直调
+  UserFromContext 失败 ×2——handler 链路被 Auth 中间件拦截唯直调可达；
+  ListByStatus/Create 桩透传；resolve 方向状态落库失败，dismiss 方向
+  已有用例）；comment 八臂（Create/ListByPost/CountByPost/Delete 四桩
+  透传、负 offset 钳制、缺评论 id 400、回复通知写失败记日志——被回复者
+  既非自己也非帖子作者的双通知场景）；like_post/follow 通知写失败不中断
+  本体两臂 + truncateRunes 截断直测；hot 榜有效令牌但关注集合为空回落
+  匿名臂；notifications nil 请求规整臂。
+
+新增登记 ×5（登记面 19 → 24 块）：notificationmodel/reportmodel Create
+的 INSERT IGNORE 回落成功臂 ×2（同 insertLikeRelation 族：SQLite 下恒
+语法错，成功面仅存在于 MySQL 方言，SQLite 测试面不可达）；
+notificationmodel ListByUser / reportmodel ListByStatus / commentmodel
+scanComments 的 rows.Err ×3（驱动级遍历中断族）。剩余 24 块零块集逐块
+核对全部落既有登记族：main stderr+exit ×2、handler `httpx.ErrorCtx` ×3
+（三列表恒 envelope+nil error）、jwt/v5 死分支 ×2、model 驱动级（
+LastInsertId/RowsAffected/rows.Err）×14、INSERT IGNORE 回落成功 ×3。
+
 ## 部署
 
 ### 1. Docker 构建
