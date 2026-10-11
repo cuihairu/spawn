@@ -65,8 +65,35 @@ handler / publish handler；`go.work` 纳入（CI 按 go.work 动态发现，自
 
 ### M3 远期（逐项再拍板）
 
-网关 WS 隧道、在线状态与已读回执广播、Redis pub/sub 水平扩展、移动端
-远程推送接桥、语音/组队信令（对应 overview.md 的 realtime-hub 愿景）。
+网关 WS 隧道、已读回执广播、Redis pub/sub 水平扩展、移动端远程推送
+接桥、语音/组队信令（对应 overview.md 的 realtime-hub 愿景）。
+
+### M3-1 在线状态（已完成，2026-10-11 拍板开工）
+
+单实例内存档，不依赖网关隧道与 Redis。
+
+设计口径：
+
+- 在线定义：userId 活连接 ≥1；事件只在转换沿触发（首连/末断），
+  多端上下线不重复刷帧。
+- 三个面：REST 服务间查询 `GET /internal/presence?user_ids=1,2,3`
+  （X-Internal-Token，fail closed 同 publish，ids 缺失/非法 400）；
+  WS watch 推送（上行 `{"action":"watch|unwatch","user_ids":[..]}`，
+  转换沿 → watcher 收 `{"type":"presence","data":{user_id,online,at}}`）；
+  WS query 快照（上行 `{"action":"query","user_ids":[..]}`，只回请求
+  连接——终端拿不到内部令牌，拉取走 WS 既有 JWT 闸）。
+- 内存有界：单客户端 watch 上限 200（超限静默截断）、单次 ids 上限
+  200；畸形上行静默忽略不断连；hub 不存社会关系（watch 谁由客户端
+  声明，隐私过滤在产品层）。
+- 无新配置、无新依赖；顺手修掉 SendToUsers 在 RLock 下 drops++
+  的潜在竞态（改 atomic）。
+
+落地记录：`hub` 增 since/watchers 表与 Watch/Unwatch/Presence/
+replyPresence（转换沿事件锁外投递）；handler 增 presence 端点与
+路由；新增 hub 6 测 + handler 2 测（含 A watch 7 → 7 连收 online、
+REST 快照一致、畸形上行存活、7 断收 offline 端到端）；顺手修掉
+既有 fanout 测试的入表时序竞态（Dial 返回 ≠ 服务端 Join 已执行，
+publish 前轮询连接数）。
 
 ## 验收口径
 
