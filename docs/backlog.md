@@ -29,7 +29,7 @@
 
 - 近 30 笔中 8 笔 `cancelled`：全部为 `concurrency: cancel-in-progress`（`ci-${{ github.ref }}` 组）在连续小步推送时取消旧 run——注解「Canceling since a higher priority waiting request exists」，非失败非 flake，同 commit 终态由后续绿 run 覆盖，不 rerun。
 - 最新 run 两 job 全绿（gofmt+build+test 1m41s；web+mobile 34s），`FAIL` 行数 0，68 包全 ok。
-- Watch 项（非红不动配置）：① ubuntu-latest → Ubuntu 26 迁移（2026-10-19 起）记入待办 #2；② Node 20 deprecation 警告（checkout@v4 / setup-node@v4 / setup-go@v5 / pnpm-action@v4 被迫跑 Node 24）——当前不破，等对应 actions 新主版本再升。
+- Watch 项（非红不动配置）：① ubuntu-latest → Ubuntu 26 迁移（2026-10-19 起）记入待办 #2；② Node 20 deprecation 警告——已处理（2026-10-11 升新主版本：checkout@v7 / setup-node@v7 / setup-go@v7 / pnpm-action@v6，均 node24 运行时，CI 全绿验证）。
 
 ### 本批已完成（2026-10-10，拉起令批次）
 
