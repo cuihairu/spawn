@@ -66,3 +66,19 @@ func TestCommentDelete_NotFound(t *testing.T) {
 		t.Fatal("Delete of missing comment must error")
 	}
 }
+
+// TestCommentListByPost_DirtyRowScanFails 列齐全但 author_id 存文本（脏列不得
+// 撞 WHERE 过滤列，否则行被过滤根本进不了扫描）：查询成功、Scan 到 int64
+// 失败 → 行扫描错误分支。
+func TestCommentListByPost_DirtyRowScanFails(t *testing.T) {
+	_, cm := newCommentModel(t)
+	if _, err := cm.db.Exec(`INSERT INTO comments
+		(id, post_id, author_id, author_name, content, parent_id, reply_to_author_name, created_at, updated_at)
+		VALUES (1, 1, 'x', 'a', 'c', 0, '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatalf("insert dirty row: %v", err)
+	}
+
+	if _, err := cm.ListByPost(1, 20, 0); err == nil {
+		t.Fatal("ListByPost with dirty row must error")
+	}
+}

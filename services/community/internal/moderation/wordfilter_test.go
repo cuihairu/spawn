@@ -37,3 +37,12 @@ func TestNormalizeWords(t *testing.T) {
 		t.Fatalf("NormalizeWords = %v, want [b a]", got)
 	}
 }
+
+// TestFirstHitSkipsEmptyEntry 原始词表混入空串时跳过（未经 NormalizeWords
+// 清洗的直传场景，空串不得抢占命中）。
+func TestFirstHitSkipsEmptyEntry(t *testing.T) {
+	got, ok := FirstHit([]string{"", "外挂"}, "这个外挂真好用")
+	if !ok || got != "外挂" {
+		t.Fatalf("FirstHit = %q,%v, want 外挂,true", got, ok)
+	}
+}
