@@ -54,3 +54,42 @@ func TestRegisterLogic_EmailCheckError(t *testing.T) {
 		t.Fatalf("resp = %+v, want 500 服务器内部错误", resp)
 	}
 }
+
+// TestRegisterLogic_UsernameCheckError 对偶用例：users 表缺 username 列，
+// 首个存在性检查（CheckUsernameExists）即报 "no such column: username"
+// → 500 信封。触达 CheckUsernameExists 的 Scan 错误分支。
+func TestRegisterLogic_UsernameCheckError(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	if _, err := db.Exec(`CREATE TABLE users (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		email TEXT NOT NULL,
+		password TEXT NOT NULL,
+		nickname TEXT,
+		created_at TIMESTAMP,
+		updated_at TIMESTAMP
+	)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	svcCtx := &svc.ServiceContext{
+		DB:        db,
+		UserModel: model.NewUserModel(db),
+		Auth:      utils.NewAuth("db-error-secret", 24*time.Hour),
+	}
+
+	l := NewRegisterLogic(context.Background(), svcCtx)
+	resp, err := l.Register(&types.RegisterRequest{
+		Username: "dave", Email: "dave@example.com", Password: "pw-dave",
+	})
+	if err != nil {
+		t.Fatalf("expected envelope, got error %v", err)
+	}
+	if resp.Code != 500 || resp.Message != "服务器内部错误" {
+		t.Fatalf("resp = %+v, want 500 服务器内部错误", resp)
+	}
+}
