@@ -544,6 +544,18 @@ user-service 实测 601 句（587/601 = 97.7%，未覆盖 14 句 / 11 块）。�
 （`services/cov_user-service.out`，本地不入库）。升至 98.0% 需再盖 2 句，而 14 句已全证死，
 97.7% 为该模块硬顶；手写面最低可推进项维持 user-service-rpc（91.7%，protoc 缺口不碰）。
 
+**user-service login 信封化轮（2026-10-11 第十二轮，97.7% → 97.8% coverpkg 口径）**：
+`beb726f` login 迁移业务信封 + `internal/httperr` 新包（error→HTTP 状态映射，40 句全绿），
+logic 总量 601 → 632 句。新增 1 例：
+- `internal/logic/register_dberror_test.go` 追加 UsernameCheckError（users 表缺 username 列，
+  首个存在性检查 `CheckUsernameExists` Scan 即报 no such column → 500 信封），盖掉
+  `usermodel.go:221`（该块在默认 `./...` 口径下因跨包不计入而显未盖，coverpkg 口径证实已达）。
+httperr 包四服务同轮补齐 Error() 非 nil 臂 / BadRequest / community ErrPermissionDenied
+哨兵分支，全部 100%（`67f6292`）。剩余不可达集维持 11 块原论证，行号仅平移：
+`user.go:26/27` main、handler envelope ×5（login 不在其列，其 handler 分支已 100%）、
+`loginlogic.go:57`（GenerateToken HS256 恒成功）、`registerlogic.go:89`（bcrypt >72 字节）、
+`usermodel.go:90`（LastInsertId 恒 nil）、`utils/auth.go:69`（ParseToken 死分支）。
+
 **content-service 收口轮（同日第四轮，88.8% → 94.2%）**：已补测试——
 - logic 层：五个 401 分支（createcomment/createguide/deletecomment/updateguide/
   publishguide，ctx 缺 user_id）、createcomment 的目标攻略缺失 404 与昵称回退、
@@ -1420,11 +1432,11 @@ PR 在 git 层 MERGEABLE、与 main 无冲突，红的只有锁文件同步这�
 
    | 通路 | 实现位置 | 契约测试 |
    |------|---------|---------|
-   | api-gateway → user-service | `services/api-gateway/internal/integration/user_client.go`（Login、GetRecommendations，Bearer 透传）；users 反代 `internal/users/routes.go`（POST /auth/register、GET /users/:id） | `user_client_test.go`（httptest 断言路径/查询/头/响应解析）；`users/routes_test.go` |
+   | api-gateway → user-service | `services/api-gateway/internal/integration/user_client.go`（GetRecommendations，Bearer 透传）；users 反代 `internal/users/routes.go`（POST /auth/register、POST /auth/login、GET /users/:id，信封原样透传） | `user_client_test.go`（httptest 断言路径/查询/头/响应解析）；`users/routes_test.go`；`handler/routes_integration_test.go`（登录信封透传） |
    | api-gateway → game-catalog | `services/api-gateway/internal/integration/game_client.go`（GetFeatured）；games 反代 `internal/games/routes.go`（GET /games、GET /games/:id） | `game_client_test.go`；`games/routes_test.go` |
    | api-gateway → community | 反代 `internal/proxy` + `internal/community/routes.go`（话题/帖子/关注流/我的点赞全量路由）；integration client `community_client.go`（GetPost/ListHotPosts/ListTopics，供聚合与分享卡） | `internal/proxy` 上游转发测试（既有）；`community_client_test.go` |
    | api-gateway → content | 反代 `internal/content/routes.go`；integration client `content_client.go`（ListGuides） | `content_client_test.go` |
-   | api-gateway 自有聚合 handler | GET /home/feed（精选游戏/热帖/话题/攻略四路并发 + 字段裁剪 + 分组降级）、GET /s/p/:id（分享卡跳板）、POST /auth/login、GET /games/featured、GET /users/:id/recommendations | `logic/homefeedlogic_test.go`、`handler/routes_integration_test.go`（按生产装配全量注册） |
+   | api-gateway 自有聚合 handler | GET /home/feed（精选游戏/热帖/话题/攻略四路并发 + 字段裁剪 + 分组降级）、GET /s/p/:id（分享卡跳板）、GET /games/featured、GET /users/:id/recommendations | `logic/homefeedlogic_test.go`、`handler/routes_integration_test.go`（按生产装配全量注册） |
    | content-service → game-catalog | `client/gamecatalog.go`（熔断/重试/指标加持） | `client/*_test.go`（既有，89.7%） |
    | user-service → game-catalog | `internal/integration/gamecatalog_client.go`（GetRecommendations） | `gamecatalog_client_test.go`（新增，97.2%） |
    | 其余服务 → user-service-rpc | `user-service-rpc`（zrpc + etcd） | `user_test.go` 集成测试（run() 起真 zRPC + userclient 端到端 Ping，见「覆盖率台账刷新」一节） |

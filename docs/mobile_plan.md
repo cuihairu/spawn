@@ -65,7 +65,7 @@
 | 备选否决 | Flutter | 技术面优秀但引入 Dart 第二语言体系，与本仓 React 前端零复用，单人/小队规模下双栈维护成本不成比例（如拍板偏好 Flutter，功能面与里程碑不变，仅替换本节） |
 | 语言 | TypeScript（strict） | 与 web-client 一致 |
 | 状态/数据 | 轻量自行开发 fetch 封装 + React Query（TanStack Query） | 后端接口规整（统一 code/message 信封），无需重客户端；React Query 覆盖缓存/重试/分页 |
-| 网络 | **经 api-gateway 统一入口（BFF 第一阶段，2026-10-04 切换）**：`EXPO_PUBLIC_API_URL` 覆盖网关域名，开发默认 `host:8800`（Android 模拟器 10.0.2.2）。网关侧自有聚合 handler（登录/精选/推荐/分享卡）+ 四路反代（community/content/users/games）覆盖 App 全量调用面；曾为手机版先行扩网关会拉长关键路径的顾虑随 BFF 第一阶段落地解除 |
+| 网络 | **经 api-gateway 统一入口（BFF 第一阶段，2026-10-04 切换）**：`EXPO_PUBLIC_API_URL` 覆盖网关域名，开发默认 `host:8800`（Android 模拟器 10.0.2.2）。网关侧自有聚合 handler（精选/推荐/分享卡/首页聚合）+ 反代（community/content/users/games；2026-10-11 起登录注册也走 users 反代）覆盖 App 全量调用面；曾为手机版先行扩网关会拉长关键路径的顾虑随 BFF 第一阶段落地解除 |
 | 认证 | JWT Bearer + expo-secure-store | 与六服务现有中间件零改动对接 |
 | 目录 | `apps/mobile-app`（README 已占位），pnpm workspace 接入 | 与 monorepo 规划一致 |
 | 类型契约 | `packages/data-models`：先手写 TS 类型 + 一个 `make types` 校验脚本对照 `.api` 文件；后端 goctl 无 TS 生成器，不为此引代码生成链 | 避免为类型同步先建一套生成基建 |

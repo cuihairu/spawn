@@ -43,7 +43,6 @@ web-client 直连拓扑保持不变，网关路由扩容不要求 web 迁移。
 
 | 路由 | 说明 | 上游 |
 |------|------|------|
-| POST /auth/login | 登录聚合（token + user_info） | user-service |
 | GET /games/featured | 精选透传 | game-catalog |
 | GET /users/:id/recommendations | 跨服务推荐（Bearer 透传） | user-service → game-catalog |
 | GET /s/p/:id | 分享卡跳板页（html/template og meta + `spawn://` 深链按钮） | community |
@@ -55,7 +54,7 @@ web-client 直连拓扑保持不变，网关路由扩容不要求 web 迁移。
 
 | 前缀 | 路由 | 上游 |
 |------|------|------|
-| users | POST /auth/register、GET /users/:id | user-service |
+| users | POST /auth/register、POST /auth/login、GET /users/:id（2026-10-11 起 login 亦走反代，信封原样透传） | user-service |
 | games | GET /games、GET /games/:id | game-catalog |
 | community | /api/v1/topics**、/api/v1/posts**、/api/v1/users/{following,likes}、/api/v1/notifications** 等 M1–M3 全量调用面 | community |
 | content | /api/v1/guides**、/api/v1/comments** | content-service |
