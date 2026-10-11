@@ -24,4 +24,11 @@ type Config struct {
 		BlockedWords []string `json:",optional"`
 		AdminUserIds []int64  `json:",optional"`
 	}
+
+	// 实时通道（realtime-hub /internal/publish）：Url 空则不经 WS 推送，
+	// 服务未部署时零影响；生产用环境变量覆盖。
+	Realtime struct {
+		Url           string `json:",env=REALTIME_HUB_URL,optional"`
+		InternalToken string `json:",env=REALTIME_INTERNAL_TOKEN,optional"`
+	}
 }

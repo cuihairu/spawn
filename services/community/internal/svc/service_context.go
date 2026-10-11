@@ -14,6 +14,7 @@ import (
 	"github.com/tappi/tappi/services/community/internal/middleware"
 	"github.com/tappi/tappi/services/community/internal/model"
 	"github.com/tappi/tappi/services/community/internal/moderation"
+	"github.com/tappi/tappi/services/community/internal/realtime"
 	"github.com/tappi/tappi/services/community/utils"
 	"github.com/zeromicro/go-zero/rest"
 
@@ -37,6 +38,9 @@ type ServiceContext struct {
 	// AdminSet 审核管理员 id 集合（配置预计算，举报队列查看与处置用）。
 	BlockedWords []string
 	AdminSet     map[int64]bool
+
+	// Realtime 实时事件发布口（realtime-hub）；Url 未配置时为 no-op。
+	Realtime realtime.Publisher
 }
 
 // IsAdmin 判断用户是否为审核管理员。
@@ -126,6 +130,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		ReportRepo:       reportModel,
 		BlockedWords:     blockedWords,
 		AdminSet:         adminSet,
+		Realtime:         realtime.NewPublisher(c.Realtime.Url, c.Realtime.InternalToken),
 	}
 }
 

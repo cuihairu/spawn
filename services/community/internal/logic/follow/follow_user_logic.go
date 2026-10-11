@@ -44,16 +44,22 @@ func (l *FollowUserLogic) FollowUser(req *types.FollowUserReq) (resp *types.Comm
 	// 重复关注幂等返回 false：仅首次关注产生通知；写失败不回滚关注本体，记日志即可。
 	if followed := l.svcCtx.FollowRepo.FollowUser(userId, req.UserId); !followed {
 		l.Infof("follow user %d by %d: already following, skip notification", req.UserId, userId)
-	} else if notifyErr := l.svcCtx.NotificationRepo.Create(&types.Notification{
-		UserId:    req.UserId,
-		ActorId:   userId,
-		ActorName: username,
-		Type:      "follow_user",
-		TargetId:  req.UserId,
-		Content:   "关注了你",
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	}); notifyErr != nil {
-		l.Errorf("create follow notification for user %d: %v", req.UserId, notifyErr)
+	} else {
+		notif := &types.Notification{
+			UserId:    req.UserId,
+			ActorId:   userId,
+			ActorName: username,
+			Type:      "follow_user",
+			TargetId:  req.UserId,
+			Content:   "关注了你",
+			CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		}
+		if notifyErr := l.svcCtx.NotificationRepo.Create(notif); notifyErr != nil {
+			l.Errorf("create follow notification for user %d: %v", req.UserId, notifyErr)
+		} else {
+			// WS 即时送达（fire-and-forget；客户端以重拉未读数为准）。
+			l.svcCtx.Realtime.Publish("notification", []int64{req.UserId}, notif)
+		}
 	}
 	return &types.CommonResp{Code: 0, Message: "ok"}, nil
 }

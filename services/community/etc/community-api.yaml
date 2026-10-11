@@ -20,6 +20,12 @@ Moderation:
   AdminUserIds: [1]
 
 # Prometheus 指标端点（go-zero agent 自动暴露 /metrics）
+# 实时通道（realtime-hub）：Url 空则通知不经 WS 推送（no-op）。
+# 生产用 REALTIME_HUB_URL / REALTIME_INTERNAL_TOKEN 环境变量覆盖。
+Realtime:
+  Url: ""
+  InternalToken: ""
+
 Prometheus:
   Host: 0.0.0.0
   Port: 9094

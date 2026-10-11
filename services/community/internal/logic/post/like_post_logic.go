@@ -45,7 +45,7 @@ func (l *LikePostLogic) LikePost(req *types.LikePostReq) (resp *types.CommonResp
 	// 通知帖子作者（自己点赞自己不通知）；唯一键去重，重复点赞不刷屏；
 	// 写失败不回滚点赞本体（与计数自增同款契约），记日志即可。
 	if post.AuthorId != userId {
-		if err := l.svcCtx.NotificationRepo.Create(&types.Notification{
+		notif := &types.Notification{
 			UserId:    post.AuthorId,
 			ActorId:   userId,
 			ActorName: username,
@@ -53,8 +53,14 @@ func (l *LikePostLogic) LikePost(req *types.LikePostReq) (resp *types.CommonResp
 			TargetId:  post.Id,
 			Content:   "点赞了你的帖子《" + truncateRunes(post.Title, 30) + "》",
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
-		}); err != nil {
+		}
+		if err := l.svcCtx.NotificationRepo.Create(notif); err != nil {
 			l.Errorf("create like notification for post %d: %v", post.Id, err)
+		} else {
+			// WS 即时送达（fire-and-forget；客户端以重拉未读数为准，
+			// 帧内容仅作展示）。注意唯一键去重仍会走到这里：重复点赞
+			// 多推一帧无害——未读数重拉后不变。
+			l.svcCtx.Realtime.Publish("notification", []int64{post.AuthorId}, notif)
 		}
 	}
 

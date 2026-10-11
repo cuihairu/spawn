@@ -266,7 +266,8 @@ ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]
 - [x] 优化热门推荐算法（v2：浏览对数阻尼 + 平滑重力衰减 + 关注提权 ×1.5）
 
 ### 长期（3-6月）
-- [ ] 实现实时推送
+- [x] 实现实时推送（realtime-hub M2：点赞/评论/回复/关注四触发点
+  fire-and-forget 推帧；web WS 实时未读 + 30s 轮询兜底，见 docs/realtime-hub.md）
 - [ ] 添加全文搜索（Elasticsearch）
 - [ ] 实现内容推荐系统（ML）
 - [ ] 支持视频内容

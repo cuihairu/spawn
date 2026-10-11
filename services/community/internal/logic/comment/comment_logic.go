@@ -94,7 +94,7 @@ func (l *CreateCommentLogic) CreateComment(req *types.CreateCommentReq) (resp *t
 	// 评论通知帖子作者；回复另通知被回复者——被回复者即帖子作者时只发
 	// comment_post 一条，避免双响。
 	if post.AuthorId != userId {
-		if err := l.svcCtx.NotificationRepo.Create(&types.Notification{
+		notif := &types.Notification{
 			UserId:    post.AuthorId,
 			ActorId:   userId,
 			ActorName: username,
@@ -102,12 +102,16 @@ func (l *CreateCommentLogic) CreateComment(req *types.CreateCommentReq) (resp *t
 			TargetId:  post.Id,
 			Content:   "评论了《" + truncateRunes(post.Title, 30) + "》：" + truncateRunes(content, 40),
 			CreatedAt: now,
-		}); err != nil {
+		}
+		if err := l.svcCtx.NotificationRepo.Create(notif); err != nil {
 			l.Errorf("create comment notification for post %d: %v", post.Id, err)
+		} else {
+			// WS 即时送达（fire-and-forget；客户端以重拉未读数为准）。
+			l.svcCtx.Realtime.Publish("notification", []int64{post.AuthorId}, notif)
 		}
 	}
 	if parentId > 0 && parent.AuthorId != userId && parent.AuthorId != post.AuthorId {
-		if err := l.svcCtx.NotificationRepo.Create(&types.Notification{
+		notif := &types.Notification{
 			UserId:    parent.AuthorId,
 			ActorId:   userId,
 			ActorName: username,
@@ -115,8 +119,11 @@ func (l *CreateCommentLogic) CreateComment(req *types.CreateCommentReq) (resp *t
 			TargetId:  parent.Id,
 			Content:   "回复了你的评论：" + truncateRunes(content, 50),
 			CreatedAt: now,
-		}); err != nil {
+		}
+		if err := l.svcCtx.NotificationRepo.Create(notif); err != nil {
 			l.Errorf("create reply notification for comment %d: %v", parent.Id, err)
+		} else {
+			l.svcCtx.Realtime.Publish("notification", []int64{parent.AuthorId}, notif)
 		}
 	}
 
