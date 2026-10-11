@@ -12,6 +12,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/tappi/tappi/services/community/internal/config"
+	comment "github.com/tappi/tappi/services/community/internal/handler/comment"
 	"github.com/tappi/tappi/services/community/internal/handler/moderation"
 	notification "github.com/tappi/tappi/services/community/internal/handler/notification"
 	"github.com/tappi/tappi/services/community/internal/handler/post"
@@ -396,5 +397,207 @@ func TestModerationReportFlow(t *testing.T) {
 	handle(rehandleRR, rehandleReq)
 	if rehandleRR.Code != http.StatusBadRequest {
 		t.Fatalf("re-handle: expected 400, got %d body=%s", rehandleRR.Code, rehandleRR.Body.String())
+	}
+}
+
+// TestCommentEndpoints_Flow 评论三端点真 handler 全链路：
+// 匿名列表（公开）→ 匿名发评 401 → 发评/回评（冗余被回复者昵称）→
+// 列表总数 → 越权删评 403 → 作者删评 → 计数核对。补齐与 post/topic/
+// notification/moderation 同款的 handler 层流测。
+func TestCommentEndpoints_Flow(t *testing.T) {
+	httpx.SetErrorHandlerCtx(httperr.ErrorHandler)
+
+	svcCtx, secret := newTestServiceContext(t)
+	authorToken := signToken(t, secret, 7, "作者甲")
+	readerToken := signToken(t, secret, 8, "读者乙")
+
+	// 作者发帖
+	create := svcCtx.Auth(post.CreatePostHandler(svcCtx))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/posts", bytes.NewBufferString(`{"topic_id":1,"title":"评论流","content":"正文"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+authorToken)
+	rr := httptest.NewRecorder()
+	create(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("create post: expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var created types.PostResp
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal PostResp: %v", err)
+	}
+	postId := strconv.FormatInt(created.Post.Id, 10)
+
+	list := comment.ListCommentsHandler(svcCtx)
+
+	// 匿名列表（公开端点）→ 200 空列表
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/posts/"+postId+"/comments", nil)
+	listReq = pathvar.WithVars(listReq, map[string]string{"id": postId})
+	listRR := httptest.NewRecorder()
+	list(listRR, listReq)
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("anonymous list: expected 200, got %d body=%s", listRR.Code, listRR.Body.String())
+	}
+	var listed types.CommentsResp
+	if err := json.Unmarshal(listRR.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("unmarshal CommentsResp: %v", err)
+	}
+	if listed.Total != 0 || len(listed.Comments) != 0 {
+		t.Fatalf("initial list = %#v, want empty", listed)
+	}
+
+	// 匿名发评 → 401
+	postComment := svcCtx.Auth(comment.CreateCommentHandler(svcCtx))
+	bareReq := httptest.NewRequest(http.MethodPost, "/api/v1/posts/"+postId+"/comments", bytes.NewBufferString(`{"content":"hi"}`))
+	bareReq.Header.Set("Content-Type", "application/json")
+	bareReq = pathvar.WithVars(bareReq, map[string]string{"id": postId})
+	bareRR := httptest.NewRecorder()
+	postComment(bareRR, bareReq)
+	if bareRR.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous comment: expected 401, got %d body=%s", bareRR.Code, bareRR.Body.String())
+	}
+
+	// 读者发评 → 200
+	readerCReq := httptest.NewRequest(http.MethodPost, "/api/v1/posts/"+postId+"/comments", bytes.NewBufferString(`{"content":"沙发"}`))
+	readerCReq.Header.Set("Content-Type", "application/json")
+	readerCReq = pathvar.WithVars(readerCReq, map[string]string{"id": postId})
+	readerCReq.Header.Set("Authorization", "Bearer "+readerToken)
+	readerCRR := httptest.NewRecorder()
+	postComment(readerCRR, readerCReq)
+	if readerCRR.Code != http.StatusOK {
+		t.Fatalf("reader comment: expected 200, got %d body=%s", readerCRR.Code, readerCRR.Body.String())
+	}
+	var readerComment types.CommentResp
+	if err := json.Unmarshal(readerCRR.Body.Bytes(), &readerComment); err != nil {
+		t.Fatalf("unmarshal CommentResp: %v", err)
+	}
+	if readerComment.Comment == nil || readerComment.Comment.Id <= 0 || readerComment.Comment.AuthorName != "读者乙" {
+		t.Fatalf("reader comment = %#v", readerComment.Comment)
+	}
+
+	// 不存在的帖子发评 → 404
+	ghostReq := httptest.NewRequest(http.MethodPost, "/api/v1/posts/9999/comments", bytes.NewBufferString(`{"content":"hi"}`))
+	ghostReq.Header.Set("Content-Type", "application/json")
+	ghostReq = pathvar.WithVars(ghostReq, map[string]string{"id": "9999"})
+	ghostReq.Header.Set("Authorization", "Bearer "+readerToken)
+	ghostRR := httptest.NewRecorder()
+	postComment(ghostRR, ghostReq)
+	if ghostRR.Code != http.StatusNotFound {
+		t.Fatalf("ghost post comment: expected 404, got %d body=%s", ghostRR.Code, ghostRR.Body.String())
+	}
+
+	// 作者发评，读者回复作者评论 → 冗余被回复者昵称
+	authorCReq := httptest.NewRequest(http.MethodPost, "/api/v1/posts/"+postId+"/comments", bytes.NewBufferString(`{"content":"欢迎"}`))
+	authorCReq.Header.Set("Content-Type", "application/json")
+	authorCReq = pathvar.WithVars(authorCReq, map[string]string{"id": postId})
+	authorCReq.Header.Set("Authorization", "Bearer "+authorToken)
+	authorCRR := httptest.NewRecorder()
+	postComment(authorCRR, authorCReq)
+	if authorCRR.Code != http.StatusOK {
+		t.Fatalf("author comment: expected 200, got %d body=%s", authorCRR.Code, authorCRR.Body.String())
+	}
+	var authorComment types.CommentResp
+	if err := json.Unmarshal(authorCRR.Body.Bytes(), &authorComment); err != nil {
+		t.Fatalf("unmarshal author CommentResp: %v", err)
+	}
+	parentId := strconv.FormatInt(authorComment.Comment.Id, 10)
+
+	replyReq := httptest.NewRequest(http.MethodPost, "/api/v1/posts/"+postId+"/comments", bytes.NewBufferString(`{"content":"回复作者","parent_id":`+parentId+`}`))
+	replyReq.Header.Set("Content-Type", "application/json")
+	replyReq = pathvar.WithVars(replyReq, map[string]string{"id": postId})
+	replyReq.Header.Set("Authorization", "Bearer "+readerToken)
+	replyRR := httptest.NewRecorder()
+	postComment(replyRR, replyReq)
+	if replyRR.Code != http.StatusOK {
+		t.Fatalf("reply: expected 200, got %d body=%s", replyRR.Code, replyRR.Body.String())
+	}
+	var reply types.CommentResp
+	if err := json.Unmarshal(replyRR.Body.Bytes(), &reply); err != nil {
+		t.Fatalf("unmarshal reply CommentResp: %v", err)
+	}
+	if reply.Comment.ParentId != authorComment.Comment.Id || reply.Comment.ReplyToAuthorName != "作者甲" {
+		t.Fatalf("reply = %#v", reply.Comment)
+	}
+
+	// 列表 → 3 条
+	listReq2 := httptest.NewRequest(http.MethodGet, "/api/v1/posts/"+postId+"/comments", nil)
+	listReq2 = pathvar.WithVars(listReq2, map[string]string{"id": postId})
+	listRR2 := httptest.NewRecorder()
+	list(listRR2, listReq2)
+	var listed2 types.CommentsResp
+	if err := json.Unmarshal(listRR2.Body.Bytes(), &listed2); err != nil {
+		t.Fatalf("unmarshal CommentsResp: %v", err)
+	}
+	if listed2.Total != 3 || len(listed2.Comments) != 3 {
+		t.Fatalf("list total = %d comments = %d, want 3", listed2.Total, len(listed2.Comments))
+	}
+
+	del := svcCtx.Auth(comment.DeleteCommentHandler(svcCtx))
+
+	// 读者删作者评论 → 403
+	strangerReq := httptest.NewRequest(http.MethodDelete, "/api/v1/posts/"+postId+"/comments/"+parentId, nil)
+	strangerReq = pathvar.WithVars(strangerReq, map[string]string{"id": postId, "cid": parentId})
+	strangerReq.Header.Set("Authorization", "Bearer "+readerToken)
+	strangerRR := httptest.NewRecorder()
+	del(strangerRR, strangerReq)
+	if strangerRR.Code != http.StatusForbidden {
+		t.Fatalf("stranger delete: expected 403, got %d body=%s", strangerRR.Code, strangerRR.Body.String())
+	}
+
+	// 作者删自己的评论 → 200，列表回落 2 条
+	delReq := httptest.NewRequest(http.MethodDelete, "/api/v1/posts/"+postId+"/comments/"+parentId, nil)
+	delReq = pathvar.WithVars(delReq, map[string]string{"id": postId, "cid": parentId})
+	delReq.Header.Set("Authorization", "Bearer "+authorToken)
+	delRR := httptest.NewRecorder()
+	del(delRR, delReq)
+	if delRR.Code != http.StatusOK {
+		t.Fatalf("author delete: expected 200, got %d body=%s", delRR.Code, delRR.Body.String())
+	}
+	listReq3 := httptest.NewRequest(http.MethodGet, "/api/v1/posts/"+postId+"/comments", nil)
+	listReq3 = pathvar.WithVars(listReq3, map[string]string{"id": postId})
+	listRR3 := httptest.NewRecorder()
+	list(listRR3, listReq3)
+	var listed3 types.CommentsResp
+	if err := json.Unmarshal(listRR3.Body.Bytes(), &listed3); err != nil {
+		t.Fatalf("unmarshal CommentsResp: %v", err)
+	}
+	if listed3.Total != 2 || len(listed3.Comments) != 2 {
+		t.Fatalf("list after delete = %d/%d, want 2", listed3.Total, len(listed3.Comments))
+	}
+
+	// 三端点 Parse 失败分支 → 400 信封
+	badReq := httptest.NewRequest(http.MethodPost, "/api/v1/posts/"+postId+"/comments", bytes.NewBufferString(`{"content":}`))
+	badReq.Header.Set("Content-Type", "application/json")
+	badReq = pathvar.WithVars(badReq, map[string]string{"id": postId})
+	badReq.Header.Set("Authorization", "Bearer "+readerToken)
+	badRR := httptest.NewRecorder()
+	postComment(badRR, badReq)
+	if badRR.Code != http.StatusBadRequest {
+		t.Fatalf("bad body: expected 400, got %d body=%s", badRR.Code, badRR.Body.String())
+	}
+
+	badListReq := httptest.NewRequest(http.MethodGet, "/api/v1/posts/"+postId+"/comments?limit=abc", nil)
+	badListReq = pathvar.WithVars(badListReq, map[string]string{"id": postId})
+	badListRR := httptest.NewRecorder()
+	list(badListRR, badListReq)
+	if badListRR.Code != http.StatusBadRequest {
+		t.Fatalf("bad query: expected 400, got %d body=%s", badListRR.Code, badListRR.Body.String())
+	}
+
+	badDelReq := httptest.NewRequest(http.MethodDelete, "/api/v1/posts/"+postId+"/comments/abc", nil)
+	badDelReq = pathvar.WithVars(badDelReq, map[string]string{"id": postId, "cid": "abc"})
+	badDelReq.Header.Set("Authorization", "Bearer "+readerToken)
+	badDelRR := httptest.NewRecorder()
+	del(badDelRR, badDelReq)
+	if badDelRR.Code != http.StatusBadRequest {
+		t.Fatalf("bad cid: expected 400, got %d body=%s", badDelRR.Code, badDelRR.Body.String())
+	}
+
+	// 不存在的帖子列表评论 → 404
+	ghostListReq := httptest.NewRequest(http.MethodGet, "/api/v1/posts/9999/comments", nil)
+	ghostListReq = pathvar.WithVars(ghostListReq, map[string]string{"id": "9999"})
+	ghostListRR := httptest.NewRecorder()
+	list(ghostListRR, ghostListReq)
+	if ghostListRR.Code != http.StatusNotFound {
+		t.Fatalf("ghost list: expected 404, got %d body=%s", ghostListRR.Code, ghostListRR.Body.String())
 	}
 }
