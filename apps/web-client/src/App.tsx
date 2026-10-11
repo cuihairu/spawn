@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
 import { fetchUnreadNotificationCount, type UserInfo } from './api/client'
+import { connectNotificationStream } from './lib/realtime'
 import HomePage from './pages/HomePage'
 import DiscoverPage from './pages/DiscoverPage'
 import CommunityPage from './pages/CommunityPage'
@@ -58,9 +59,14 @@ function App() {
     }
     const timer = window.setInterval(refresh, 30_000)
     queueMicrotask(refresh)
+    // realtime-hub WS 即时加速：帧到达即刻重拉（hub 未部署时静默降级为轮询）
+    const stopStream = connectNotificationStream(auth.token, () => {
+      if (!cancelled) refresh()
+    })
     return () => {
       cancelled = true
       window.clearInterval(timer)
+      stopStream()
     }
   }, [auth])
 
