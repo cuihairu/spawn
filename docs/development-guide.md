@@ -888,6 +888,33 @@ stderr+exit ×2；`playerstatsmodel.go:154` 内嵌种子 JSON 反序列化 panic
 Parse 阶段已完成校验，与 user-service utils/auth.go:69 同族）与
 `utils/auth.go:44`（ExpiresAt 二次检查，jwt/v5 Parse 已校验 exp）。
 
+**content-service 缺口清点轮（2026-10-11，97.0% → 97.3% coverpkg 口径）**：
+逐块分诊三处可达补齐：
+- `internal/svc/servicecontext_test.go` 启动梯子第七级——攻略与评论半边在
+  只读库上完整通过（表已建 + 种子行已存在，双 SeedIfEmpty 跳过）后收藏表
+  建表触雷（`seedCommentRow` 辅助函数新增）；
+- `model/favoritemodel_errors_test.go` ListByUser 两臂——先执行的 COUNT(1)
+  只查 guide_favorites，DROP 掉 guides 表后 JOIN 报 no such table 触达列表
+  查询错误分支（关库注入会让 COUNT 先失败，够不到）；脏行臂复用
+  `handInsertDirtyGuide`（views 列混文本，Scan 到 int64 失败）。
+剩余 30 块全量登记（不硬造用例），其中较第六轮登记的增量修正：
+- handler `httpx.ErrorCtx` 空错分支 ×12（原登记 ×10 + favorites 两个
+  handler——UnfavoriteGuide/GetFavoriteStatus 同为 envelope+nil error，
+  逐一核对；ListFavorites 例外，其 logic 可返错且分支已覆盖）；
+- model 家族细分 ×16：LastInsertId ×2（commentmodel:220 / guidemodel:298，
+  双驱动字面恒 nil，见 user-service 第十一轮论证）；RowsAffected ×5
+  （commentmodel:235/251、guidemodel:359/375/396，driver result 恒 nil
+  同族）；写后二次 SELECT ×2（commentmodel:258 / guidemodel:382——UPDATE
+  成功蕴含 likes 列存在且可读，同一方法内无中途故障注入面）；rows.Err
+  驱动级遍历中断 ×3（commentmodel:285 / guidemodel:432 /
+  favoritemodel:163）；List nil 元素防御 ×2（commentmodel:300 /
+  guidemodel:447，all() 按行构造永不产 nil）；单表达式比较器闭包计数块
+  ×2（guidemodel:484.35/493.4——编译器内联使计数块恒零，排序行为已由
+  `TestGuideModelList_Sort`「newest first」用例断言，为覆盖工件非测试缺口）；
+- 沿第六轮登记：`content.go` main ×2、`client/gamecatalog.go:157/176` 与
+  `metrics.go:90` 编译兜底/default ×3、`utils/auth.go:46/51` jwt/v5 死
+  分支 ×2。
+
 **community 覆盖率重测轮（2026-10-05，98.3% → 95.8% → 98.2%）**：
 同 api-gateway 轮背景——M3 三切片（关注流/我的点赞/post_likes 关系表与
 建表链路）是功能切片，落地后未重测，巡检快照回落。逐块分诊：42 块中

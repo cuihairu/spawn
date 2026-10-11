@@ -140,6 +140,22 @@ func seedGuideRow(t *testing.T, path string) {
 	}
 }
 
+// seedCommentRow 向预建库写入一条评论（评论半边在只读库上须能无写入通过）。
+func seedCommentRow(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite3", "file:"+path)
+	if err != nil {
+		t.Fatalf("seed comment open: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO comments (id, target_type, target_id, user_id,
+		user_name, content, parent_id, reply_to_id, likes, created_at, updated_at)
+		VALUES (1, 'guide', 1, 1, 'a', 'c', 0, 0, 0,
+		'2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')`); err != nil {
+		t.Fatalf("seed comment row: %v", err)
+	}
+}
+
 // roNewServiceContext 以只读 DSN 装配服务上下文（预期 panic，由调用方 recover）。
 func roNewServiceContext(t *testing.T, path string) {
 	t.Helper()
@@ -179,5 +195,16 @@ func TestNewServiceContext_ReadOnly_SeedCommentsPanics(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "content.db")
 	precreateDB(t, path, true, true)
 	seedGuideRow(t, path) // 攻略全通过，评论表已建但为空：评论种子写入触雷
+	roNewServiceContext(t, path)
+}
+
+// TestNewServiceContext_ReadOnly_CreateFavoritesTablePanics 攻略与评论
+// 半边在只读库上完整通过（表已建 + 种子行已存在，SeedIfEmpty 跳过），
+// 收藏表建表触雷（启动梯子第七级）。
+func TestNewServiceContext_ReadOnly_CreateFavoritesTablePanics(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "content.db")
+	precreateDB(t, path, true, true)
+	seedGuideRow(t, path)
+	seedCommentRow(t, path)
 	roNewServiceContext(t, path)
 }

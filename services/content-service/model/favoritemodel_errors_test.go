@@ -78,3 +78,34 @@ func TestFavoriteModel_ListByUser_BadTagsIsInternal(t *testing.T) {
 		t.Fatal("ListByUser with corrupt tags must error")
 	}
 }
+
+// TestFavoriteModel_ListByUser_JoinFailsWhenGuidesMissing 先执行的 COUNT(1)
+// 只查 guide_favorites，无 guides 表也成功；详情 SELECT 的 JOIN 触发
+// no such table → 列表查询错误分支（关库注入够不到此分支）。
+func TestFavoriteModel_ListByUser_JoinFailsWhenGuidesMissing(t *testing.T) {
+	favs, guides := newFavoriteModel(t, true)
+	if err := favs.Add(1, 1); err != nil {
+		t.Fatalf("add favorite: %v", err)
+	}
+	if _, err := guides.db.Exec(`DROP TABLE guides`); err != nil {
+		t.Fatalf("drop guides: %v", err)
+	}
+
+	if _, _, err := favs.ListByUser(1, 10, 0); err == nil {
+		t.Fatal("ListByUser without guides table must error")
+	}
+}
+
+// TestFavoriteModel_ListByUser_DirtyRowScanFails JOIN 到的攻略行混入文本
+// （views 列），Scan 到 int64 失败 → 行扫描错误分支。
+func TestFavoriteModel_ListByUser_DirtyRowScanFails(t *testing.T) {
+	favs, guides := newFavoriteModel(t, true)
+	if err := favs.Add(1, 9); err != nil {
+		t.Fatalf("add favorite: %v", err)
+	}
+	handInsertDirtyGuide(t, guides, "[]", "abc")
+
+	if _, _, err := favs.ListByUser(1, 10, 0); err == nil {
+		t.Fatal("ListByUser with dirty row must error")
+	}
+}
