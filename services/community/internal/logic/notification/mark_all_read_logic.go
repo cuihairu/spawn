@@ -38,5 +38,9 @@ func (l *MarkAllReadLogic) MarkAllRead() (resp *types.CommonResp, err error) {
 		return nil, err
 	}
 
+	// 已读回执广播：本人全部在线连接（其他端）收到即重拉未读数，徽标
+	// 多端即时归零；帧只是信号，数值以服务端为准（重播幂等无害）。
+	l.svcCtx.Realtime.Publish("notification.read", []int64{userId}, map[string]any{"unread_count": 0})
+
 	return &types.CommonResp{Code: 0, Message: "ok"}, nil
 }
