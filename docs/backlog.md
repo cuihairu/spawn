@@ -7,7 +7,29 @@
 
 | # | 项 | 卡点/依赖 | 备注 |
 |---|----|----------|------|
-| — | （当前无可写待办；web/mobile 双端功能面对称，见下方已完成批注） | | |
+| 1 | realtime-hub 实时通道基建立项（2026-10-11 拍板开工） | 无外部依赖 | 简档先落 `docs/realtime-hub.md`，小步交付，M1 骨架起步 |
+| 2 | CI runner 预防性钉版：workflows `runs-on: ubuntu-latest` → `ubuntu-24.04` | 2026-10-19 起 ubuntu-latest 迁移 Ubuntu 26（runner-images#14748） | 非红，预防项；钉 24.04 保持现状行为零风险，迁移波及面明确后再评估跟进 |
+
+### CI 快照复核（2026-10-11）
+
+> 口径：`gh run list` 近 30 笔 run + 最新 run（38112498701 @ `03c8924`）job 日志逐包核对。
+
+**结论：零红、零 flake，六模块全绿，无需修、无需 rerun。**
+
+| 模块 | CI 结论 | 备注 |
+|------|--------|------|
+| api-gateway | ✅ 绿 | 11 包 ok（-race） |
+| community | ✅ 绿 | 14 包 ok（-race） |
+| content-service | ✅ 绿 | 11 包 ok（-race） |
+| data-panel | ✅ 绿 | 10 包 ok（-race） |
+| game-catalog | ✅ 绿 | 8 包 ok（-race） |
+| user-service | ✅ 绿 | 10 包 ok（-race） |
+| user-service-rpc | ✅ 绿 | 4 包 ok（-race） |
+| web + mobile | ✅ 绿 | lint + typecheck job 34s |
+
+- 近 30 笔中 8 笔 `cancelled`：全部为 `concurrency: cancel-in-progress`（`ci-${{ github.ref }}` 组）在连续小步推送时取消旧 run——注解「Canceling since a higher priority waiting request exists」，非失败非 flake，同 commit 终态由后续绿 run 覆盖，不 rerun。
+- 最新 run 两 job 全绿（gofmt+build+test 1m41s；web+mobile 34s），`FAIL` 行数 0，68 包全 ok。
+- Watch 项（非红不动配置）：① ubuntu-latest → Ubuntu 26 迁移（2026-10-19 起）记入待办 #2；② Node 20 deprecation 警告（checkout@v4 / setup-node@v4 / setup-go@v5 / pnpm-action@v4 被迫跑 Node 24）——当前不破，等对应 actions 新主版本再升。
 
 ### 本批已完成（2026-10-10，拉起令批次）
 
