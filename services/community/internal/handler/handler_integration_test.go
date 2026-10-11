@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -291,6 +292,15 @@ func TestNotificationEndpoints_Flow(t *testing.T) {
 	if unreadResp2.Count != 0 {
 		t.Fatalf("unread count after read-all=%d, want 0", unreadResp2.Count)
 	}
+
+	// 列表 Parse 失败分支 → 400 信封
+	badListReq := httptest.NewRequest(http.MethodGet, "/api/v1/notifications?limit=abc", nil)
+	badListReq.Header.Set("Authorization", "Bearer "+authorToken)
+	badListRR := httptest.NewRecorder()
+	list(badListRR, badListReq)
+	if badListRR.Code != http.StatusBadRequest {
+		t.Fatalf("bad limit: expected 400, got %d body=%s", badListRR.Code, badListRR.Body.String())
+	}
 }
 
 func TestModerationReportFlow(t *testing.T) {
@@ -397,6 +407,48 @@ func TestModerationReportFlow(t *testing.T) {
 	handle(rehandleRR, rehandleReq)
 	if rehandleRR.Code != http.StatusBadRequest {
 		t.Fatalf("re-handle: expected 400, got %d body=%s", rehandleRR.Code, rehandleRR.Body.String())
+	}
+
+	// 举报 Parse 失败分支 → 400 信封
+	badReportReq := httptest.NewRequest(http.MethodPost, "/api/v1/posts/"+postId+"/report", bytes.NewBufferString(`{"reason":}`))
+	badReportReq.Header.Set("Content-Type", "application/json")
+	badReportReq = pathvar.WithVars(badReportReq, map[string]string{"id": postId})
+	badReportReq.Header.Set("Authorization", "Bearer "+readerToken)
+	badReportRR := httptest.NewRecorder()
+	report(badReportRR, badReportReq)
+	if badReportRR.Code != http.StatusBadRequest {
+		t.Fatalf("bad report body: expected 400, got %d body=%s", badReportRR.Code, badReportRR.Body.String())
+	}
+
+	// 举报不存在的帖子 → 404（logic 层 PostRepo.Get 错误）
+	ghostReportReq := httptest.NewRequest(http.MethodPost, "/api/v1/posts/9999/report", bytes.NewBufferString(`{"reason":"x"}`))
+	ghostReportReq.Header.Set("Content-Type", "application/json")
+	ghostReportReq = pathvar.WithVars(ghostReportReq, map[string]string{"id": "9999"})
+	ghostReportReq.Header.Set("Authorization", "Bearer "+readerToken)
+	ghostReportRR := httptest.NewRecorder()
+	report(ghostReportRR, ghostReportReq)
+	if ghostReportRR.Code != http.StatusNotFound {
+		t.Fatalf("ghost report: expected 404, got %d body=%s", ghostReportRR.Code, ghostReportRR.Body.String())
+	}
+
+	// 队列列表 Parse 失败分支 → 400
+	badListReq := httptest.NewRequest(http.MethodGet, "/api/v1/moderation/reports?limit=abc", nil)
+	badListReq.Header.Set("Authorization", "Bearer "+adminToken)
+	badListRR := httptest.NewRecorder()
+	listReports(badListRR, badListReq)
+	if badListRR.Code != http.StatusBadRequest {
+		t.Fatalf("bad list limit: expected 400, got %d body=%s", badListRR.Code, badListRR.Body.String())
+	}
+
+	// 处置 Parse 失败分支 → 400
+	badHandleReq := httptest.NewRequest(http.MethodPost, "/api/v1/moderation/reports/"+reportId+"/handle", bytes.NewBufferString(`{"action":}`))
+	badHandleReq.Header.Set("Content-Type", "application/json")
+	badHandleReq = pathvar.WithVars(badHandleReq, map[string]string{"id": reportId})
+	badHandleReq.Header.Set("Authorization", "Bearer "+adminToken)
+	badHandleRR := httptest.NewRecorder()
+	handle(badHandleRR, badHandleReq)
+	if badHandleRR.Code != http.StatusBadRequest {
+		t.Fatalf("bad handle body: expected 400, got %d body=%s", badHandleRR.Code, badHandleRR.Body.String())
 	}
 }
 
@@ -599,5 +651,58 @@ func TestCommentEndpoints_Flow(t *testing.T) {
 	list(ghostListRR, ghostListReq)
 	if ghostListRR.Code != http.StatusNotFound {
 		t.Fatalf("ghost list: expected 404, got %d body=%s", ghostListRR.Code, ghostListRR.Body.String())
+	}
+}
+
+// brokenNotificationRepo 通知仓储故障桩：三个通知端点的 logic 错误分支
+// 需要仓储报错才可达，此处整体替换 NotificationRepo 注入。
+type brokenNotificationRepo struct{}
+
+func (brokenNotificationRepo) CreateNotificationsTable() error { return errors.New("boom") }
+func (brokenNotificationRepo) Create(n *types.Notification) error {
+	return errors.New("boom")
+}
+func (brokenNotificationRepo) ListByUser(userId, limit, offset int64) ([]*types.Notification, int64, error) {
+	return nil, 0, errors.New("boom")
+}
+func (brokenNotificationRepo) CountUnread(userId int64) (int64, error) {
+	return 0, errors.New("boom")
+}
+func (brokenNotificationRepo) MarkAllRead(userId int64) error { return errors.New("boom") }
+
+// TestNotificationEndpoints_RepoError 仓储故障 → logic 错误分支 → httperr
+// 兜底信封（非哨兵错误一律 400）。
+func TestNotificationEndpoints_RepoError(t *testing.T) {
+	httpx.SetErrorHandlerCtx(httperr.ErrorHandler)
+
+	svcCtx, secret := newTestServiceContext(t)
+	token := signToken(t, secret, 7, "作者甲")
+	svcCtx.NotificationRepo = brokenNotificationRepo{}
+
+	list := svcCtx.Auth(notification.ListNotificationsHandler(svcCtx))
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/notifications", nil)
+	listReq.Header.Set("Authorization", "Bearer "+token)
+	listRR := httptest.NewRecorder()
+	list(listRR, listReq)
+	if listRR.Code != http.StatusBadRequest {
+		t.Fatalf("list on broken repo: expected 400, got %d body=%s", listRR.Code, listRR.Body.String())
+	}
+
+	unread := svcCtx.Auth(notification.GetUnreadCountHandler(svcCtx))
+	unreadReq := httptest.NewRequest(http.MethodGet, "/api/v1/notifications/unread-count", nil)
+	unreadReq.Header.Set("Authorization", "Bearer "+token)
+	unreadRR := httptest.NewRecorder()
+	unread(unreadRR, unreadReq)
+	if unreadRR.Code != http.StatusBadRequest {
+		t.Fatalf("unread-count on broken repo: expected 400, got %d body=%s", unreadRR.Code, unreadRR.Body.String())
+	}
+
+	markRead := svcCtx.Auth(notification.MarkAllReadHandler(svcCtx))
+	markReq := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/read-all", nil)
+	markReq.Header.Set("Authorization", "Bearer "+token)
+	markRR := httptest.NewRecorder()
+	markRead(markRR, markReq)
+	if markRR.Code != http.StatusBadRequest {
+		t.Fatalf("read-all on broken repo: expected 400, got %d body=%s", markRR.Code, markRR.Body.String())
 	}
 }
