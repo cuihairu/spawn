@@ -3,10 +3,12 @@ package logic
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"testing"
 
+	"github.com/tappi/tappi/services/content-service/internal/httperr"
 	"github.com/tappi/tappi/services/content-service/internal/svc"
 	"github.com/tappi/tappi/services/content-service/internal/types"
 	"github.com/tappi/tappi/services/content-service/model"
@@ -59,8 +61,12 @@ func newFavoriteSvcCtx(t *testing.T) *svc.ServiceContext {
 func TestFavoriteGuide_Unauthorized(t *testing.T) {
 	l := NewFavoriteGuideLogic(context.Background(), newFavoriteSvcCtx(t))
 	resp, err := l.FavoriteGuide(&types.FavoriteGuideRequest{Id: 1})
-	if err != nil || resp.Code != http.StatusUnauthorized || resp.Message != "请先登录" {
-		t.Fatalf("resp=%+v err=%v, want 401 请先登录", resp, err)
+	if resp != nil || err == nil {
+		t.Fatalf("resp=%v err=%v, want (nil, 401 error)", resp, err)
+	}
+	var he *httperr.Error
+	if !errors.As(err, &he) || he.Status != http.StatusUnauthorized || he.Message != "请先登录" {
+		t.Fatalf("err=%v, want 401 请先登录", err)
 	}
 }
 
@@ -109,8 +115,12 @@ func TestFavoriteGuide_AddAndCount(t *testing.T) {
 func TestUnfavoriteGuide_Unauthorized(t *testing.T) {
 	l := NewUnfavoriteGuideLogic(context.Background(), newFavoriteSvcCtx(t))
 	resp, err := l.UnfavoriteGuide(&types.FavoriteGuideRequest{Id: 1})
-	if err != nil || resp.Code != http.StatusUnauthorized {
-		t.Fatalf("resp=%+v err=%v, want 401", resp, err)
+	if resp != nil || err == nil {
+		t.Fatalf("resp=%v err=%v, want (nil, 401 error)", resp, err)
+	}
+	var he *httperr.Error
+	if !errors.As(err, &he) || he.Status != http.StatusUnauthorized {
+		t.Fatalf("err=%v, want 401", err)
 	}
 }
 
@@ -179,8 +189,12 @@ func TestGetFavoriteStatus_AuthenticatedTrue(t *testing.T) {
 func TestListFavorites_Unauthorized(t *testing.T) {
 	l := NewListFavoritesLogic(context.Background(), newFavoriteSvcCtx(t))
 	resp, err := l.ListFavorites(&types.ListFavoritesRequest{})
-	if err != nil || resp.Code != http.StatusUnauthorized || resp.Message != "请先登录" {
-		t.Fatalf("resp=%+v err=%v, want 401 请先登录", resp, err)
+	if resp != nil || err == nil {
+		t.Fatalf("resp=%v err=%v, want (nil, 401 error)", resp, err)
+	}
+	var he *httperr.Error
+	if !errors.As(err, &he) || he.Status != http.StatusUnauthorized || he.Message != "请先登录" {
+		t.Fatalf("err=%v, want 401 请先登录", err)
 	}
 }
 

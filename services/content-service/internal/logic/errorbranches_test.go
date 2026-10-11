@@ -2,11 +2,13 @@ package logic
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/tappi/tappi/services/content-service/client"
+	"github.com/tappi/tappi/services/content-service/internal/httperr"
 	"github.com/tappi/tappi/services/content-service/internal/svc"
 	"github.com/tappi/tappi/services/content-service/internal/types"
 	"github.com/tappi/tappi/services/content-service/model"
@@ -53,40 +55,60 @@ func userCtx(id int64, username string) context.Context {
 func TestCreateComment_Unauthorized(t *testing.T) {
 	l := NewCreateCommentLogic(context.Background(), newErrorBranchSvcCtx(t, ""))
 	resp, err := l.CreateComment(&types.CreateCommentRequest{TargetType: "game", TargetId: 1, Content: "x"})
-	if err != nil || resp.Code != http.StatusUnauthorized || resp.Message != "用户认证失败" {
-		t.Fatalf("resp=%+v err=%v, want 401 用户认证失败", resp, err)
+	if resp != nil || err == nil {
+		t.Fatalf("resp=%v err=%v, want (nil, 401 error)", resp, err)
+	}
+	var he *httperr.Error
+	if !errors.As(err, &he) || he.Status != http.StatusUnauthorized {
+		t.Fatalf("err=%v, want 401", err)
 	}
 }
 
 func TestCreateGuide_Unauthorized(t *testing.T) {
 	l := NewCreateGuideLogic(context.Background(), newErrorBranchSvcCtx(t, ""))
 	resp, err := l.CreateGuide(&types.CreateGuideRequest{GameId: "g1", Title: "t", Content: "c"})
-	if err != nil || resp.Code != http.StatusUnauthorized {
-		t.Fatalf("resp=%+v err=%v, want 401", resp, err)
+	if resp != nil || err == nil {
+		t.Fatalf("resp=%v err=%v, want (nil, 401 error)", resp, err)
+	}
+	var he *httperr.Error
+	if !errors.As(err, &he) || he.Status != http.StatusUnauthorized {
+		t.Fatalf("err=%v, want 401", err)
 	}
 }
 
 func TestDeleteComment_Unauthorized(t *testing.T) {
 	l := NewDeleteCommentLogic(context.Background(), newErrorBranchSvcCtx(t, ""))
 	resp, err := l.DeleteComment(&types.DeleteCommentRequest{Id: 10})
-	if err != nil || resp.Code != http.StatusUnauthorized {
-		t.Fatalf("resp=%+v err=%v, want 401", resp, err)
+	if resp != nil || err == nil {
+		t.Fatalf("resp=%v err=%v, want (nil, 401 error)", resp, err)
+	}
+	var he *httperr.Error
+	if !errors.As(err, &he) || he.Status != http.StatusUnauthorized {
+		t.Fatalf("err=%v, want 401", err)
 	}
 }
 
 func TestUpdateGuide_Unauthorized(t *testing.T) {
 	l := NewUpdateGuideLogic(context.Background(), newErrorBranchSvcCtx(t, ""))
 	resp, err := l.UpdateGuide(&types.UpdateGuideRequest{Id: 1, Title: "t"})
-	if err != nil || resp.Code != http.StatusUnauthorized {
-		t.Fatalf("resp=%+v err=%v, want 401", resp, err)
+	if resp != nil || err == nil {
+		t.Fatalf("resp=%v err=%v, want (nil, 401 error)", resp, err)
+	}
+	var he *httperr.Error
+	if !errors.As(err, &he) || he.Status != http.StatusUnauthorized {
+		t.Fatalf("err=%v, want 401", err)
 	}
 }
 
 func TestPublishGuide_Unauthorized(t *testing.T) {
 	l := NewPublishGuideLogic(context.Background(), newErrorBranchSvcCtx(t, ""))
 	resp, err := l.PublishGuide(&types.PublishGuideRequest{Id: 1})
-	if err != nil || resp.Code != http.StatusUnauthorized {
-		t.Fatalf("resp=%+v err=%v, want 401", resp, err)
+	if resp != nil || err == nil {
+		t.Fatalf("resp=%v err=%v, want (nil, 401 error)", resp, err)
+	}
+	var he *httperr.Error
+	if !errors.As(err, &he) || he.Status != http.StatusUnauthorized {
+		t.Fatalf("err=%v, want 401", err)
 	}
 }
 

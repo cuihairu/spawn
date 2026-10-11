@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/tappi/tappi/services/content-service/internal/httperr"
 	"github.com/tappi/tappi/services/content-service/internal/svc"
 	"github.com/tappi/tappi/services/content-service/internal/types"
 
@@ -28,10 +29,7 @@ func NewListFavoritesLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Lis
 func (l *ListFavoritesLogic) ListFavorites(req *types.ListFavoritesRequest) (resp *types.ListGuidesResponse, err error) {
 	userId, ok := l.ctx.Value("user_id").(int64)
 	if !ok || userId <= 0 {
-		return &types.ListGuidesResponse{
-			Code:    http.StatusUnauthorized,
-			Message: "请先登录",
-		}, nil
+		return nil, httperr.Unauthorized("请先登录")
 	}
 
 	if req.Page < 1 {

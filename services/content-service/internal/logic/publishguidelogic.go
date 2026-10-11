@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/tappi/tappi/services/content-service/internal/httperr"
 	"github.com/tappi/tappi/services/content-service/internal/svc"
 	"github.com/tappi/tappi/services/content-service/internal/types"
 	"github.com/tappi/tappi/services/content-service/model"
@@ -29,10 +30,7 @@ func NewPublishGuideLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Publ
 func (l *PublishGuideLogic) PublishGuide(req *types.PublishGuideRequest) (resp *types.PublishGuideResponse, err error) {
 	userId, ok := l.ctx.Value("user_id").(int64)
 	if !ok || userId == 0 {
-		return &types.PublishGuideResponse{
-			Code:    http.StatusUnauthorized,
-			Message: "用户认证失败",
-		}, nil
+		return nil, httperr.Unauthorized("用户认证失败")
 	}
 
 	guide, err := l.svcCtx.GuideRepository.Get(req.Id)

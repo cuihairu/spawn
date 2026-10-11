@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/tappi/tappi/services/content-service/internal/httperr"
 	"github.com/tappi/tappi/services/content-service/internal/svc"
 	"github.com/tappi/tappi/services/content-service/internal/types"
 	"github.com/tappi/tappi/services/content-service/model"
@@ -31,10 +32,7 @@ func (l *CreateCommentLogic) CreateComment(req *types.CreateCommentRequest) (res
 	userId, ok := l.ctx.Value("user_id").(int64)
 	if !ok || userId == 0 {
 		l.Logger.Error("无法从上下文获取用户ID")
-		return &types.CreateCommentResponse{
-			Code:    http.StatusUnauthorized,
-			Message: "用户认证失败",
-		}, nil
+		return nil, httperr.Unauthorized("用户认证失败")
 	}
 
 	// 草稿攻略不允许评论（避免通过评论接口探测草稿存在）

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/tappi/tappi/services/content-service/internal/httperr"
 	"github.com/tappi/tappi/services/content-service/internal/svc"
 	"github.com/tappi/tappi/services/content-service/internal/types"
 	"github.com/tappi/tappi/services/content-service/model"
@@ -30,10 +31,7 @@ func (l *CreateGuideLogic) CreateGuide(req *types.CreateGuideRequest) (resp *typ
 	userId, ok := l.ctx.Value("user_id").(int64)
 	if !ok || userId == 0 {
 		l.Logger.Error("无法从上下文获取用户ID")
-		return &types.CreateGuideResponse{
-			Code:    http.StatusUnauthorized,
-			Message: "用户认证失败",
-		}, nil
+		return nil, httperr.Unauthorized("用户认证失败")
 	}
 
 	username, ok := l.ctx.Value("username").(string)

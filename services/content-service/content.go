@@ -11,11 +11,13 @@ import (
 
 	"github.com/tappi/tappi/services/content-service/internal/config"
 	"github.com/tappi/tappi/services/content-service/internal/handler"
+	"github.com/tappi/tappi/services/content-service/internal/httperr"
 	"github.com/tappi/tappi/services/content-service/internal/svc"
 	"github.com/tappi/tappi/services/content-service/middleware"
 
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/rest"
+	"github.com/zeromicro/go-zero/rest/httpx"
 )
 
 var configFile = flag.String("f", "etc/content-api.yaml", "the config file")
@@ -39,6 +41,10 @@ func run() error {
 
 	server := rest.MustNewServer(c.RestConf)
 	defer server.Stop()
+
+	// 错误信封映射：httperr.Error 之类错误按其携带的 HTTP 状态回信封
+	// （与 community/data-panel 同款），认证失败统一 HTTP 401。
+	httpx.SetErrorHandlerCtx(httperr.ErrorHandler)
 
 	ctx := svc.NewServiceContext(c)
 	handler.RegisterHandlers(server, ctx)

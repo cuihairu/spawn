@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/tappi/tappi/services/content-service/internal/httperr"
 	"github.com/tappi/tappi/services/content-service/internal/svc"
 	"github.com/tappi/tappi/services/content-service/internal/types"
 	"github.com/tappi/tappi/services/content-service/model"
@@ -29,10 +30,7 @@ func NewUnfavoriteGuideLogic(ctx context.Context, svcCtx *svc.ServiceContext) *U
 func (l *UnfavoriteGuideLogic) UnfavoriteGuide(req *types.FavoriteGuideRequest) (resp *types.FavoriteGuideResponse, err error) {
 	userId, ok := l.ctx.Value("user_id").(int64)
 	if !ok || userId <= 0 {
-		return &types.FavoriteGuideResponse{
-			Code:    http.StatusUnauthorized,
-			Message: "请先登录",
-		}, nil
+		return nil, httperr.Unauthorized("请先登录")
 	}
 
 	if _, err := l.svcCtx.GuideRepository.Get(req.Id); err != nil {

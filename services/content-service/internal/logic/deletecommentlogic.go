@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/tappi/tappi/services/content-service/internal/httperr"
 	"github.com/tappi/tappi/services/content-service/internal/svc"
 	"github.com/tappi/tappi/services/content-service/internal/types"
 	"github.com/tappi/tappi/services/content-service/model"
@@ -29,10 +30,7 @@ func NewDeleteCommentLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Del
 func (l *DeleteCommentLogic) DeleteComment(req *types.DeleteCommentRequest) (resp *types.DeleteCommentResponse, err error) {
 	userId, ok := l.ctx.Value("user_id").(int64)
 	if !ok || userId == 0 {
-		return &types.DeleteCommentResponse{
-			Code:    http.StatusUnauthorized,
-			Message: "用户认证失败",
-		}, nil
+		return nil, httperr.Unauthorized("用户认证失败")
 	}
 
 	comment, err := l.svcCtx.CommentRepository.Get(req.Id)

@@ -15,6 +15,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/tappi/tappi/services/content-service/client"
+	"github.com/tappi/tappi/services/content-service/internal/httperr"
 	"github.com/tappi/tappi/services/content-service/internal/svc"
 	"github.com/tappi/tappi/services/content-service/middleware"
 	"github.com/tappi/tappi/services/content-service/model"
@@ -22,6 +23,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/zeromicro/go-zero/rest"
+	"github.com/zeromicro/go-zero/rest/httpx"
 )
 
 const testSecret = "content-handler-integration-secret"
@@ -100,6 +102,8 @@ func newHandlerTestServer(t *testing.T) (string, func(int64, string) string) {
 
 	var conf rest.RestConf
 	conf.Port = port
+	// 与 content.go 生产装配一致：错误信封映射（认证失败 HTTP 401 等）
+	httpx.SetErrorHandlerCtx(httperr.ErrorHandler)
 	server := rest.MustNewServer(conf)
 	RegisterHandlers(server, svcCtx)
 	// 与 content.go 生产装配保持一致：将 Handler 风格中间件适配为 rest.Middleware
@@ -382,10 +386,10 @@ func TestRoutes_FavoriteGuideFlow(t *testing.T) {
 		t.Fatalf("re-unfavorite: status=%d body=%v", status, body)
 	}
 
-	// 匿名拉我的收藏列表 → logic 层 401 信封（HTTP 仍 200）
-	_, body = do(t, http.MethodGet, base+"/api/v1/guides/favorites", "", "")
-	if num(t, body, "code") != http.StatusUnauthorized {
-		t.Fatalf("favorites list anon: body=%v, want code 401", body)
+	// 匿名拉我的收藏列表 → HTTP 401 + 401 信封（logic 层 httperr 统一口径）
+	status, body = do(t, http.MethodGet, base+"/api/v1/guides/favorites", "", "")
+	if status != http.StatusUnauthorized || num(t, body, "code") != http.StatusUnauthorized {
+		t.Fatalf("favorites list anon: status=%d body=%v, want 401 both", status, body)
 	}
 }
 
