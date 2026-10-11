@@ -41,5 +41,10 @@ type Config struct {
 			BaseURL string `json:",env=DATA_PANEL_URL"`
 			Timeout int64  `json:",default=5000"`
 		}
+		// realtime-hub WS 隧道：/ws 原始透传（未配置则网关不注册 /ws）。
+		RealtimeHub struct {
+			BaseURL string `json:",env=REALTIME_HUB_URL,optional"`
+			Timeout int64  `json:",default=5000"`
+		}
 	}
 }

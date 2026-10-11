@@ -1,8 +1,9 @@
 // realtime-hub WS 通道客户端：帧到达即触发重拉未读数（数值以服务端为准，
 // 帧本身只是「有变」信号）。断线指数退避重连（1s → 30s 封顶），静默降级——
-// 30s 轮询兜底始终在场，WS 只是加速器。未配置地址时 connect 立即静默关闭。
+// 30s 轮询兜底始终在场，WS 只是加速器。默认走网关隧道（/ws 透传 hub），
+// VITE_REALTIME_HUB_URL 可切直连。
 const realtimeHubUrl =
-  (import.meta.env.VITE_REALTIME_HUB_URL as string | undefined) ?? 'ws://localhost:8893'
+  (import.meta.env.VITE_REALTIME_HUB_URL as string | undefined) ?? 'ws://localhost:8800'
 
 export interface RealtimeFrame {
   type: string

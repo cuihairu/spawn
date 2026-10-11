@@ -12,6 +12,8 @@ services:
       DATA_PANEL_URL: http://data-panel:8896
       # 与 user-service 的 Auth.JWTSecret 同值：上传入口网关本地校验 JWT。
       JWT_SECRET: tappi-user-service-jwt-secret-key-2024
+      # realtime-hub WS 隧道：/ws 原始透传（未配置则网关不注册 /ws）。
+      REALTIME_HUB_URL: http://realtime-hub:8893
     volumes:
       - uploads:/app/uploads
     depends_on:
@@ -20,6 +22,7 @@ services:
       - content-service
       - community
       - data-panel
+      - realtime-hub
     ports:
       - "8800:8800"
       - "9095:9095" # /metrics（deploy/ 观测栈抓取）
@@ -107,7 +110,6 @@ services:
         VITE_CONTENT_SERVICE_URL: http://localhost:8891
         VITE_COMMUNITY_SERVICE_URL: http://localhost:8892
         VITE_API_GATEWAY_URL: http://localhost:8800
-        VITE_REALTIME_HUB_URL: ws://localhost:8893
     ports:
       - "4173:80"
     depends_on:

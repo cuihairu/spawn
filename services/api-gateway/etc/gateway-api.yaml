@@ -28,6 +28,10 @@ Upstreams:
   DataPanel:
     BaseURL: "http://localhost:8896"
     Timeout: 5000
+  # realtime-hub WS 隧道：/ws 原始透传（未配置则网关不注册 /ws）。
+  RealtimeHub:
+    BaseURL: "http://localhost:8893"
+    Timeout: 5000
 
 # Prometheus 指标端点（go-zero agent 自动暴露 /metrics）
 Prometheus:

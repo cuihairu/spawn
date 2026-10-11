@@ -50,7 +50,13 @@ func NewServer(h *hub.Hub, v *auth.Verifier, internalToken string) http.Handler 
 		hub:           h,
 		verifier:      v,
 		internalToken: internalToken,
-		upgrader:      websocket.Upgrader{ReadBufferSize: 1024, WriteBufferSize: 1024},
+		upgrader: websocket.Upgrader{
+			ReadBufferSize: 1024, WriteBufferSize: 1024,
+			// JWT query 是唯一准入闸：令牌不随跨域自动携带，Origin 校验
+			// 对非浏览器客户端无意义、只会误伤浏览器（web :4173 跨源连
+			// hub/网关隧道），本地部署口径放开。
+			CheckOrigin: func(*http.Request) bool { return true },
+		},
 	}
 
 	mux := http.NewServeMux()
