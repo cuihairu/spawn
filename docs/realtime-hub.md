@@ -36,7 +36,7 @@
 
 ## 分期
 
-### M1 骨架（当前）
+### M1 骨架（已完成，commit c8f978e）
 
 `services/realtime-hub` 独立 Go 模块（module path
 `github.com/tappi/tappi/services/realtime-hub`，Go 1.26，websocket 库
@@ -45,12 +45,23 @@ handler / publish handler；`go.work` 纳入（CI 按 go.work 动态发现，自
 覆盖 -race）；compose 加服务与 `JWT_SECRET`/`REALTIME_INTERNAL_TOKEN`
 注入；服务 README。
 
-### M2 接入
+### M2 接入（已完成，2026-10-11）
 
 - community：通知创建（like/comment/reply/follow 四触发点）后
   fire-and-forget publish，写失败仅记日志（与通知写同款契约）。
 - web：通知中心接 WS 实时 +1；断线自动重连（指数退避），降级回 30s
   轮询（保留现有轮询代码作为兜底，hub 不可达不损功能）。
+
+#### M2 落地记录
+
+- community：`internal/realtime` 发布器（Url 空 = no-op，3s 超时 goroutine，
+  失败仅 logx），`Realtime` 配置段（`REALTIME_HUB_URL`/`REALTIME_INTERNAL_TOKEN`
+  环境变量）；四触发点通知落库成功后推帧，落库失败不推（防幽灵红点）。
+- web：`src/lib/realtime.ts`（指数退避重连 1s→30s 封顶，静默降级），App 铃铛
+  帧到达即重拉未读数；VITE_REALTIME_HUB_URL 进 compose build args。
+- 端到端冒烟（compose 实测）：注册 u1/u2 → u1 发帖 → u1 挂 WS → u2 点赞 →
+  u1 收到 `{"type":"notification","data":{...like_post...}}` 帧；停 hub 后
+  点赞仍 200，publish 失败仅 error 日志。
 
 ### M3 远期（逐项再拍板）
 

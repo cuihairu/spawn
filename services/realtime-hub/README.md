@@ -31,7 +31,7 @@ docker compose up -d realtime-hub
 ## 分期
 
 - [x] M1 骨架：模块 + 配置/鉴权/hub/handler + 全量单测（-race）+ Dockerfile + compose
-- [ ] M2 接入：community 点赞/评论/回复/关注四触发点 fire-and-forget 发布；web WS 消费（断线退避重连，30s 轮询兜底保留）
+- [x] M2 接入：community 四触发点 fire-and-forget 发布；web WS 消费（断线退避重连，30s 轮询兜底保留）
 - [ ] M3 远期（逐项再拍板）：网关 WS 隧道、在线状态/已读回执、Redis pub/sub 水平扩展、移动端厂商推送桥、语音信令
 
 ## 测试

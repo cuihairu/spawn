@@ -7,7 +7,7 @@
 
 | # | 项 | 卡点/依赖 | 备注 |
 |---|----|----------|------|
-| 1 | realtime-hub 实时通道基建立项（2026-10-11 拍板开工） | 无外部依赖 | 简档先落 `docs/realtime-hub.md`，小步交付，M1 骨架起步 |
+| 1 | realtime-hub 实时通道基建立项（2026-10-11 拍板开工） | 无外部依赖 | M1 骨架 + M2 接入已落地（2026-10-11）；余 M3 逐项再拍板 |
 | 2 | CI runner 预防性钉版：workflows `runs-on: ubuntu-latest` → `ubuntu-24.04` | 2026-10-19 起 ubuntu-latest 迁移 Ubuntu 26（runner-images#14748） | 非红，预防项；钉 24.04 保持现状行为零风险，迁移波及面明确后再评估跟进 |
 
 ### CI 快照复核（2026-10-11）
@@ -45,7 +45,7 @@
 
 | 项 | 卡点 | 依据 |
 |----|------|------|
-| 实时推送（WebSocket） | 需独立实时通道基建（realtime-hub 未开工） | community README:269 |
+| ~~实时推送（WebSocket）~~ | 已解除（realtime-hub M1/M2 落地，2026-10-11） | docs/realtime-hub.md |
 | 全文搜索（Elasticsearch） | 外部中间件未引入 | community README:270 |
 | 内容推荐系统（ML） | 外部模型服务未引入 | community README:271 |
 | 视频内容 | 对象存储/转码基建未立项 | community README:272 |
