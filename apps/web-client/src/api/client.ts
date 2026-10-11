@@ -114,8 +114,9 @@ const contentServiceUrl =
   'http://localhost:8891'
 
 type LoginResponseDto = {
-  token: string
-  user_info: UserInfo
+  code: number
+  message: string
+  data?: { token?: string; user_info?: UserInfo }
 }
 
 async function request<T>(
@@ -155,9 +156,12 @@ export async function login(username: string, password: string): Promise<LoginRe
     method: 'POST',
     body: JSON.stringify({ username, password }),
   })
+  if (payload.code !== 200 || !payload.data?.token || !payload.data.user_info) {
+    throw new Error(payload.message || '登录失败')
+  }
   return {
-    token: payload.token,
-    userInfo: payload.user_info,
+    token: payload.data.token,
+    userInfo: payload.data.user_info,
   }
 }
 

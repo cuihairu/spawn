@@ -73,7 +73,7 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
   unauthorizedHandler = handler;
 }
 
-// 错误体可能是 JSON（信封/中间件）也可能是纯文本（如 /auth/login 失败返回「用户名或密码错误」）。
+// 错误体可能是 JSON（信封/中间件）也可能是纯文本（个别上游直接回文本）。
 async function parseBody(response: Response): Promise<unknown> {
   const text = await response.text();
   if (!text) return null;
@@ -140,22 +140,22 @@ async function requestEnvelope<T>(url: string, init?: RequestInit): Promise<T> {
 
 // ========== 用户服务（:8888） ==========
 
-interface LoginResponseDto {
-  token: string;
-  user_info: UserInfo;
-}
-
 export interface LoginResult {
   token: string;
   user: UserInfo;
 }
 
+// 登录与注册同款业务信封：code 200 时 data 内含 token + user_info，
+// 失败走 httperr → 真 401/400（request 统一抛 ApiError）。
 export async function login(username: string, password: string): Promise<LoginResult> {
-  const payload = await request<LoginResponseDto>(`${USER_SERVICE_URL}/auth/login`, {
-    method: 'POST',
-    body: JSON.stringify({ username, password }),
-  });
-  return { token: payload.token, user: payload.user_info };
+  const data = await requestEnvelope<{ token: string; user_info: UserInfo }>(
+    `${USER_SERVICE_URL}/auth/login`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    },
+  );
+  return { token: data.token, user: data.user_info };
 }
 
 export async function register(payload: RegisterPayload): Promise<number> {
