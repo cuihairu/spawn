@@ -1,10 +1,13 @@
 package svc
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 
 	"github.com/tappi/tappi/services/game-catalog/internal/config"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // TestNewServiceContext_SQLiteSeed SQLite 文件 DSN：建库建表 + 空表写入内嵌
@@ -66,4 +69,73 @@ func TestNewServiceContext_InMemoryDSN(t *testing.T) {
 	if _, err := ctx.GameRepository.Get("game-elden-ring"); err != nil {
 		t.Fatalf("seeded game: %v", err)
 	}
+}
+
+// --- 只读库启动梯子（与 content-service svc 同款口径） ---
+
+// roNewServiceContext 以只读 DSN 装配服务上下文（预期 panic，由调用方 recover）。
+func roNewServiceContext(t *testing.T, path string) {
+	t.Helper()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("read-only database must fail startup in NewServiceContext")
+		}
+	}()
+
+	var c config.Config
+	c.MySQL.DataSource = "file:" + path + "?mode=ro"
+	c.Auth.JWTSecret = "ro-secret"
+	NewServiceContext(c)
+}
+
+// TestNewServiceContext_ReadOnly_CreateGamesTablePanics 已存在但无 games
+// 表的只读库：Ping 通过，建游戏表触雷（梯子第一级）。文件必须先落盘，
+// 否则 mode=ro 在打开阶段即失败，够不到建表分支。
+func TestNewServiceContext_ReadOnly_CreateGamesTablePanics(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "games.db")
+
+	db, err := sql.Open("sqlite3", "file:"+path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE marker (x INTEGER)`); err != nil {
+		t.Fatalf("create marker table: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	roNewServiceContext(t, path)
+}
+
+// TestNewServiceContext_ReadOnly_SeedGamesPanics 预建空 games 表的只读库：
+// CreateGamesTable 幂等 no-op，空表种子写入触雷（梯子第二级）。
+func TestNewServiceContext_ReadOnly_SeedGamesPanics(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "games.db")
+
+	db, err := sql.Open("sqlite3", "file:"+path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE games (
+		id VARCHAR(64) PRIMARY KEY,
+		title VARCHAR(256) NOT NULL,
+		description VARCHAR(2048) NOT NULL,
+		genres VARCHAR(1024) NOT NULL,
+		platforms VARCHAR(1024) NOT NULL,
+		tags VARCHAR(1024) NOT NULL,
+		release_date VARCHAR(32) NOT NULL,
+		developer VARCHAR(256) NOT NULL,
+		publisher VARCHAR(256) NOT NULL,
+		score DOUBLE NOT NULL DEFAULT 0,
+		trending_score INTEGER NOT NULL DEFAULT 0,
+		cover_image VARCHAR(512) NOT NULL)`); err != nil {
+		t.Fatalf("precreate games table: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	roNewServiceContext(t, path)
 }

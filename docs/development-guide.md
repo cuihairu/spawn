@@ -915,6 +915,17 @@ Parse 阶段已完成校验，与 user-service utils/auth.go:69 同族）与
   `metrics.go:90` 编译兜底/default ×3、`utils/auth.go:46/51` jwt/v5 死
   分支 ×2。
 
+**game-catalog 启动梯子轮（2026-10-11，97.5% → 97.9% coverpkg 口径）**：
+第七轮登记的 svc 层仅覆盖相对路径归一化与文件缺失回落两条路径，只读
+启动梯子（content-service 同款口径）此前未建——本轮补两级：
+`TestNewServiceContext_ReadOnly_CreateGamesTablePanics`（已落盘但无
+games 表的只读库，建表触雷）与 `TestNewServiceContext_ReadOnly_SeedGamesPanics`
+（预建空 games 表的只读库，种子写入触雷）。注：mode=ro 对不存在文件
+在打开阶段即失败，故第一级需先落盘一个 marker 表否则够不到建表分支。
+剩余 9 块均为第七轮既定登记：main ×2、handler ×3（envelope+nil）、
+`gamemodel.go:281` rows.Err 族、`gamemodel.go:458` 内嵌种子 JSON panic、
+`utils/auth.go:43/47` jwt/v5 死分支 ×2。
+
 **community 覆盖率重测轮（2026-10-05，98.3% → 95.8% → 98.2%）**：
 同 api-gateway 轮背景——M3 三切片（关注流/我的点赞/post_likes 关系表与
 建表链路）是功能切片，落地后未重测，巡检快照回落。逐块分诊：42 块中
