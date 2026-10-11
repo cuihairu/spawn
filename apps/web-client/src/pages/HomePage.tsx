@@ -5,6 +5,7 @@ import {
   fetchFeaturedGames,
   fetchRecommendations,
   login,
+  register,
   type GameSummary,
   type UserInfo,
 } from '../api/client'
@@ -16,7 +17,8 @@ interface Props {
 }
 
 const HomePage = ({ auth, onAuthChange }: Props) => {
-  const [form, setForm] = useState({ username: '', password: '' })
+  const [form, setForm] = useState({ username: '', email: '', password: '' })
+  const [mode, setMode] = useState<'login' | 'register'>('login')
   const [featured, setFeatured] = useState<GameSummary[]>([])
   const [recommendations, setRecommendations] = useState<GameSummary[]>([])
   const [loading, setLoading] = useState(false)
@@ -39,16 +41,24 @@ const HomePage = ({ auth, onAuthChange }: Props) => {
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!form.username || !form.password) return
+    const username = form.username.trim()
+    if (!username || !form.password) return
     setLoading(true)
     setBanner(null)
 
     try {
-      const result = await login(form.username.trim(), form.password)
-      const authData = { token: result.token, user: result.userInfo }
-      onAuthChange(authData)
+      if (mode === 'register') {
+        if (!form.email) {
+          setBanner('注册需填写邮箱')
+          return
+        }
+        // 注册即建号（后端无邮箱验证环节）；成功后用同一凭据自动登录
+        await register({ username, email: form.email.trim(), password: form.password })
+      }
+      const result = await login(username, form.password)
+      onAuthChange({ token: result.token, user: result.userInfo })
     } catch (error) {
-      setBanner((error as Error).message || '登录失败')
+      setBanner((error as Error).message || (mode === 'register' ? '注册失败' : '登录失败'))
     } finally {
       setLoading(false)
     }
@@ -108,7 +118,7 @@ const HomePage = ({ auth, onAuthChange }: Props) => {
           </div>
         ) : (
           <form className="auth-card" onSubmit={handleLogin}>
-            <h2>快速登录</h2>
+            <h2>{mode === 'login' ? '快速登录' : '注册账号'}</h2>
             <label>
               <span>用户名</span>
               <input
@@ -118,17 +128,38 @@ const HomePage = ({ auth, onAuthChange }: Props) => {
                 placeholder="例如 demo 或 tester"
               />
             </label>
+            {mode === 'register' ? (
+              <label>
+                <span>邮箱</span>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
+                  placeholder="用于找回账号，如 you@example.com"
+                />
+              </label>
+            ) : null}
             <label>
               <span>密码</span>
               <input
                 type="password"
                 value={form.password}
                 onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-                placeholder="输入任意测试密码"
+                placeholder={mode === 'register' ? '设置登录密码' : '输入任意测试密码'}
               />
             </label>
             <button type="submit" disabled={loading}>
-              {loading ? '登录中...' : '登录并获取推荐'}
+              {loading ? (mode === 'register' ? '注册中...' : '登录中...') : mode === 'register' ? '注册并登录' : '登录并获取推荐'}
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => {
+                setMode(mode === 'login' ? 'register' : 'login')
+                setBanner(null)
+              }}
+            >
+              {mode === 'login' ? '没有账号？去注册' : '已有账号？去登录'}
             </button>
             <p className="helper-text">{greeting}</p>
           </form>

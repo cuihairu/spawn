@@ -161,6 +161,30 @@ export async function login(username: string, password: string): Promise<LoginRe
   }
 }
 
+type RegisterResponseDto = {
+  code: number
+  message: string
+  data?: { user_id?: number }
+}
+
+// 注册新账号（POST /auth/register，信封响应）：成功返回用户 id。
+// 后端无邮箱验证环节，注册即建号；随后由调用方自动登录。
+export async function register(params: {
+  username: string
+  email: string
+  password: string
+}): Promise<number> {
+  const baseUrl = apiGatewayUrl ?? userServiceUrl
+  const payload = await request<RegisterResponseDto>(baseUrl, '/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+  if (payload.code !== 200 || !payload.data?.user_id) {
+    throw new Error(payload.message || '注册失败')
+  }
+  return payload.data.user_id
+}
+
 export interface PublicUserInfo {
   id: number
   username: string
