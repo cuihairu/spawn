@@ -62,10 +62,14 @@ type Hub struct {
 	watchers map[int64]map[*Client]struct{} // 被 watch 用户 → watch 的连接
 	drops    atomic.Int64                   // 溢出丢弃计数（并发投递无锁累计）
 	relay    Relay                          // 跨实例投递（nil = 单实例）
+	notifier Notifier                       // 离线推送出口（nil = 不推）
 }
 
 // SetRelay 挂跨实例投递器（启动期一次性调用，Serve 前完成）。
 func (h *Hub) SetRelay(r Relay) { h.relay = r }
+
+// SetNotifier 挂离线推送出口（启动期一次性调用，Serve 前完成）。
+func (h *Hub) SetNotifier(n Notifier) { h.notifier = n }
 
 // Options 可调参数（零值走默认）。
 type Options struct {
@@ -241,11 +245,14 @@ func (h *Hub) Drops() int64 {
 
 // SendToUsers 向给定用户的全部在线连接投递一帧，返回实际入队数；
 // 队列满即丢弃计数，永不阻塞。挂了 Relay 时本地投递后广播给其他实例
-// （本实例回环由 Relay 剔除，不重复投递）。
+// （本实例回环由 Relay 剔除，不重复投递）；单实例模式下零投递的用户
+// 交给离线推送出口（多实例下本地零投递 ≠ 离线，不推）。
 func (h *Hub) SendToUsers(userIds []int64, data []byte) int {
-	delivered := h.deliverLocal(userIds, data)
+	delivered, missed := h.deliverLocal(userIds, data)
 	if h.relay != nil {
 		h.relay.Broadcast(userIds, data)
+	} else if h.notifier != nil && len(missed) > 0 {
+		h.notifier.NotifyOffline(missed, data)
 	}
 	return delivered
 }
@@ -253,23 +260,38 @@ func (h *Hub) SendToUsers(userIds []int64, data []byte) int {
 // DeliverLocal 本实例投递（Relay 回环回调），锁外调用安全。
 func (h *Hub) DeliverLocal(userIds []int64, data []byte) { h.deliverLocal(userIds, data) }
 
-// deliverLocal 本实例连接投递（持锁最小化，网络调用一律在锁外）。
-func (h *Hub) deliverLocal(userIds []int64, data []byte) int {
+// deliverLocal 本实例连接投递（持锁最小化，网络调用一律在锁外）；
+// 返回投递数与本实例零投递的用户（入参去重）。
+func (h *Hub) deliverLocal(userIds []int64, data []byte) (int, []int64) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	delivered := 0
+	counts := make(map[int64]int, len(userIds))
+	order := make([]int64, 0, len(userIds))
 	for _, id := range userIds {
+		if _, dup := counts[id]; dup {
+			continue // 重复 id 只投一次
+		}
+		order = append(order, id)
+		counts[id] = 0
 		for c := range h.conns[id] {
 			select {
 			case c.send <- data:
 				delivered++
+				counts[id]++
 			default:
 				h.drops.Add(1)
 				log.Printf("send queue full, drop frame for user %d (total drops %d)", id, h.drops.Load())
 			}
 		}
 	}
-	return delivered
+	missed := make([]int64, 0, len(order))
+	for _, id := range order {
+		if counts[id] == 0 {
+			missed = append(missed, id)
+		}
+	}
+	return delivered, missed
 }
 
 // notifyPresence 上下线转换沿事件：快照 watch 者后锁外投递（非阻塞）。

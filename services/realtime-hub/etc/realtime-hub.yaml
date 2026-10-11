@@ -9,3 +9,7 @@ InternalToken: "tappi-realtime-internal-token-2024"
 # REALTIME_REDIS_ADDR / REALTIME_REDIS_PASSWORD）
 RedisAddr: ""
 RedisPassword: ""
+# 离线推送 webhook（空 = 不推；环境变量覆盖 REALTIME_PUSH_WEBHOOK /
+# REALTIME_PUSH_TOKEN）
+PushWebhook: ""
+PushToken: ""

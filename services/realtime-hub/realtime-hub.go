@@ -50,6 +50,9 @@ func run(configPath string) error {
 		defer relay.Close()
 		h.SetRelay(relay)
 	}
+	if cfg.PushWebhook != "" {
+		h.SetNotifier(hub.NewWebhookNotifier(cfg.PushWebhook, cfg.PushToken))
+	}
 	srv := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           handler.NewServer(h, auth.NewVerifier(cfg.JwtSecret), cfg.InternalToken),

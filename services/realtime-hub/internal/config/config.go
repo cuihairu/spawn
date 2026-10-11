@@ -24,6 +24,10 @@ type Config struct {
 	//（尽力而为：Redis 故障只丢跨实例帧，本地投递不受影响）。
 	RedisAddr     string `yaml:"RedisAddr"`
 	RedisPassword string `yaml:"RedisPassword"`
+	// PushWebhook 空 = 不推；配置后单实例模式下零投递用户回调该地址
+	//（厂商推送桥接缝，桥接服务转 APNs/FCM 等厂商协议）。
+	PushWebhook string `yaml:"PushWebhook"`
+	PushToken   string `yaml:"PushToken"`
 }
 
 // Load 读取 yaml 并应用默认值与环境变量覆盖。
@@ -48,6 +52,12 @@ func Load(path string) (Config, error) {
 	}
 	if v := os.Getenv("REALTIME_REDIS_PASSWORD"); v != "" {
 		c.RedisPassword = v
+	}
+	if v := os.Getenv("REALTIME_PUSH_WEBHOOK"); v != "" {
+		c.PushWebhook = v
+	}
+	if v := os.Getenv("REALTIME_PUSH_TOKEN"); v != "" {
+		c.PushToken = v
 	}
 
 	if c.Listen == "" {

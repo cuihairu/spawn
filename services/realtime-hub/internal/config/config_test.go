@@ -46,6 +46,8 @@ func TestLoad_DefaultsAndEnvOverrides(t *testing.T) {
 	t.Setenv("JWT_SECRET", "env-secret")
 	t.Setenv("REALTIME_INTERNAL_TOKEN", "env-token")
 	t.Setenv("REALTIME_REDIS_ADDR", "env-redis:6379")
+	t.Setenv("REALTIME_PUSH_WEBHOOK", "http://env-bridge/push")
+	t.Setenv("REALTIME_PUSH_TOKEN", "env-push-tok")
 
 	c, err := Load(path)
 	if err != nil {
@@ -56,6 +58,9 @@ func TestLoad_DefaultsAndEnvOverrides(t *testing.T) {
 	}
 	if c.RedisAddr != "env-redis:6379" || c.RedisPassword != "" {
 		t.Fatalf("redis config = %+v", c)
+	}
+	if c.PushWebhook != "http://env-bridge/push" || c.PushToken != "env-push-tok" {
+		t.Fatalf("push config = %+v", c)
 	}
 	if c.Listen != "127.0.0.1:0" {
 		t.Fatalf("listen = %q, want yaml value kept", c.Listen)
