@@ -51,7 +51,7 @@ Community Service 是 spawn 社区平台的核心服务之一，提供帖子发�
 ### 站内通知
 - `GET /api/v1/notifications` - 我的通知列表，id 倒序分页（需认证）
 - `GET /api/v1/notifications/unread-count` - 未读通知数（需认证）
-- `POST /api/v1/notifications/read-all` - 全部标记已读（需认证）
+- `POST /api/v1/notifications/read-all` - 全部标记已读（需认证）；成功后经 realtime-hub 向本人全部连接广播 `notification.read` 帧（多端徽标即时归零，重播幂等）
 
 触发点：帖子被点赞（like_post）/被评论（comment_post）/评论被回复（reply_comment）/
 被关注（follow_user）。写入 `UNIQUE (user_id, actor_id, type, target_id)` 幂等去重，
