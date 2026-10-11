@@ -868,6 +868,26 @@ user-service utils/auth.go:69 同族）、SaveImage file.Seek 失败
 （multipart.File 为 buffer/section 读取器，无失败注入面）、rand.Read
 与 io.Copy 失败（crypto/rand 与 buffer 读取器恒成功族）。
 
+**data-panel 缺口清零轮（2026-10-11，96.9% → 98.2% coverpkg 口径）**：
+接上轮 `1f3c1d4`（94.4% → 96.9%）后逐块分诊，五块可达补齐：
+- `playerstatsmodel.go` SeedIfEmpty 的 count>0 跳过臂——预置一行合法
+  数据的完整表，`SeedIfEmpty` 直接返回 nil 且不再插行（生产库已迁移、
+  容器重启不重灌的语义，此前无此路径测试）；
+- ListGames 列表查询错误臂——关库会让先执行的 COUNT 先失败，改预置
+  仅含 `(id, user_id)` 两列的表：COUNT 正常、SELECT 具名列报
+  `no such column`（缺列注入的同一套手法的列表方向）；行扫描错误臂——
+  列齐全但 matches 存文本，COUNT 与 SELECT 均成功、Scan 到 int64 失败；
+- logic 层 Record 错误臂（`failingStatsStore` 增 Record 投毒方法）与
+  ListGameStats 的 nil 列表归一臂（`nilGamesStatsStore` 返回 nil 无错；
+  真实仓储恒返回空切片非 nil，nil 仅出现于降级实现——与 community
+  `nilLikesStore` 同口径）。
+剩余 6 块均为既定登记家族，维持不硬造：`data-panel.go:24/25` main
+stderr+exit ×2；`playerstatsmodel.go:154` 内嵌种子 JSON 反序列化 panic
+（const 常量，结构上不可失败）；`playerstatsmodel.go:299` rows.Err 驱动
+级遍历中断族；`utils/auth.go:40`（`!ok || !token.Valid`，jwt/v5 在
+Parse 阶段已完成校验，与 user-service utils/auth.go:69 同族）与
+`utils/auth.go:44`（ExpiresAt 二次检查，jwt/v5 Parse 已校验 exp）。
+
 **community 覆盖率重测轮（2026-10-05，98.3% → 95.8% → 98.2%）**：
 同 api-gateway 轮背景——M3 三切片（关注流/我的点赞/post_likes 关系表与
 建表链路）是功能切片，落地后未重测，巡检快照回落。逐块分诊：42 块中
