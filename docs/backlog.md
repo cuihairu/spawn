@@ -29,7 +29,7 @@
 
 - 近 30 笔中 8 笔 `cancelled`：全部为 `concurrency: cancel-in-progress`（`ci-${{ github.ref }}` 组）在连续小步推送时取消旧 run——注解「Canceling since a higher priority waiting request exists」，非失败非 flake，同 commit 终态由后续绿 run 覆盖，不 rerun。
 - 最新 run 两 job 全绿（gofmt+build+test 1m41s；web+mobile 34s），`FAIL` 行数 0，68 包全 ok。
-- Watch 项（非红不动配置）：① ubuntu-latest → Ubuntu 26 迁移（2026-10-19 起）记入待办 #2；② Node 20 deprecation 警告——已处理（2026-10-11 升新主版本：checkout@v7 / setup-node@v7 / setup-go@v7 / pnpm-action@v6，均 node24 运行时，CI 全绿验证）。
+- Watch 项（非红不动配置）：① ubuntu-latest → Ubuntu 26 迁移（2026-10-19 起）记入待办 #2；② Node 20 deprecation 警告——已处理（2026-10-11 升新主版本：checkout@v7 / setup-node@v7 / setup-go@v7 / pnpm-action@v6，均 node24 运行时，CI 全绿验证）；ios.yml 的 macos 位同批升级，当日手动点火 run 38146648735 实测全绿（prebuild + pod install + 模拟器免签名编译，14m，三个新 action 在 macOS runner 上验证通过）。
 
 ### 本批已完成（2026-10-10，拉起令批次）
 
