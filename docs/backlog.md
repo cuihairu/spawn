@@ -8,7 +8,7 @@
 | # | 项 | 卡点/依赖 | 备注 |
 |---|----|----------|------|
 | 1 | realtime-hub 实时通道基建立项（2026-10-11 拍板开工） | 无外部依赖 | M1 骨架 + M2 接入已落地（2026-10-11）；余 M3 逐项再拍板 |
-| 2 | CI runner 预防性钉版：workflows `runs-on: ubuntu-latest` → `ubuntu-24.04` | 2026-10-19 起 ubuntu-latest 迁移 Ubuntu 26（runner-images#14748） | 非红，预防项；钉 24.04 保持现状行为零风险，迁移波及面明确后再评估跟进 |
+| 2 | ~~CI runner 预防性钉版~~ 已处理（2026-10-11 五处 `ubuntu-latest` 钉 `ubuntu-24.04`：ci×2/docs×2/nightly） | 2026-10-19 起 ubuntu-latest 迁移 Ubuntu 26（runner-images#14748） | 已消除漂移风险；Ubuntu 26 正式迁移波及面明确后再评估是否跟进升级 |
 
 ### CI 快照复核（2026-10-11）
 
