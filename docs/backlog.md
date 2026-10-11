@@ -36,7 +36,7 @@
 > 口径：本机无浏览器自动化，替代口径 = 全栈拉起（六服务 + vite dev，`VITE_API_GATEWAY_URL` 指网关，compose 同款 JWT_SECRET）
 > + 按 `src/api/client.ts` 逐函数走通 API 契约（curl 同路径同载荷）+ SPA 深链 HTML 探活 + web 三连门禁（tsc/eslint/build）。
 > 四块结论：通知中心 / 收藏 / 图片上传 / 举报 **主链路全通**（含防重、幂等、越权 403、大小/类型闸、静态回源、read-all 归零）。
-> 2026-10-11 续批：技术项 2 条已修（下附提交）；剩 3 条属 API 契约 / 产品决策，**待拍板，未代拍板开工**。
+> 2026-10-11 续批：技术项 2 条已修（下附提交）；另 3 条拍板项已按用户授权拍板并落地（见「待拍板」节结论）。
 
 ### 已修（2026-10-11）
 
@@ -47,11 +47,13 @@
 
 ### 待拍板（属契约/产品决策，不代拍板）
 
-| 原# | 发现 | 等级 | 位置 |
-|---|------|------|------|
-| 1 | web 端无注册入口：网关有 `POST /auth/register`，但 client.ts 无 register 函数、登录表单（HomePage「快速登录」）无注册链路，首次访客无法从 web 注册。需拍板：是否要 web 注册入口（以及是否走邮箱验证/邀请制） | 中 | apps/web-client/src/api/client.ts、src/pages/HomePage.tsx |
-| 2 | 鉴权失败状态码口径不一：content/community 匿名访问（如 GET /api/v1/guides/favorites）回 HTTP 200 + 信封 code:401，而网关 /upload 匿名回 HTTP 401、moderation 队列越权回 HTTP 403。统一是跨服务契约变更，web/mobile 双端都在适配 | 低 | content-service/community 业务信封 vs api-gateway upload/moderation |
-| 5 | register/login 响应形状不一致：register 回信封 `{code,message,data:{user_id}}`，login 回裸 `{token,user_info}`。统一需同步改两端客户端，属契约变更 | 低 | user-service auth handler |
+> 2026-10-11 用户授权按本仓决策记录代拍板（推荐 #2），三项已拍板并落地，记录如下。
+
+| 原# | 拍板结论 | 依据与口径 | Commit |
+|---|---------|-----------|--------|
+| 1 | **做 web 注册入口**（登录卡内注册态切换，注册成功即自动登录；不做邮箱验证/邀请制——本地部署无邮件服务，属后续独立事项） | web GUIDE 本就列注册为面向访客的功能；web 已有 register API 面（网关反代 /auth/register），补 UI 即可闭环 | `0bd03e5` |
+| 2 | **统一：认证/权限失败回真 HTTP 状态（401/403）+ 信封体；业务码（400/404/409/500）保持 HTTP 200 + 信封 code** | 认证失败回 200 会绕过客户端 401 统一处理（mobile 登出跳登录、web 报错横幅）；网关 /upload、moderation 已是此口径，向多数派对齐。content-service 8 个 logic 已迁移 httperr（可选鉴权 GET 匿名不再静默 200+code:401） | `d2b7c93` |
+| 5 | **login 与 register 同款业务信封** `{code,message,data:{token,user_info}}`；失败走 httperr → 真 401/400 信封。网关 /auth/login 由聚合 handler 改为与 /auth/register 同款反代（信封原样透传，形状永不漂移）；web/mobile 登录解析 data 字段 | 消除裸 `{token,user_info}` 与信封双轨；实测错密码从「HTTP 400 login failed 纯文本」变为 401 信封可读文案。user-service/网关/web 三层 + mobile 同批落地（全绿后一次推送） | `beb726f` `ec1509f` `548cb49` |
 
 ## 验收打磨轨道
 
