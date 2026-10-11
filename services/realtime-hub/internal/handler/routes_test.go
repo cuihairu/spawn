@@ -21,12 +21,31 @@ const (
 	testTokenID = "internal-token-2024"
 )
 
-func newTestServer(t *testing.T) *httptest.Server {
+func newTestServer(t *testing.T) (*httptest.Server, *hub.Hub) {
 	t.Helper()
 	h := hub.New(hub.Options{QueueSize: 8, WriteWait: time.Second, PingPeriod: 2 * time.Second})
 	srv := httptest.NewServer(NewServer(h, auth.NewVerifier(testSecret), testTokenID))
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, h
+}
+
+// waitConnections 轮询等连接入表（客户端 Dial 返回不代表服务端 Join 已执行）。
+func waitConnections(t *testing.T, h *hub.Hub, want map[int64]int) {
+	t.Helper()
+	for i := 0; i < 250; i++ {
+		ok := true
+		for id, n := range want {
+			if h.Connections(id) != n {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("connections not reached within 5s")
 }
 
 func signToken(t *testing.T, userId int64, ttl time.Duration) string {
@@ -70,7 +89,7 @@ func publish(t *testing.T, srvURL, token, body string) *http.Response {
 
 // TestHealthReturnsOK 探活 200。
 func TestHealthReturnsOK(t *testing.T) {
-	srv := newTestServer(t)
+	srv, _ := newTestServer(t)
 	resp, err := http.Get(srv.URL + "/health")
 	if err != nil {
 		t.Fatalf("health: %v", err)
@@ -84,7 +103,7 @@ func TestHealthReturnsOK(t *testing.T) {
 // TestWSRejectsBadTokens 无 token / 垃圾 token / 过期 token / 错误密钥签名
 // 均 401 且不升级。
 func TestWSRejectsBadTokens(t *testing.T) {
-	srv := newTestServer(t)
+	srv, _ := newTestServer(t)
 
 	// 用错误密钥签一个结构有效的令牌
 	wrongClaims := auth.Claims{UserId: 7, RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}}
@@ -113,12 +132,13 @@ func TestWSRejectsBadTokens(t *testing.T) {
 
 // TestPublishDeliversFrameToConnectedClient 端到端：连接 → 投递 → 客户端收帧。
 func TestPublishDeliversFrameToConnectedClient(t *testing.T) {
-	srv := newTestServer(t)
+	srv, h := newTestServer(t)
 	conn, _, err := dialWS(t, srv.URL, signToken(t, 7, time.Hour))
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
 	defer conn.Close()
+	waitConnections(t, h, map[int64]int{7: 1})
 
 	resp := publish(t, srv.URL, testTokenID,
 		`{"user_ids":[7],"event":{"type":"notification","payload":{"n":1}}}`)
@@ -146,7 +166,7 @@ func TestPublishDeliversFrameToConnectedClient(t *testing.T) {
 
 // TestPublishFanoutMultipleDevicesAndUsers 同用户双端与多用户广播。
 func TestPublishFanoutMultipleDevicesAndUsers(t *testing.T) {
-	srv := newTestServer(t)
+	srv, h := newTestServer(t)
 	dev1, _, err := dialWS(t, srv.URL, signToken(t, 7, time.Hour))
 	if err != nil {
 		t.Fatalf("dial dev1: %v", err)
@@ -162,6 +182,7 @@ func TestPublishFanoutMultipleDevicesAndUsers(t *testing.T) {
 		t.Fatalf("dial other: %v", err)
 	}
 	defer other.Close()
+	waitConnections(t, h, map[int64]int{7: 2, 8: 1})
 
 	resp := publish(t, srv.URL, testTokenID,
 		`{"user_ids":[7,8],"event":{"type":"notification","payload":{}}}`)
@@ -179,7 +200,7 @@ func TestPublishFanoutMultipleDevicesAndUsers(t *testing.T) {
 
 // TestPublishGuards 内部令牌缺失/错误 403；空 user_ids 与空 type 400；离线用户 delivered=0。
 func TestPublishGuards(t *testing.T) {
-	srv := newTestServer(t)
+	srv, _ := newTestServer(t)
 
 	cases := []struct {
 		name   string

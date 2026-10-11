@@ -1,10 +1,14 @@
-// Package handler realtime-hub 三个端点：/health 探活、/ws 客户端握手
-// （JWT 校验后入 registry）、/internal/publish 服务间投递（内部令牌）。
+// Package handler realtime-hub 四个端点：/health 探活、/ws 客户端握手
+// （JWT 校验后入 registry，支持 watch/unwatch/query 控制消息）、
+// /internal/publish 服务间投递、/internal/presence 服务间在线查询
+// （均 X-Internal-Token 鉴权，未配置恒 403）。
 package handler
 
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gorilla/websocket"
 
@@ -28,6 +32,11 @@ type publishResp struct {
 	Delivered int `json:"delivered"`
 }
 
+// presenceResp 在线查询结果（与入参同序，重复 id 去重）。
+type presenceResp struct {
+	Presence []hub.PresenceStatus `json:"presence"`
+}
+
 // Server 路由装配。
 type Server struct {
 	hub           *hub.Hub
@@ -48,6 +57,7 @@ func NewServer(h *hub.Hub, v *auth.Verifier, internalToken string) http.Handler 
 	mux.HandleFunc("GET /health", s.health)
 	mux.HandleFunc("GET /ws", s.ws)
 	mux.HandleFunc("POST /internal/publish", s.publish)
+	mux.HandleFunc("GET /internal/presence", s.presence)
 	return mux
 }
 
@@ -100,6 +110,33 @@ func (s *Server) publish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, publishResp{Delivered: s.hub.SendToUsers(req.UserIds, frame)})
+}
+
+// presence 服务间在线查询：user_ids 逗号分隔（最多 200 个，超出截断）；
+// 内部令牌未配置恒 403（fail closed 同 publish）。
+func (s *Server) presence(w http.ResponseWriter, r *http.Request) {
+	if s.internalToken == "" || r.Header.Get("X-Internal-Token") != s.internalToken {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+
+	raw := r.URL.Query().Get("user_ids")
+	if raw == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "user_ids required"})
+		return
+	}
+	parts := strings.Split(raw, ",")
+	ids := make([]int64, 0, len(parts))
+	for _, p := range parts {
+		id, err := strconv.ParseInt(strings.TrimSpace(p), 10, 64)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid user_ids"})
+			return
+		}
+		ids = append(ids, id)
+	}
+
+	writeJSON(w, http.StatusOK, presenceResp{Presence: s.hub.Presence(ids)})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body interface{}) {
