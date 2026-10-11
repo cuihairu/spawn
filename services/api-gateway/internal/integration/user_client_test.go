@@ -86,6 +86,20 @@ func TestUserServiceClient_GetRecommendations_Non200(t *testing.T) {
 	}
 }
 
+// Non200 且上游空响应体 → readError 回落占位文案。
+func TestUserServiceClient_GetRecommendations_Non200EmptyBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	client := NewUserServiceClient(server.URL, time.Second)
+	_, err := client.GetRecommendations(context.Background(), 1, 5, "", "")
+	if err == nil || !strings.Contains(err.Error(), "recommendation failed: upstream error") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestUserServiceClient_Defaults(t *testing.T) {
 	c := NewUserServiceClient("", 0)
 	if c.httpClient.Timeout != 5*time.Second {

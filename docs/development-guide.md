@@ -846,6 +846,28 @@ game-catalog 97.5%、user-service 97.7%（见顶持平）、user-service-rpc
 手写面 91.7% 持平（原始 77.2% 为 pb.go 管线口径，按无捏造用例约定排除，
 波动来自 protoc 生成面）。
 
+**api-gateway 缺口补齐轮（2026-10-11，96.6% → 97.8% coverpkg 口径）**：
+login 聚合面删除（第十二轮）后读数自 98.6% 回落，巡检逐块分诊补齐：
+- `internal/upload`：ParseToken 非 HMAC 算法混淆防护（RSA 签发的令牌，
+  `crypto/rsa` 现场生成密钥）、SaveImage 的 MkdirAll 失败（父路径被普通
+  文件占据）与只读目录 OpenFile 失败（chmod 0555，测试末复原便于
+  TempDir 清理）；
+- `internal/handler/uploadhandler_test.go`：静态托管补「白名单形态但盘上
+  不存在」的文件名（命中 os.Open 失败 404 臂，原有两条用例均止步
+  SafeResolve 白名单拒绝）；
+- `internal/integration/user_client.go`：readError 空响应体回落臂
+  （上游 503 无正文 → "upstream error" 占位）；
+- `internal/datapanel/routes_test.go`（新建，镜像 community/games/users/
+  四个同款 panic 测试）：非法上游地址 → NewUpstream 失败 → panic。
+剩余零块均为既有登记集，维持不硬造：`gateway.go:26` main stderr+exit；
+`homefeedhandler.go:13` HomeFeedHandler（HomeFeed 恒 resp,nil）、
+`sharelinkhandler.go:75` ShareLinkHandler（tmpl.Execute 无注入面）、
+`upstream.go:138` Ping（构造器不变量）；upload 新增登记 ×3——
+ParseToken「无效的令牌」（jwt/v5 err==nil 蕴含 token.Valid，与
+user-service utils/auth.go:69 同族）、SaveImage file.Seek 失败
+（multipart.File 为 buffer/section 读取器，无失败注入面）、rand.Read
+与 io.Copy 失败（crypto/rand 与 buffer 读取器恒成功族）。
+
 **community 覆盖率重测轮（2026-10-05，98.3% → 95.8% → 98.2%）**：
 同 api-gateway 轮背景——M3 三切片（关注流/我的点赞/post_likes 关系表与
 建表链路）是功能切片，落地后未重测，巡检快照回落。逐块分诊：42 块中

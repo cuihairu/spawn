@@ -150,8 +150,8 @@ func TestUploadsFileHandlerServesAndGuards(t *testing.T) {
 		t.Fatalf("serve content mismatch: err=%v len=%d", err, len(got))
 	}
 
-	// 路径遍历与不存在的文件都 404。
-	for _, p := range []string{"../etc/passwd", "ffffffffffffffffffffffffffffffff.txt", "0000000000000000000000000000000.png"} {
+	// 路径遍历、白名单外文件名与白名单内但不存在的文件都 404。
+	for _, p := range []string{"../etc/passwd", "ffffffffffffffffffffffffffffffff.txt", "0000000000000000000000000000000.png", "0123456789abcdef0123456789abcdef.png"} {
 		br := httptest.NewRequest(http.MethodGet, "/uploads/"+p, nil)
 		br = pathvar.WithVars(br, map[string]string{"file": p})
 		bw := httptest.NewRecorder()

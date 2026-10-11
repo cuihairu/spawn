@@ -2,6 +2,8 @@ package upload
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
 	"errors"
 	"mime/multipart"
 	"net/http"
@@ -64,6 +66,33 @@ func TestValidator_ParseToken_Invalid(t *testing.T) {
 	expired := signToken(t, testSecret, 1, "x", -time.Hour)
 	if _, err := v.ParseToken(expired); err == nil {
 		t.Fatal("ParseToken with expired token must error")
+	}
+}
+
+// TestValidator_ParseToken_RejectsNonHMAC RSA 签名的令牌：密钥类型选择器
+// 拒绝非 HMAC 方法（与 user-service 口径一致的算法混淆防护）。
+func TestValidator_ParseToken_RejectsNonHMAC(t *testing.T) {
+	v := NewValidator(testSecret)
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+	claims := UserClaims{
+		UserId:   7,
+		Username: "rsa",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)
+	if err != nil {
+		t.Fatalf("sign rsa token: %v", err)
+	}
+
+	_, err = v.ParseToken(token)
+	if err == nil || !strings.Contains(err.Error(), "不支持的签名方法") {
+		t.Fatalf("err = %v, want 不支持的签名方法", err)
 	}
 }
 
@@ -144,6 +173,38 @@ func TestStore_SaveImage_UnsupportedType(t *testing.T) {
 
 	if _, err := s.SaveImage(multipartRequest(t, "file", "pic.png", body), "file"); err == nil {
 		t.Fatal("SaveImage with non-image body must error")
+	}
+}
+
+// TestStore_SaveImage_MkdirFails Dir 路径中间存在同名普通文件：
+// MkdirAll 无法建目录 → 「创建上传目录失败」。
+func TestStore_SaveImage_MkdirFails(t *testing.T) {
+	base := t.TempDir()
+	blocker := filepath.Join(base, "f")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write blocker file: %v", err)
+	}
+	s := &Store{Dir: filepath.Join(blocker, "sub"), MaxBytes: 1 << 20}
+
+	_, err := s.SaveImage(multipartRequest(t, "file", "pic.png", pngBody()), "file")
+	if err == nil || !strings.Contains(err.Error(), "创建上传目录失败") {
+		t.Fatalf("err = %v, want 创建上传目录失败", err)
+	}
+}
+
+// TestStore_SaveImage_WriteFails 目录存在但只读：魔数检测通过后
+// OpenFile O_CREATE 失败 → 「写入上传文件失败」。
+func TestStore_SaveImage_WriteFails(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatalf("chmod dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) // 便于 TempDir 清理
+
+	s := &Store{Dir: dir, MaxBytes: 1 << 20}
+	_, err := s.SaveImage(multipartRequest(t, "file", "pic.png", pngBody()), "file")
+	if err == nil || !strings.Contains(err.Error(), "写入上传文件失败") {
+		t.Fatalf("err = %v, want 写入上传文件失败", err)
 	}
 }
 
