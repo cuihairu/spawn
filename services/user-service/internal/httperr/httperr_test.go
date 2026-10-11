@@ -44,6 +44,9 @@ func TestError_NilReceiver(t *testing.T) {
 	if e.Error() != "" {
 		t.Fatalf("nil receiver Error() = %q, want empty", e.Error())
 	}
+	if got := Unauthorized("boom").Error(); got != "boom" {
+		t.Fatalf("Error() = %q, want message", got)
+	}
 }
 
 func TestConstructors(t *testing.T) {

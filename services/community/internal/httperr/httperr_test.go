@@ -39,6 +39,20 @@ func TestErrorHandler_ModelNotFound(t *testing.T) {
 	}
 }
 
+// TestErrorHandler_PermissionDenied model.ErrPermissionDenied 哨兵 → 403 信封。
+func TestErrorHandler_PermissionDenied(t *testing.T) {
+	t.Parallel()
+
+	status, body := ErrorHandler(context.Background(), model.ErrPermissionDenied)
+	if status != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, status)
+	}
+	resp := body.(Response)
+	if resp.Code != http.StatusForbidden || resp.Message != "permission denied" {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+}
+
 func TestErrorHandler_PathErrorIsInternal(t *testing.T) {
 	t.Parallel()
 
@@ -59,6 +73,9 @@ func TestError_NilReceiver(t *testing.T) {
 	if e.Error() != "" {
 		t.Fatalf("nil receiver Error() = %q, want empty", e.Error())
 	}
+	if got := Unauthorized("boom").Error(); got != "boom" {
+		t.Fatalf("Error() = %q, want message", got)
+	}
 }
 
 func TestConstructors(t *testing.T) {
@@ -71,6 +88,7 @@ func TestConstructors(t *testing.T) {
 		code    int64
 		message string
 	}{
+		{"bad request", BadRequest("bad input"), http.StatusBadRequest, http.StatusBadRequest, "bad input"},
 		{"forbidden", Forbidden("denied"), http.StatusForbidden, http.StatusForbidden, "denied"},
 		{"not found", NotFound("gone"), http.StatusNotFound, http.StatusNotFound, "gone"},
 		{"internal fallback", Internal("   "), http.StatusInternalServerError, http.StatusInternalServerError, "internal server error"},
