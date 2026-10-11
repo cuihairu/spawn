@@ -10,7 +10,7 @@
 | `data-panel` | 战绩摄入（单调增量）、清洗、统计分析、玩家档案/榜单 API | 已落地 |
 | `user-service-rpc` | 用户域 gRPC 通路（集群内部，etcd 注册） | 已落地 |
 | `matchmaking` | 开黑组队、匹配大厅、房间状态同步、小游戏房间 | 规划（未落地） |
-| `realtime-hub` | WebSocket/RTC、实时消息/语音信令、推送 fanout | 规划（未落地） |
+| `realtime-hub` | WebSocket 通知通道（已落地 M1 骨架）；RTC、语音信令、推送 fanout 为 M3 规划 | M1 骨架 |
 | `crawler-jobs` | 爬虫调度器，抓取商店、赛事、公告等外部数据源 | 规划（未落地） |
 
 > 上表「状态」列区分已落地与规划：「规划（未落地）」 服务目录暂不存在，

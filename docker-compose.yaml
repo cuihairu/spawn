@@ -81,6 +81,18 @@ services:
       - "9097:9097" # /metrics（deploy/ 观测栈抓取）
     restart: unless-stopped
 
+  realtime-hub:
+    build:
+      context: ./services/realtime-hub
+    environment:
+      # 与 user-service 的 Auth.JWTSecret 同值：/ws 握手 JWT 校验。
+      JWT_SECRET: tappi-user-service-jwt-secret-key-2024
+      # 服务间发布令牌（community 等调用方携带 X-Internal-Token）。
+      REALTIME_INTERNAL_TOKEN: tappi-realtime-internal-token-2024
+    ports:
+      - "8893:8893"
+    restart: unless-stopped
+
   web-client:
     build:
       context: ./apps/web-client
@@ -99,6 +111,7 @@ services:
       - content-service
       - community
       - data-panel
+      - realtime-hub
     restart: unless-stopped
 
 volumes:

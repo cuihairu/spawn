@@ -1,0 +1,7 @@
+# realtime-hub 配置（密钥可被环境变量覆盖：JWT_SECRET / REALTIME_INTERNAL_TOKEN）
+Listen: ":8893"
+WriteTimeoutMs: 10000
+PingIntervalMs: 30000
+SendQueueSize: 16
+JwtSecret: "tappi-user-service-jwt-secret-key-2024"
+InternalToken: "tappi-realtime-internal-token-2024"

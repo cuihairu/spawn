@@ -6,6 +6,7 @@ use (
 	./services/content-service
 	./services/data-panel
 	./services/game-catalog
+	./services/realtime-hub
 	./services/user-service
 	./services/user-service-rpc
 )
