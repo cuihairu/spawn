@@ -5,3 +5,7 @@ PingIntervalMs: 30000
 SendQueueSize: 16
 JwtSecret: "tappi-user-service-jwt-secret-key-2024"
 InternalToken: "tappi-realtime-internal-token-2024"
+# Redis pub/sub 跨实例投递（空 = 单实例内存模式；环境变量覆盖
+# REALTIME_REDIS_ADDR / REALTIME_REDIS_PASSWORD）
+RedisAddr: ""
+RedisPassword: ""

@@ -20,6 +20,10 @@ type Config struct {
 	SendQueueSize  int    `yaml:"SendQueueSize"`
 	JwtSecret      string `yaml:"JwtSecret"`
 	InternalToken  string `yaml:"InternalToken"`
+	// RedisAddr 空 = 单实例内存模式；配置后启用 Redis pub/sub 跨实例投递
+	//（尽力而为：Redis 故障只丢跨实例帧，本地投递不受影响）。
+	RedisAddr     string `yaml:"RedisAddr"`
+	RedisPassword string `yaml:"RedisPassword"`
 }
 
 // Load 读取 yaml 并应用默认值与环境变量覆盖。
@@ -38,6 +42,12 @@ func Load(path string) (Config, error) {
 	}
 	if v := os.Getenv("REALTIME_INTERNAL_TOKEN"); v != "" {
 		c.InternalToken = v
+	}
+	if v := os.Getenv("REALTIME_REDIS_ADDR"); v != "" {
+		c.RedisAddr = v
+	}
+	if v := os.Getenv("REALTIME_REDIS_PASSWORD"); v != "" {
+		c.RedisPassword = v
 	}
 
 	if c.Listen == "" {

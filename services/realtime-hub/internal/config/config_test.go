@@ -39,12 +39,13 @@ func TestLoad_MissingSecretErrors(t *testing.T) {
 // TestLoad_DefaultsAndEnvOverrides 缺省项补齐、环境变量覆盖 yaml 密钥。
 func TestLoad_DefaultsAndEnvOverrides(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cfg.yaml")
-	content := "Listen: \"127.0.0.1:0\"\nJwtSecret: yaml-secret\nInternalToken: yaml-token\n"
+	content := "Listen: \"127.0.0.1:0\"\nJwtSecret: yaml-secret\nInternalToken: yaml-token\nRedisAddr: yaml-redis\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	t.Setenv("JWT_SECRET", "env-secret")
 	t.Setenv("REALTIME_INTERNAL_TOKEN", "env-token")
+	t.Setenv("REALTIME_REDIS_ADDR", "env-redis:6379")
 
 	c, err := Load(path)
 	if err != nil {
@@ -52,6 +53,9 @@ func TestLoad_DefaultsAndEnvOverrides(t *testing.T) {
 	}
 	if c.JwtSecret != "env-secret" || c.InternalToken != "env-token" {
 		t.Fatalf("env override lost: %+v", c)
+	}
+	if c.RedisAddr != "env-redis:6379" || c.RedisPassword != "" {
+		t.Fatalf("redis config = %+v", c)
 	}
 	if c.Listen != "127.0.0.1:0" {
 		t.Fatalf("listen = %q, want yaml value kept", c.Listen)

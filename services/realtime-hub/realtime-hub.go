@@ -42,6 +42,14 @@ func run(configPath string) error {
 		WriteWait:  cfg.WriteTimeout(),
 		PingPeriod: cfg.PingInterval(),
 	})
+	if cfg.RedisAddr != "" {
+		relay, err := hub.NewRedisRelay(cfg.RedisAddr, cfg.RedisPassword, hub.RedisChannel, h.DeliverLocal)
+		if err != nil {
+			return fmt.Errorf("redis relay: %w", err)
+		}
+		defer relay.Close()
+		h.SetRelay(relay)
+	}
 	srv := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           handler.NewServer(h, auth.NewVerifier(cfg.JwtSecret), cfg.InternalToken),

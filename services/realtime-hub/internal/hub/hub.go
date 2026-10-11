@@ -1,5 +1,5 @@
 // Package hub 用户连接登记表与投递器：userId → 多连接（多端同时在线），
-// 单机内存实现；水平扩展（Redis pub/sub）为 M3 远期项。
+// 单机内存实现；跨实例投递经可选 Relay（Redis pub/sub）尽力而为广播。
 package hub
 
 import (
@@ -61,7 +61,11 @@ type Hub struct {
 	since    map[int64]time.Time            // 首连时刻（在线期间保留）
 	watchers map[int64]map[*Client]struct{} // 被 watch 用户 → watch 的连接
 	drops    atomic.Int64                   // 溢出丢弃计数（并发投递无锁累计）
+	relay    Relay                          // 跨实例投递（nil = 单实例）
 }
+
+// SetRelay 挂跨实例投递器（启动期一次性调用，Serve 前完成）。
+func (h *Hub) SetRelay(r Relay) { h.relay = r }
 
 // Options 可调参数（零值走默认）。
 type Options struct {
@@ -236,8 +240,21 @@ func (h *Hub) Drops() int64 {
 }
 
 // SendToUsers 向给定用户的全部在线连接投递一帧，返回实际入队数；
-// 队列满即丢弃计数，永不阻塞。
+// 队列满即丢弃计数，永不阻塞。挂了 Relay 时本地投递后广播给其他实例
+// （本实例回环由 Relay 剔除，不重复投递）。
 func (h *Hub) SendToUsers(userIds []int64, data []byte) int {
+	delivered := h.deliverLocal(userIds, data)
+	if h.relay != nil {
+		h.relay.Broadcast(userIds, data)
+	}
+	return delivered
+}
+
+// DeliverLocal 本实例投递（Relay 回环回调），锁外调用安全。
+func (h *Hub) DeliverLocal(userIds []int64, data []byte) { h.deliverLocal(userIds, data) }
+
+// deliverLocal 本实例连接投递（持锁最小化，网络调用一律在锁外）。
+func (h *Hub) deliverLocal(userIds []int64, data []byte) int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	delivered := 0
