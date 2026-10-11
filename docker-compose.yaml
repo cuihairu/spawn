@@ -65,6 +65,11 @@ services:
       context: ./services/community
     environment:
       JWT_SECRET: tappi-user-service-jwt-secret-key-2024
+      # realtime-hub 未就绪时 community 启动不受影响（发布失败仅记日志）。
+      REALTIME_HUB_URL: http://realtime-hub:8893
+      REALTIME_INTERNAL_TOKEN: tappi-realtime-internal-token-2024
+    depends_on:
+      - realtime-hub
     ports:
       - "8892:8892"
       - "9094:9094" # /metrics（deploy/ 观测栈抓取）
@@ -102,6 +107,7 @@ services:
         VITE_CONTENT_SERVICE_URL: http://localhost:8891
         VITE_COMMUNITY_SERVICE_URL: http://localhost:8892
         VITE_API_GATEWAY_URL: http://localhost:8800
+        VITE_REALTIME_HUB_URL: ws://localhost:8893
     ports:
       - "4173:80"
     depends_on:
