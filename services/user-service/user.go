@@ -11,11 +11,13 @@ import (
 
 	"github.com/tappi/tappi/services/user-service/internal/config"
 	"github.com/tappi/tappi/services/user-service/internal/handler"
+	"github.com/tappi/tappi/services/user-service/internal/httperr"
 	"github.com/tappi/tappi/services/user-service/internal/svc"
 	"github.com/tappi/tappi/services/user-service/middleware"
 
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/rest"
+	"github.com/zeromicro/go-zero/rest/httpx"
 )
 
 var configFile = flag.String("f", "etc/user-api.yaml", "the config file")
@@ -39,6 +41,9 @@ func run() error {
 
 	server := rest.MustNewServer(c.RestConf)
 	defer server.Stop()
+
+	// 错误信封映射：认证失败等按携带的 HTTP 状态回信封（与其余服务同款）
+	httpx.SetErrorHandlerCtx(httperr.ErrorHandler)
 
 	ctx := svc.NewServiceContext(c)
 	handler.RegisterHandlers(server, ctx)

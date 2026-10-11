@@ -2,9 +2,11 @@ package logic
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/tappi/tappi/services/user-service/internal/httperr"
 	"github.com/tappi/tappi/services/user-service/internal/svc"
 	"github.com/tappi/tappi/services/user-service/internal/types"
 	"github.com/tappi/tappi/services/user-service/model"
@@ -33,13 +35,17 @@ func TestLoginLogicSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)
 	}
-	if resp == nil || resp.UserInfo == nil {
-		t.Fatalf("expected user info in response")
+	if resp == nil || resp.Code != 200 {
+		t.Fatalf("expected 200 envelope, got %+v", resp)
 	}
-	if resp.UserInfo.Username != "demo" {
-		t.Fatalf("unexpected username %s", resp.UserInfo.Username)
+	data, ok := resp.Data.(*types.LoginResponse)
+	if !ok || data.UserInfo == nil {
+		t.Fatalf("expected LoginResponse data, got %+v", resp.Data)
 	}
-	if resp.Token == "" {
+	if data.UserInfo.Username != "demo" {
+		t.Fatalf("unexpected username %s", data.UserInfo.Username)
+	}
+	if data.Token == "" {
 		t.Fatalf("token should not be empty")
 	}
 }
@@ -60,8 +66,9 @@ func TestLoginLogicWrongPassword(t *testing.T) {
 		Username: "demo",
 		Password: "wrong",
 	})
-	if err == nil {
-		t.Fatalf("expected error for wrong password")
+	var he *httperr.Error
+	if !errors.As(err, &he) || he.Status != 401 || he.Message != "用户名或密码错误" {
+		t.Fatalf("err = %v, want 401 用户名或密码错误", err)
 	}
 }
 
@@ -74,10 +81,11 @@ func TestLoginLogicValidation(t *testing.T) {
 	}
 	logic := NewLoginLogic(context.Background(), svcCtx)
 
-	if _, err := logic.Login(&types.LoginRequest{}); err == nil {
-		t.Fatalf("expected validation error for missing username")
+	var he *httperr.Error
+	if _, err := logic.Login(&types.LoginRequest{}); !errors.As(err, &he) || he.Status != 400 {
+		t.Fatalf("err = %v, want 400 for missing username", err)
 	}
-	if _, err := logic.Login(&types.LoginRequest{Username: "demo"}); err == nil {
-		t.Fatalf("expected validation error for missing password")
+	if _, err := logic.Login(&types.LoginRequest{Username: "demo"}); !errors.As(err, &he) || he.Status != 400 {
+		t.Fatalf("err = %v, want 400 for missing password", err)
 	}
 }

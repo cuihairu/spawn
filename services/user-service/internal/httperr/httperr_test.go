@@ -1,0 +1,102 @@
+package httperr
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"os"
+	"testing"
+)
+
+func TestErrorHandler_AppError(t *testing.T) {
+	t.Parallel()
+
+	status, body := ErrorHandler(context.Background(), Unauthorized("nope"))
+	if status != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, status)
+	}
+	resp, ok := body.(Response)
+	if !ok {
+		t.Fatalf("expected Response body, got %T", body)
+	}
+	if resp.Code != http.StatusUnauthorized || resp.Message != "nope" {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+}
+
+func TestErrorHandler_PathErrorIsInternal(t *testing.T) {
+	t.Parallel()
+
+	status, body := ErrorHandler(context.Background(), &os.PathError{Op: "open", Path: "/nope", Err: os.ErrNotExist})
+	if status != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, status)
+	}
+	resp := body.(Response)
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected code %d, got %d", http.StatusInternalServerError, resp.Code)
+	}
+}
+
+func TestError_NilReceiver(t *testing.T) {
+	t.Parallel()
+
+	var e *Error
+	if e.Error() != "" {
+		t.Fatalf("nil receiver Error() = %q, want empty", e.Error())
+	}
+}
+
+func TestConstructors(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		err     *Error
+		status  int
+		code    int64
+		message string
+	}{
+		{"bad request", BadRequest("bad"), http.StatusBadRequest, http.StatusBadRequest, "bad"},
+		{"unauthorized", Unauthorized("nope"), http.StatusUnauthorized, http.StatusUnauthorized, "nope"},
+		{"forbidden", Forbidden("denied"), http.StatusForbidden, http.StatusForbidden, "denied"},
+		{"not found", NotFound("gone"), http.StatusNotFound, http.StatusNotFound, "gone"},
+		{"internal fallback", Internal("   "), http.StatusInternalServerError, http.StatusInternalServerError, "internal server error"},
+		{"internal passthrough", Internal("boom"), http.StatusInternalServerError, http.StatusInternalServerError, "boom"},
+	}
+	for _, tc := range cases {
+		if tc.err.Status != tc.status || tc.err.Code != tc.code || tc.err.Message != tc.message {
+			t.Fatalf("%s: got %+v, want status=%d code=%d message=%q",
+				tc.name, tc.err, tc.status, tc.code, tc.message)
+		}
+	}
+}
+
+// TestErrorHandler_StringFallbacks 裸 error 的字符串启发式分支：
+// "unauthorized" 全等 → 401；含 "permission denied" → 403；其余 → 400。
+func TestErrorHandler_StringFallbacks(t *testing.T) {
+	t.Parallel()
+
+	status, body := ErrorHandler(context.Background(), errors.New("unauthorized"))
+	if status != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status = %d, want 401", status)
+	}
+	if resp := body.(Response); resp.Message != "unauthorized" {
+		t.Fatalf("unauthorized message = %q", resp.Message)
+	}
+
+	status, body = ErrorHandler(context.Background(), errors.New("account permission denied by admin"))
+	if status != http.StatusForbidden {
+		t.Fatalf("substring permission status = %d, want 403", status)
+	}
+	if resp := body.(Response); resp.Code != http.StatusForbidden {
+		t.Fatalf("substring permission code = %d", resp.Code)
+	}
+
+	status, body = ErrorHandler(context.Background(), errors.New("weird input"))
+	if status != http.StatusBadRequest {
+		t.Fatalf("fallback status = %d, want 400", status)
+	}
+	if resp := body.(Response); resp.Message != "weird input" {
+		t.Fatalf("fallback message = %q", resp.Message)
+	}
+}

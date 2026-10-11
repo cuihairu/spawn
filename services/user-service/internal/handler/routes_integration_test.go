@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tappi/tappi/services/user-service/internal/httperr"
 	"github.com/tappi/tappi/services/user-service/internal/integration"
 	"github.com/tappi/tappi/services/user-service/internal/svc"
 	"github.com/tappi/tappi/services/user-service/middleware"
@@ -20,6 +21,7 @@ import (
 	"github.com/tappi/tappi/services/user-service/utils"
 
 	"github.com/zeromicro/go-zero/rest"
+	"github.com/zeromicro/go-zero/rest/httpx"
 )
 
 const testJWTSecret = "user-handler-integration-secret"
@@ -98,6 +100,8 @@ func newUserHandlerServer(t *testing.T, stub http.HandlerFunc) (base string, svc
 	var conf rest.RestConf
 	conf.Port = port
 	server := rest.MustNewServer(conf)
+	// 与 user.go 生产装配一致：错误信封映射（登录 401 等按携带状态回信封）
+	httpx.SetErrorHandlerCtx(httperr.ErrorHandler)
 	RegisterHandlers(server, svcCtx)
 	// 与 user.go 生产装配一致：Handler 风格中间件适配为 rest.Middleware
 	server.Use(func(next http.HandlerFunc) http.HandlerFunc {
@@ -235,25 +239,30 @@ func TestRoutes_RegisterLoginFlow(t *testing.T) {
 		t.Fatalf("bad json register status=%d, want 400", status)
 	}
 
-	// 登录失败：错误密码
-	status, _, raw = do(t, http.MethodPost, base+"/auth/login", "",
+	// 登录失败：错误密码 → 真 401 信封
+	status, body, raw = do(t, http.MethodPost, base+"/auth/login", "",
 		`{"username":"alice","password":"wrong"}`)
-	if status != http.StatusBadRequest || !strings.Contains(raw, "用户名或密码错误") {
+	if status != http.StatusUnauthorized || code(t, body) != 401 || !strings.Contains(raw, "用户名或密码错误") {
 		t.Fatalf("wrong password: status=%d raw=%s", status, raw)
 	}
-	// 登录失败：空字段
-	if status, _, _ = do(t, http.MethodPost, base+"/auth/login", "", `{"password":"x"}`); status != 400 {
-		t.Fatalf("empty username login status=%d, want 400", status)
+	// 登录失败：空字段 → 400 信封
+	status, body, _ = do(t, http.MethodPost, base+"/auth/login", "", `{"password":"x"}`)
+	if status != http.StatusBadRequest || code(t, body) != 400 {
+		t.Fatalf("empty username login: status=%d body=%v", status, body)
 	}
 
-	// 登录成功 → token + user_info
+	// 登录成功 → envelope code 200，data 内 token + user_info
 	status, body, raw = do(t, http.MethodPost, base+"/auth/login", "",
 		`{"username":"alice","password":"pw-alice"}`)
-	if status != http.StatusOK || body["token"] == "" {
+	if status != http.StatusOK || code(t, body) != 200 {
 		t.Fatalf("login: status=%d raw=%s", status, raw)
 	}
-	token := body["token"].(string)
-	info := body["user_info"].(map[string]interface{})
+	data := body["data"].(map[string]interface{})
+	token := data["token"].(string)
+	if token == "" {
+		t.Fatalf("login data = %v", data)
+	}
+	info := data["user_info"].(map[string]interface{})
 	if info["username"] != "alice" || info["nickname"] != "Alice" {
 		t.Fatalf("user_info = %v", info)
 	}

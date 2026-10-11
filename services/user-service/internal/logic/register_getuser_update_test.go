@@ -301,8 +301,15 @@ func TestLoginLogicNullNicknameFallsBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login: %v", err)
 	}
-	if resp.UserInfo.Nickname != "nonick" {
-		t.Fatalf("nickname = %q, want username fallback", resp.UserInfo.Nickname)
+	if resp.Code != 200 {
+		t.Fatalf("code = %d, want 200", resp.Code)
+	}
+	data, ok := resp.Data.(*types.LoginResponse)
+	if !ok {
+		t.Fatalf("data type = %T, want *types.LoginResponse", resp.Data)
+	}
+	if data.UserInfo.Nickname != "nonick" {
+		t.Fatalf("nickname = %q, want username fallback", data.UserInfo.Nickname)
 	}
 }
 
