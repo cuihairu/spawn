@@ -912,6 +912,30 @@ rows.Err 与 seed panic 两块」、user-service「缺 LastInsertId 一块」的
 gateway 98.6 / community 98.2 / user-service 97.7 / game-catalog 97.5 /
 content-service 97.2 / user-service-rpc 91.7（手写面）。
 
+**handler 面清零冲刺轮（2026-10-11，六模块复测）**：审计轮后巡检发现两处
+handler 层真缺口（非登记不可达、纯属无测试）并补齐：
+- community 评论三 handler 此前 10%（无任何 handler 层用例）：`cbc46b9`
+  补 `TestCommentEndpoints_Flow` 全链路——匿名列表 200 / 匿名发评 401 /
+  发评回评（冗余被回复者昵称）/ 幽灵帖 404 / 越权删评 403 / 三端点
+  Parse 400 / 幽灵列表 404，三 handler 100%；
+- moderation/notification 六 handler 的 Parse 与 logic 错误分支：
+  `c2eae09` 补坏 JSON body 400、`?limit=abc` 400、幽灵帖举报 404、
+  二次处置外的坏处置 body 400；logic 错误分支以 `brokenNotificationRepo`
+  故障桩整体替换 NotificationRepo 触达（非哨兵错误走 httperr 兜底 400
+  信封），六 handler 全部 100%；
+- data-panel `svc.NewServiceContext` 五级 panic 阶梯（mysql 不可达 /
+  畸形 DSN / 目录路径 / 只读库建表败 / 缺列种子败）与 `ensureSQLiteDir`
+  三分支 + handler 负值校验三例：`1f3c1d4`。
+
+同轮六模块复测读数（coverpkg 口径，生成命令见 2026-09-30 段）：
+api-gateway 96.6%（login 聚合面删除后读数回落，见第十二轮）、
+user-service 97.8%、game-catalog 97.5%、content-service 97.0%、
+data-panel 94.4% → 96.9%（`1f3c1d4`）、community 94.3% → 96.6%
+（`cbc46b9` + `c2eae09`）、user-service-rpc 77.2%（生成面口径）/
+91.7%（手写面，protoc 缺口维持不碰）。community 剩余零块均为
+重测轮既有登记集（main ×2 / jwt 死分支 ×2 / model 双驱动与 rows.Err
+族），handler 面零块清零。
+
 ## 部署
 
 ### 1. Docker 构建
