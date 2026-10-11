@@ -191,6 +191,10 @@ func TestRoutes_ParseErrors(t *testing.T) {
 		{"games bad limit", http.MethodGet, "/api/v1/stats/users/1/games?limit=abc", "", ""},
 		{"detail bad user", http.MethodGet, "/api/v1/stats/users/abc/games/game-x", "", ""},
 		{"record bad json", http.MethodPost, "/api/v1/stats/records", token, `{bad`},
+		// 可解析但非法 → logic 层校验分支（httperr 400 信封）
+		{"summary negative user", http.MethodGet, "/api/v1/stats/users/-1/summary", "", ""},
+		{"games negative user", http.MethodGet, "/api/v1/stats/users/-1/games", "", ""},
+		{"record negative matches", http.MethodPost, "/api/v1/stats/records", token, `{"game_id":"g-x","matches":-1}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
