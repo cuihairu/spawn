@@ -220,3 +220,82 @@ func TestNewServiceContext_RO_PostLikesTablePanic(t *testing.T) {
 
 	wantPanic(t, "创建点赞关系表失败", func() { roNewServiceContext(t, path) })
 }
+
+// --- 第七至九级：启动序列尾部四表（点赞/评论/通知/举报，通知表为通知系统新增段） ---
+// 尾表无种子步骤，纯建表 panic；单独 helper 控制，避免 precreateDB 位置布尔无限加长。
+
+// precreateTailTables 在已就绪的预建库上按需补建尾部四表（按启动顺序）。
+func precreateTailTables(t *testing.T, path string, withPostLikes, withComments, withNotifications, withReports bool) {
+	t.Helper()
+	db, err := sql.Open("sqlite3", "file:"+path)
+	if err != nil {
+		t.Fatalf("precreate tail open: %v", err)
+	}
+	defer db.Close()
+	if withPostLikes {
+		pm := model.NewPostModel(db)
+		if err := pm.CreatePostLikesTable(); err != nil {
+			t.Fatalf("precreate post_likes table: %v", err)
+		}
+	}
+	if withComments {
+		cm := model.NewCommentModel(db)
+		if err := cm.CreateCommentsTable(); err != nil {
+			t.Fatalf("precreate comments table: %v", err)
+		}
+	}
+	if withNotifications {
+		nm := model.NewNotificationModel(db)
+		if err := nm.CreateNotificationsTable(); err != nil {
+			t.Fatalf("precreate notifications table: %v", err)
+		}
+	}
+	if withReports {
+		rm := model.NewReportModel(db)
+		if err := rm.CreateReportsTable(); err != nil {
+			t.Fatalf("precreate reports table: %v", err)
+		}
+	}
+}
+
+func TestNewServiceContext_RO_CommentsTablePanic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "community.db")
+	precreateDB(t, path, true, true, true, true, true)
+	precreateTailTables(t, path, true, false, false, false)
+
+	wantPanic(t, "创建评论表失败", func() { roNewServiceContext(t, path) })
+}
+
+func TestNewServiceContext_RO_NotificationsTablePanic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "community.db")
+	precreateDB(t, path, true, true, true, true, true)
+	precreateTailTables(t, path, true, true, false, false)
+
+	wantPanic(t, "创建通知表失败", func() { roNewServiceContext(t, path) })
+}
+
+func TestNewServiceContext_RO_ReportsTablePanic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "community.db")
+	precreateDB(t, path, true, true, true, true, true)
+	precreateTailTables(t, path, true, true, true, false)
+
+	wantPanic(t, "创建举报表失败", func() { roNewServiceContext(t, path) })
+}
+
+// TestNewServiceContext_ModerationAdminSet 审核管理员名单预计算成
+// AdminSet map（O(1) 判断），名单内命中、名单外不误判。
+func TestNewServiceContext_ModerationAdminSet(t *testing.T) {
+	c := baseConfig(t)
+	c.Moderation.AdminUserIds = []int64{7, 9}
+
+	ctx := NewServiceContext(c)
+	if !ctx.AdminSet[7] || !ctx.AdminSet[9] {
+		t.Fatalf("admin ids missing from AdminSet: %+v", ctx.AdminSet)
+	}
+	if ctx.AdminSet[8] {
+		t.Fatal("non-admin id must not be in AdminSet")
+	}
+	if len(ctx.AdminSet) != 2 {
+		t.Fatalf("AdminSet size = %d, want 2", len(ctx.AdminSet))
+	}
+}
