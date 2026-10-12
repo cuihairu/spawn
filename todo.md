@@ -23,6 +23,6 @@
 
 ## 观察项（CI 快照复核 2026-10-11，非红不动）
 - [x] Actions 版本升级：四个 action 均已出新主版本并升级（checkout@v7 / setup-node@v7 / setup-go@v7 / pnpm-action@v6，node24 运行时）——2026-10-11 落地（`6d12e81`），CI/docs 双绿验证，run 日志 deprecation 警告清零；ios.yml 同批升级，macOS 位以手动点火 run 实测（见 backlog 同日登记）
-- [ ] Ubuntu 26 迁移评估（ubuntu-latest 已钉 ubuntu-24.04，2026-10-19 起 runner-images#14748 迁移，波及面明确后再决定是否跟进；10-19 前维持观察不动作）
+- [x] Ubuntu 26 迁移评估——已完成（2026-10-12，评估零配置改动，动作门仍 10-19）。波及面已发布（runner-images#14748）：`ubuntu-latest` 2026-10-19 起数周内滚移 26.04.1，11-19 收官；工具差异表内 Docker Buildx/Rust/Java 等全同版本，内核 6.17→7.0.0。本仓 Ubuntu job（ci×2/docs×2/nightly）盘点：Go/Node/pnpm 全经 setup action 装载与镜像无关，无 docker、无 apt 依赖；**唯一镜像侧依赖 = nightly 的 CGO gcc**（mattn/go-sqlite3，24.04=gcc13 / 26.04=gcc14，该库对 gcc14 编译广泛验证）。结论：钉 `ubuntu-24.04` 已消除滚动期漂移，**不跟进标签滚动**；10-19 后可将 nightly 单工作流切 `ubuntu-26.04` 做 canary 实测（gcc14 + -race 全绿为门槛），11-19 收官后视 canary 结果再定全局升版，此前不动任何配置
 
 验收：CI 零红；每项完成后 backlog.md 同步勾选/更新。
