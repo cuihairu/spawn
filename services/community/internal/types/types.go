@@ -262,3 +262,49 @@ type UpdatePostReq struct {
 	Images  []string `json:"images,optional"`
 	Tags    []string `json:"tags,optional"`
 }
+
+// 站内私信：peer（对端）维度会话；is_read 仅收件方维度翻转，发件方副本不受影响。
+type DirectMessage struct {
+	Id          int64  `json:"id"`
+	SenderId    int64  `json:"sender_id"`
+	RecipientId int64  `json:"recipient_id"`
+	Content     string `json:"content"`
+	IsRead      bool   `json:"is_read"`
+	CreatedAt   string `json:"created_at"`
+}
+
+type SendDirectMessageReq struct {
+	RecipientId int64  `json:"recipient_id"`
+	Content     string `json:"content"`
+}
+
+type SendMessageResp struct {
+	Message *DirectMessage `json:"message"`
+}
+
+type DMThreadReq struct {
+	PeerId int64 `path:"peer_id"`
+	Limit  int64 `form:"limit,optional,default=50"`
+	Offset int64 `form:"offset,optional,default=0"`
+}
+
+type DMThreadResp struct {
+	Messages []*DirectMessage `json:"messages"`
+	Total    int64            `json:"total"`
+}
+
+type DMThreadReadReq struct {
+	PeerId int64 `path:"peer_id"`
+}
+
+// DMConversation 会话维摘要：对端 + 最后一条消息 + 未读数（按最后活跃倒序）。
+type DMConversation struct {
+	PeerId      int64  `json:"peer_id"`
+	LastMessage string `json:"last_message"`
+	LastAt      string `json:"last_at"`
+	Unread      int64  `json:"unread"`
+}
+
+type DMConversationsResp struct {
+	Conversations []*DMConversation `json:"conversations"`
+}

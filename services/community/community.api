@@ -347,6 +347,28 @@ service community-api {
 
 @server (
 	prefix:     /api/v1
+	group:      message
+	middleware: Auth
+)
+service community-api {
+	@handler SendDirectMessage
+	post /messages (SendDirectMessageReq) returns (SendMessageResp)
+
+	@handler ListDMConversations
+	get /messages/conversations returns (DMConversationsResp)
+
+	@handler GetDMThread
+	get /messages/thread/:peer_id (DMThreadReq) returns (DMThreadResp)
+
+	@handler MarkDMThreadRead
+	post /messages/thread/:peer_id/read (DMThreadReadReq) returns (UnreadCountResp)
+
+	@handler GetDMUnreadCount
+	get /messages/unread-count returns (UnreadCountResp)
+}
+
+@server (
+	prefix:     /api/v1
 	group:      moderation
 	middleware: Auth
 )

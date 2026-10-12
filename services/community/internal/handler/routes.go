@@ -8,6 +8,7 @@ import (
 
 	comment "github.com/tappi/tappi/services/community/internal/handler/comment"
 	follow "github.com/tappi/tappi/services/community/internal/handler/follow"
+	message "github.com/tappi/tappi/services/community/internal/handler/message"
 	moderation "github.com/tappi/tappi/services/community/internal/handler/moderation"
 	notification "github.com/tappi/tappi/services/community/internal/handler/notification"
 	post "github.com/tappi/tappi/services/community/internal/handler/post"
@@ -151,6 +152,31 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodPost,
 					Path:    "/notifications/:id/read",
 					Handler: notification.MarkNotificationReadHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/messages",
+					Handler: message.SendDirectMessageHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/messages/conversations",
+					Handler: message.ListDMConversationsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/messages/thread/:peer_id",
+					Handler: message.GetDMThreadHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/messages/thread/:peer_id/read",
+					Handler: message.MarkDMThreadReadHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/messages/unread-count",
+					Handler: message.GetDMUnreadCountHandler(serverCtx),
 				},
 			}...,
 		),

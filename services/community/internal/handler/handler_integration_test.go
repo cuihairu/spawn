@@ -14,6 +14,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/tappi/tappi/services/community/internal/config"
 	comment "github.com/tappi/tappi/services/community/internal/handler/comment"
+	message "github.com/tappi/tappi/services/community/internal/handler/message"
 	"github.com/tappi/tappi/services/community/internal/handler/moderation"
 	notification "github.com/tappi/tappi/services/community/internal/handler/notification"
 	"github.com/tappi/tappi/services/community/internal/handler/post"
@@ -741,5 +742,97 @@ func TestNotificationEndpoints_RepoError(t *testing.T) {
 	markRead(markRR, markReq)
 	if markRR.Code != http.StatusBadRequest {
 		t.Fatalf("read-all on broken repo: expected 400, got %d body=%s", markRR.Code, markRR.Body.String())
+	}
+}
+
+// TestMessageEndpoints_Flow 私信五端点走真 handler：A 发 → B 会话未读 →
+// 线程明细 → B 置已读归零 → 越权线程隔离。
+func TestMessageEndpoints_Flow(t *testing.T) {
+	httpx.SetErrorHandlerCtx(httperr.ErrorHandler)
+
+	svcCtx, secret := newTestServiceContext(t)
+	aToken := signToken(t, secret, 7, "作者甲")
+	bToken := signToken(t, secret, 8, "读者乙")
+
+	// A → B 发私信
+	send := svcCtx.Auth(message.SendDirectMessageHandler(svcCtx))
+	sendReq := httptest.NewRequest(http.MethodPost, "/api/v1/messages", bytes.NewBufferString(`{"recipient_id":8,"content":"第一条私信"}`))
+	sendReq.Header.Set("Content-Type", "application/json")
+	sendReq.Header.Set("Authorization", "Bearer "+aToken)
+	sendRR := httptest.NewRecorder()
+	send(sendRR, sendReq)
+	if sendRR.Code != http.StatusOK {
+		t.Fatalf("send: expected 200, got %d body=%s", sendRR.Code, sendRR.Body.String())
+	}
+
+	// 无 token 发送 → 401
+	bareRR := httptest.NewRecorder()
+	send(bareRR, httptest.NewRequest(http.MethodPost, "/api/v1/messages", bytes.NewBufferString(`{"recipient_id":8,"content":"x"}`)))
+	if bareRR.Code != http.StatusUnauthorized {
+		t.Fatalf("send without token: expected 401, got %d", bareRR.Code)
+	}
+
+	// B 未读总数 → 1
+	unread := svcCtx.Auth(message.GetDMUnreadCountHandler(svcCtx))
+	unreadReq := httptest.NewRequest(http.MethodGet, "/api/v1/messages/unread-count", nil)
+	unreadReq.Header.Set("Authorization", "Bearer "+bToken)
+	unreadRR2 := httptest.NewRecorder()
+	unread(unreadRR2, unreadReq)
+	if unreadRR2.Code != http.StatusOK {
+		t.Fatalf("unread-count: expected 200, got %d", unreadRR2.Code)
+	}
+	var unreadResp types.UnreadCountResp
+	if err := json.Unmarshal(unreadRR2.Body.Bytes(), &unreadResp); err != nil || unreadResp.Count != 1 {
+		t.Fatalf("unread = %s (%v)", unreadRR2.Body.String(), err)
+	}
+
+	// B 会话列表 → peer 7 未读 1
+	convs := svcCtx.Auth(message.ListDMConversationsHandler(svcCtx))
+	convsReq := httptest.NewRequest(http.MethodGet, "/api/v1/messages/conversations", nil)
+	convsReq.Header.Set("Authorization", "Bearer "+bToken)
+	convsRR := httptest.NewRecorder()
+	convs(convsRR, convsReq)
+	var convsResp types.DMConversationsResp
+	if err := json.Unmarshal(convsRR.Body.Bytes(), &convsResp); err != nil {
+		t.Fatalf("unmarshal conversations: %v", err)
+	}
+	if len(convsResp.Conversations) != 1 || convsResp.Conversations[0].PeerId != 7 || convsResp.Conversations[0].Unread != 1 {
+		t.Fatalf("conversations = %#v", convsResp)
+	}
+
+	// B 拉线程 → 1 条
+	thread := svcCtx.Auth(message.GetDMThreadHandler(svcCtx))
+	threadReq := httptest.NewRequest(http.MethodGet, "/api/v1/messages/thread/7", nil)
+	threadReq = pathvar.WithVars(threadReq, map[string]string{"peer_id": "7"})
+	threadReq.Header.Set("Authorization", "Bearer "+bToken)
+	threadRR := httptest.NewRecorder()
+	thread(threadRR, threadReq)
+	var threadResp types.DMThreadResp
+	if err := json.Unmarshal(threadRR.Body.Bytes(), &threadResp); err != nil || threadResp.Total != 1 ||
+		len(threadResp.Messages) != 1 || threadResp.Messages[0].Content != "第一条私信" {
+		t.Fatalf("thread = %s (%v)", threadRR.Body.String(), err)
+	}
+
+	// B 置已读 → 剩余未读 0
+	mark := svcCtx.Auth(message.MarkDMThreadReadHandler(svcCtx))
+	markReq := httptest.NewRequest(http.MethodPost, "/api/v1/messages/thread/7/read", nil)
+	markReq = pathvar.WithVars(markReq, map[string]string{"peer_id": "7"})
+	markReq.Header.Set("Authorization", "Bearer "+bToken)
+	markRR := httptest.NewRecorder()
+	mark(markRR, markReq)
+	var markResp types.UnreadCountResp
+	if err := json.Unmarshal(markRR.Body.Bytes(), &markResp); err != nil || markResp.Count != 0 {
+		t.Fatalf("mark read = %s (%v)", markRR.Body.String(), err)
+	}
+
+	// 越权：B 查与 9 的线程 → 空而非 A/B 往来
+	otherReq := httptest.NewRequest(http.MethodGet, "/api/v1/messages/thread/9", nil)
+	otherReq = pathvar.WithVars(otherReq, map[string]string{"peer_id": "9"})
+	otherReq.Header.Set("Authorization", "Bearer "+bToken)
+	otherRR := httptest.NewRecorder()
+	thread(otherRR, otherReq)
+	var otherResp types.DMThreadResp
+	if err := json.Unmarshal(otherRR.Body.Bytes(), &otherResp); err != nil || otherResp.Total != 0 {
+		t.Fatalf("foreign thread = %s (%v)", otherRR.Body.String(), err)
 	}
 }

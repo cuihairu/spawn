@@ -32,6 +32,7 @@ type ServiceContext struct {
 	FollowRepo       model.FollowStore
 	CommentRepo      model.CommentStore
 	NotificationRepo model.NotificationStore
+	MessageRepo      model.DirectMessageStore
 	ReportRepo       model.ReportStore
 
 	// BlockedWords 归一化后的敏感词表（空配置回落内置默认）；
@@ -107,6 +108,10 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := reportModel.CreateReportsTable(); err != nil {
 		panic(fmt.Sprintf("创建举报表失败: %v", err))
 	}
+	messageModel := model.NewDirectMessageModel(db)
+	if err := messageModel.CreateDirectMessagesTable(); err != nil {
+		panic(fmt.Sprintf("创建私信表失败: %v", err))
+	}
 
 	// 审核配置：敏感词空配置回落内置默认表；管理员集合预计算成 map 供 O(1) 判断。
 	blockedWords := moderation.NormalizeWords(c.Moderation.BlockedWords)
@@ -127,6 +132,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		FollowRepo:       followModel,
 		CommentRepo:      commentModel,
 		NotificationRepo: notificationModel,
+		MessageRepo:      messageModel,
 		ReportRepo:       reportModel,
 		BlockedWords:     blockedWords,
 		AdminSet:         adminSet,
