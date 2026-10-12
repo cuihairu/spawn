@@ -22,7 +22,9 @@
 - [x] 顺带修复：`Like` 计数幂等（README 契约「幂等」此前只落在关系表，重复点赞 like_count 仍 +1；现只在关系新增时 +1，并发同用户重放不重计）（574956b）
 
 ## 帖子搜索（2026-10-12 巡检推进批次，自定位自 community README「添加全文搜索」——ES 卡外部中间件，先落零基建可交付面）
-- [x] community：`GET /api/v1/posts/search?q=`（公开端点，标题/正文包含匹配、大小写不敏感、仅 published、空白 q 空结果、分页钳制；沿 List/Hot 应用侧过滤口径不下推 SQL）+ 网关反代一条（query 原样透传）；测试四层：模型（命中/大小写/软删/倒序/钳制）、逻辑（钳制/空态 nil 归一）、handler 集成（公开语义/400 缺参）、e2e 旅程补搜索步（本 commit）
+- [x] community：`GET /api/v1/posts/search?q=`（公开端点，标题/正文包含匹配、大小写不敏感、仅 published、空白 q 空结果、分页钳制；沿 List/Hot 应用侧过滤口径不下推 SQL）+ 网关反代一条（query 原样透传）；测试四层：模型（命中/大小写/软删/倒序/钳制）、逻辑（钳制/空态 nil 归一）、handler 集成（公开语义/400 缺参）、e2e 旅程补搜索步（574ae0d）
+- [x] web：社区页搜索框 + search 模式（结果副标题/空态/清除搜索；search 为公开模式不参与未登录回落）（6eb0c5c）
+- [x] mobile：社区 Tab 搜索条（搜索/清除按钮、search 模式接入 load/loadMore/空态，android export 走查过）（3545e78）
 - [x] ES 全文搜索保留为规模化升级路径（community README 长期项改写说明）
 
 ## 观察项（CI 快照复核 2026-10-11，非红不动）
