@@ -540,6 +540,15 @@ export async function fetchPosts(query: PostsQuery = {}): Promise<PostListResult
   return { posts: payload.posts ?? [], total: payload.total ?? 0 };
 }
 
+// 帖子关键词搜索（公开端点）：标题/正文包含匹配，服务端空白 q 返回空结果集。
+export async function searchPosts(q: string, limit = 20, offset = 0): Promise<PostListResult> {
+  const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) });
+  const payload = await request<{ posts: Post[]; total: number }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/posts/search?${params.toString()}`,
+  );
+  return { posts: payload.posts ?? [], total: payload.total ?? 0 };
+}
+
 export async function fetchPostById(id: number): Promise<Post> {
   const payload = await request<{ post: Post }>(`${COMMUNITY_SERVICE_URL}/api/v1/posts/${id}`);
   return payload.post;

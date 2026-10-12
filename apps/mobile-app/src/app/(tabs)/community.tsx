@@ -4,6 +4,7 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  TextInput,
   Share,
   StyleSheet,
   Text,
@@ -17,6 +18,7 @@ import {
   fetchFollowedPosts,
   fetchFollowingTopics,
   fetchPosts,
+  searchPosts,
   fetchTopics,
   fetchUnreadNotificationCount,
   likePost,
@@ -31,7 +33,7 @@ import { colors } from '../../constants/colors';
 
 const PAGE_SIZE = 20;
 
-type FeedMode = 'latest' | 'hot' | 'follow';
+type FeedMode = 'latest' | 'hot' | 'follow' | 'search';
 
 // 社区 Tab（M2 帖子流 + M3 关注）：话题圈子筛选 + 最新/热门/关注三模式，
 // 下拉刷新 + 触底分页；卡片内点赞/分享（计数单调累加，成功即 +1，失败回滚）；
@@ -42,6 +44,9 @@ export default function CommunityScreen() {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [topicId, setTopicId] = useState<number | null>(null); // null = 全部圈子
   const [mode, setMode] = useState<FeedMode>('latest');
+  // 搜索：草稿即时受控，提交后生效（searchTerm 驱动 load 重载）
+  const [searchDraft, setSearchDraft] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [followedTopicIds, setFollowedTopicIds] = useState<Set<number>>(new Set());
   const [posts, setPosts] = useState<Post[]>([]);
   const [total, setTotal] = useState(0);
@@ -98,7 +103,9 @@ export default function CommunityScreen() {
     void (async () => {
       // 关注模式需登录；未登录按空集处理，空态由 ListEmptyComponent 呈现
       const result =
-        mode === 'follow'
+        mode === 'search'
+          ? await searchPosts(searchTerm.trim(), PAGE_SIZE, 0)
+          : mode === 'follow'
           ? token
             ? await fetchFollowedPosts(token, PAGE_SIZE, 0)
             : { posts: [] as Post[], total: 0 }
@@ -127,7 +134,7 @@ export default function CommunityScreen() {
     }).finally(() => {
       setLoading(false);
     });
-  }, [topicId, mode, token]);
+  }, [topicId, mode, searchTerm, token]);
 
   useEffect(() => {
     queueMicrotask(load);
@@ -144,7 +151,9 @@ export default function CommunityScreen() {
     setLoading(true);
     void (async () => {
       const result =
-        mode === 'follow'
+        mode === 'search'
+          ? await searchPosts(searchTerm.trim(), PAGE_SIZE, posts.length)
+          : mode === 'follow'
           ? await fetchFollowedPosts(token as string, PAGE_SIZE, posts.length)
           : await fetchPosts({
               topicId: topicId ?? undefined,
@@ -226,6 +235,14 @@ export default function CommunityScreen() {
         </View>
       );
     }
+    if (mode === 'search' && !error) {
+      return (
+        <View style={styles.empty}>
+          <Text style={styles.emptyText}>没有找到「{searchTerm}」相关帖子</Text>
+          <Text style={styles.emptyHint}>换个关键词试试，或切换到最新/热门</Text>
+        </View>
+      );
+    }
     return (
       <View style={styles.empty}>
         <Text style={styles.emptyText}>{error ?? '这个圈子还没有帖子'}</Text>
@@ -288,6 +305,34 @@ export default function CommunityScreen() {
           <Text style={styles.topicManageText}>圈子管理 ›</Text>
         </Pressable>
       </ScrollView>
+
+      <View style={styles.searchRow}>
+        <TextInput
+          style={styles.searchInput}
+          value={searchDraft}
+          onChangeText={setSearchDraft}
+          placeholder="搜索帖子标题或正文"
+          placeholderTextColor={colors.textMuted}
+          returnKeyType="search"
+          onSubmitEditing={() => {
+            const q = searchDraft.trim();
+            if (!q) return;
+            setSearchTerm(q);
+            setMode('search');
+          }}
+        />
+        {mode === 'search' ? (
+          <Pressable
+            style={({ pressed }) => [styles.searchClear, pressed && { opacity: 0.7 }]}
+            onPress={() => {
+              setMode('latest');
+              setSearchTerm('');
+              setSearchDraft('');
+            }}>
+            <Text style={styles.searchClearText}>清除</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       <View style={styles.modeRow}>
         <Pressable
@@ -459,6 +504,35 @@ const styles = StyleSheet.create({
   },
   topicManageText: {
     color: colors.primary,
+    fontSize: 13,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: colors.background,
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 36,
+    backgroundColor: colors.card,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    color: colors.text,
+    fontSize: 14,
+  },
+  searchClear: {
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: colors.card,
+  },
+  searchClearText: {
+    color: colors.textMuted,
     fontSize: 13,
   },
   modeRow: {
