@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
-import { fetchUnreadNotificationCount, type UserInfo } from './api/client'
+import { fetchDMUnreadCount, fetchUnreadNotificationCount, type UserInfo } from './api/client'
 import { connectNotificationStream } from './lib/realtime'
 import HomePage from './pages/HomePage'
 import DiscoverPage from './pages/DiscoverPage'
@@ -11,6 +11,7 @@ import GuideEditorPage from './pages/GuideEditorPage'
 import GamesPage from './pages/GamesPage'
 import GameDetailPage from './pages/GameDetailPage'
 import NotificationsPage from './pages/NotificationsPage'
+import MessagesPage from './pages/MessagesPage'
 import PostDetailPage from './pages/PostDetailPage'
 import ProfilePage from './pages/ProfilePage'
 import UserProfilePage from './pages/UserProfilePage'
@@ -37,11 +38,15 @@ function App() {
   const [unreadNotifications, setUnreadNotifications] = useState(0)
   // 实时帧计数：通知中心页据此即时重拉列表（徽标与列表同源触发）
   const [notificationTick, setNotificationTick] = useState(0)
+  // 站内私信未读数与帧计数：同款 30s 轮询 + WS 加速，驱动信封徽标与消息页重拉
+  const [unreadDMs, setUnreadDMs] = useState(0)
+  const [messageTick, setMessageTick] = useState(0)
   const handleAuthChange = useCallback((next: { token: string; user: UserInfo } | null) => {
     setAuth(next)
     if (!next) {
       localStorage.removeItem(AUTH_STORAGE_KEY)
       setUnreadNotifications(0)
+      setUnreadDMs(0)
       return
     }
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next))
@@ -59,18 +64,35 @@ function App() {
           // 静默：徽标轮询失败不打扰用户
         })
     }
+    const refreshDM = () => {
+      fetchDMUnreadCount(auth.token)
+        .then((count) => {
+          if (!cancelled) setUnreadDMs(count)
+        })
+        .catch(() => {
+          // 静默：徽标轮询失败不打扰用户
+        })
+    }
     const timer = window.setInterval(refresh, 30_000)
+    const timerDM = window.setInterval(refreshDM, 30_000)
     queueMicrotask(refresh)
-    // realtime-hub WS 即时加速：帧到达即刻重拉（hub 未部署时静默降级为轮询）
-    const stopStream = connectNotificationStream(auth.token, () => {
+    queueMicrotask(refreshDM)
+    // realtime-hub WS 即时加速：帧到达即刻重拉（hub 未部署时静默降级为轮询）；
+    // message/message.read 帧同时驱动私信徽标与消息页
+    const stopStream = connectNotificationStream(auth.token, (frame) => {
       if (!cancelled) {
         refresh()
         setNotificationTick((t) => t + 1)
+        if (frame.type === 'message' || frame.type === 'message.read') {
+          refreshDM()
+          setMessageTick((t) => t + 1)
+        }
       }
     })
     return () => {
       cancelled = true
       window.clearInterval(timer)
+      window.clearInterval(timerDM)
       stopStream()
     }
   }, [auth])
@@ -105,6 +127,12 @@ function App() {
                     🔔
                     {unreadNotifications > 0 ? (
                       <span className="nav-badge">{unreadNotifications > 99 ? '99+' : unreadNotifications}</span>
+                    ) : null}
+                  </Link>
+                  <Link to="/messages" className="nav-bell" aria-label={`未读私信 ${unreadDMs} 条`}>
+                    ✉️
+                    {unreadDMs > 0 ? (
+                      <span className="nav-badge">{unreadDMs > 99 ? '99+' : unreadDMs}</span>
                     ) : null}
                   </Link>
                   <Link to="/stats" className="nav-link">
@@ -163,6 +191,23 @@ function App() {
                     token={auth.token}
                     onUnreadChange={setUnreadNotifications}
                     refreshSignal={notificationTick}
+                  />
+                ) : (
+                  <div className="error-page">
+                    <p>请先登录</p>
+                    <Link to="/">返回首页</Link>
+                  </div>
+                )
+              }
+            />
+            <Route
+              path="/messages"
+              element={
+                auth ? (
+                  <MessagesPage
+                    token={auth.token}
+                    onUnreadChange={setUnreadDMs}
+                    refreshSignal={messageTick}
                   />
                 ) : (
                   <div className="error-page">

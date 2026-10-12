@@ -53,6 +53,13 @@ func RegisterCommunityProxyRoutes(server *rest.Server, serverCtx *svc.ServiceCon
 		{Method: http.MethodPost, Path: "/api/v1/notifications/read-all", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/notifications/:id/read", Handler: h},
 
+		// 站内私信（登录语义由 community 校验）
+		{Method: http.MethodPost, Path: "/api/v1/messages", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/messages/conversations", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/messages/thread/:peer_id", Handler: h},
+		{Method: http.MethodPost, Path: "/api/v1/messages/thread/:peer_id/read", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/messages/unread-count", Handler: h},
+
 		// 内容审核：用户举报 + 管理员队列查看/处置（登录与管理员语义由 community 校验）
 		{Method: http.MethodPost, Path: "/api/v1/posts/:id/report", Handler: h},
 		{Method: http.MethodGet, Path: "/api/v1/moderation/reports", Handler: h},
