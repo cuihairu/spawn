@@ -6,7 +6,14 @@ import { markdownToPlainText } from '../lib/markdown'
 import './guides.css'
 import './profile.css'
 
-const UserProfilePage = () => {
+interface Props {
+  authUserId?: number
+  token?: string
+}
+
+// 公开用户主页（/users/:id）：头像首字 + 昵称/@用户名 + 该作者已发布攻略；
+// 登录态且非本人时提供「发私信」入口（/messages?peer= 直开会话）。
+const UserProfilePage = ({ authUserId, token }: Props) => {
   const { id } = useParams()
   const userId = Number(id)
   const [userInfo, setUserInfo] = useState<{ nickname: string; username: string } | null>(null)
@@ -71,6 +78,11 @@ const UserProfilePage = () => {
                 <p>@{userInfo?.username || userId}</p>
               </div>
             </div>
+            {token && authUserId !== userId ? (
+              <Link className="dm-cta" to={`/messages?peer=${userId}`}>
+                ✉️ 发私信
+              </Link>
+            ) : null}
           </div>
 
           <h2 className="user-profile-section-title">发布的攻略（{guides.length}）</h2>

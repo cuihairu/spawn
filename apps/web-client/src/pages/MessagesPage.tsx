@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   fetchDMConversations,
   fetchDMThread,
@@ -34,6 +35,7 @@ const MessagesPage = ({ token, refreshSignal = 0, onUnreadChange }: Props) => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
+  const [searchParams] = useSearchParams()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -73,6 +75,16 @@ const MessagesPage = ({ token, refreshSignal = 0, onUnreadChange }: Props) => {
   useEffect(() => {
     queueMicrotask(load)
   }, [load, refreshSignal])
+
+  // ?peer=<id> 直开线程（用户主页「发私信」入口）：无历史会话也能开聊
+  const peerParam = Number(searchParams.get('peer'))
+  useEffect(() => {
+    if (Number.isInteger(peerParam) && peerParam > 0) {
+      queueMicrotask(() => {
+        void openThread(peerParam)
+      })
+    }
+  }, [openThread, peerParam])
 
   // 实时帧也可能补进当前打开的线程：帧到达时若已选中会话则重拉线程
   useEffect(() => {

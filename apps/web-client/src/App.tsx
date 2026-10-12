@@ -233,7 +233,9 @@ function App() {
               path="/guides/:id"
               element={<GuideDetailPage token={auth?.token} userId={auth?.user.id} />}
             />
-            <Route path="/users/:id" element={<UserProfilePage />} />
+            <Route
+              path="/users/:id"
+              element={<UserProfilePage authUserId={auth?.user.id} token={auth?.token} />} />
             <Route
               path="/guides/:id/edit"
               element={
