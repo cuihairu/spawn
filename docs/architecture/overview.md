@@ -26,7 +26,7 @@
 
 1. 数据输入：crawler-jobs 从官方商店/赛事/公告抓取数据，写入数据仓库或缓存；data-panel 通过官方 API 或合作接口获取战绩数据。
 2. 处理：game-catalog/content-service/community 按数据模型落库（例如 Postgres/ElasticSearch），同时触发消息总线（Kafka/PubSub）更新榜单和推荐。
-3. 输出：api-gateway 把聚合后的数据发给各端；realtime-hub 负责 WebSocket/推送，向移动端发战绩变化、组队邀请。
+3. 输出：api-gateway 把聚合后的数据发给各端；realtime-hub 负责实时 WebSocket 推送（站内通知 / 在线状态 / 已读回执 / WebRTC 信令，经网关 `/ws` 隧道透传，多实例 Redis pub/sub，远程推送走 webhook 接桥）。
 4. 反馈：apps 的用户行为、埋点、战绩上传经 shared-utils SDK 上报到数据管道，推荐和榜单再消费这批数据。
 
 ## 技术栈：现状与候选

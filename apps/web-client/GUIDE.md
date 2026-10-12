@@ -114,6 +114,7 @@ VITE_GAME_SERVICE_URL=http://localhost:8890
 VITE_CONTENT_SERVICE_URL=http://localhost:8891
 VITE_COMMUNITY_SERVICE_URL=http://localhost:8892
 VITE_API_GATEWAY_URL=http://localhost:8800  # 可选，配置后登录/推荐/精选优先走网关
+VITE_REALTIME_HUB_URL=ws://localhost:8893   # 可选，实时 WS 直连 hub；默认走网关隧道 ws://localhost:8800
 ```
 
 ## 快速启动

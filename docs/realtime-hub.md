@@ -61,7 +61,7 @@ handler / publish handler；`go.work` 纳入（CI 按 go.work 动态发现，自
   失败仅 logx），`Realtime` 配置段（`REALTIME_HUB_URL`/`REALTIME_INTERNAL_TOKEN`
   环境变量）；四触发点通知落库成功后推帧，落库失败不推（防幽灵红点）。
 - web：`src/lib/realtime.ts`（指数退避重连 1s→30s 封顶，静默降级），App 铃铛
-  帧到达即重拉未读数；VITE_REALTIME_HUB_URL 进 compose build args。
+  帧到达即重拉未读数；VITE_REALTIME_HUB_URL 曾进 compose build args，M3 隧道落地后已移除（web 默认走网关，直连变量保留）。
 - 端到端冒烟（compose 实测）：注册 u1/u2 → u1 发帖 → u1 挂 WS → u2 点赞 →
   u1 收到 `{"type":"notification","data":{...like_post...}}` 帧；停 hub 后
   点赞仍 200，publish 失败仅 error 日志。
