@@ -8,6 +8,7 @@ import {
   fetchHotPosts,
   fetchPosts,
   fetchTopics,
+  searchPosts,
   followTopic,
   unfollowTopic,
   uploadImage,
@@ -27,10 +28,15 @@ const CommunityPage = ({ token, userId }: Props) => {
   const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selectedMode, setSelectedMode] = useState<'latest' | 'hot' | 'mine' | 'followed'>('latest')
-  // 未登录时「我的/关注」不可用，渲染期推导回退到最新（替代原 effect 内的同步 setState）.
+  const [selectedMode, setSelectedMode] = useState<'latest' | 'hot' | 'mine' | 'followed' | 'search'>('latest')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [searchDraft, setSearchDraft] = useState('')
+  // 未登录时「我的/关注」不可用，渲染期推导回退到最新（替代原 effect 内的同步 setState）；
+  // 搜索为公开端点，不参与回落.
   const mode =
-    selectedMode !== 'latest' && (!token || !userId) ? 'latest' : selectedMode
+    (selectedMode === 'mine' || selectedMode === 'followed') && (!token || !userId)
+      ? 'latest'
+      : selectedMode
   const [following, setFollowing] = useState<Set<number>>(new Set())
 
   const [topicDraft, setTopicDraft] = useState({ name: '', description: '' })
@@ -127,6 +133,11 @@ const CommunityPage = ({ token, userId }: Props) => {
         setPosts(list)
         return
       }
+      if (mode === 'search') {
+        const res = await searchPosts(searchTerm.trim(), 50)
+        setPosts(res.posts)
+        return
+      }
       if (mode === 'followed' && token) {
         const res = await fetchFollowedPosts(token, 50)
         setPosts(res.posts)
@@ -143,7 +154,7 @@ const CommunityPage = ({ token, userId }: Props) => {
     } finally {
       setLoading(false)
     }
-  }, [activeTopicId, mode, token, userId])
+  }, [activeTopicId, mode, searchTerm, token, userId])
 
   useEffect(() => {
     // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState.
@@ -357,7 +368,9 @@ const CommunityPage = ({ token, userId }: Props) => {
             <div>
               <h2>帖子列表</h2>
               <div className="secondary-text">
-                {mode === 'hot'
+                {mode === 'search'
+                  ? `搜索「${searchTerm}」的结果`
+                  : mode === 'hot'
                   ? '热门帖子（全站）'
                   : mode === 'followed'
                     ? '关注流（已关注话题与用户的帖子）'
@@ -384,12 +397,48 @@ const CommunityPage = ({ token, userId }: Props) => {
             </div>
           </div>
 
+          <form
+            className="post-search"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const q = searchDraft.trim()
+              if (!q) return
+              setSearchTerm(q)
+              setSelectedMode('search')
+            }}
+          >
+            <input
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
+              placeholder="搜索帖子标题或正文"
+              aria-label="搜索帖子"
+            />
+            <button type="submit" className="secondary-btn" disabled={loading}>
+              搜索
+            </button>
+            {mode === 'search' ? (
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => {
+                  setSelectedMode('latest')
+                  setSearchTerm('')
+                  setSearchDraft('')
+                }}
+              >
+                清除搜索
+              </button>
+            ) : null}
+          </form>
+
           {loading ? (
             <div className="secondary-text">加载中...</div>
           ) : posts.length === 0 ? (
             <div className="community-empty">
               <div className="secondary-text">
-                {mode === 'mine'
+                {mode === 'search'
+                  ? '没有找到相关帖子，换个关键词试试'
+                  : mode === 'mine'
                   ? '你还没有发布帖子'
                   : mode === 'followed'
                     ? '关注话题或用户后，这里会聚合他们的帖子'

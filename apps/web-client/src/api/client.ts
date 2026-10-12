@@ -853,6 +853,21 @@ export async function fetchHotPosts(limit = 20): Promise<Post[]> {
   return (payload.posts ?? []).map(mapPost)
 }
 
+// 帖子关键词搜索（公开端点）：标题/正文包含匹配，服务端空白 q 返回空结果集。
+export async function searchPosts(
+  q: string,
+  limit = 50,
+  offset = 0,
+): Promise<{ posts: Post[]; total: number }> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  const searchParams = new URLSearchParams({ q, limit: String(limit), offset: String(offset) })
+  const payload = await request<PostsResp>(baseUrl, `/api/v1/posts/search?${searchParams.toString()}`)
+  return {
+    posts: (payload.posts ?? []).map(mapPost),
+    total: payload.total ?? 0,
+  }
+}
+
 export async function fetchPostById(id: number): Promise<Post> {
   const baseUrl = apiGatewayUrl ?? communityServiceUrl
   const payload = await request<PostResp>(baseUrl, `/api/v1/posts/${id}`)

@@ -436,3 +436,21 @@
   align-items: center;
   gap: 0.6rem;
 }
+
+/* 帖子搜索框（社区页 posts-header 下方）：与 post-form 输入同款观感 */
+.post-search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.post-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 8px;
+  background: var(--card, #1d2127);
+  color: inherit;
+}
