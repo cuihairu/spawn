@@ -193,6 +193,10 @@ func newUpstreamStubs(t *testing.T) *upstreamStubs {
 			_, _ = w.Write([]byte(`{"posts":[{"id":11,"topic_id":2,"author_id":7,"author_name":"alice",` +
 				`"title":"热帖甲","content":"` + strings.Repeat("正文内容", 30) + `","images":["x.png"],` +
 				`"like_count":12,"comment_count":3,"created_at":"2026-10-04T10:00:00Z"}],"total":1}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/posts/search":
+			_, _ = w.Write([]byte(`{"posts":[{"id":12,"topic_id":2,"author_id":7,"author_name":"alice",` +
+				`"title":"搜到的帖子","content":"命中","like_count":0,"comment_count":0,` +
+				`"created_at":"2026-10-12T10:00:00Z"}],"total":1}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/topics":
 			_, _ = w.Write([]byte(`{"topics":[{"id":2,"name":"星陨圈","description":"不应下发",` +
 				`"post_count":30,"follower_count":88,"is_official":true}],"total":1}`))
@@ -1039,6 +1043,27 @@ func TestRoutes_NotificationsProxy(t *testing.T) {
 	sent = stubs.community.last(t)
 	if sent.method != http.MethodPost || sent.path != "/api/v1/notifications/read-all" {
 		t.Fatalf("upstream request = %s %s", sent.method, sent.path)
+	}
+}
+
+// --- community 反代：/api/v1/posts/search（帖子搜索，公开端点） ---
+
+func TestRoutes_PostSearchProxy(t *testing.T) {
+	stubs := newUpstreamStubs(t)
+	base := newGatewayServer(t, stubs)
+
+	// 无 token 公开访问，query 原样透传。
+	got := call(t, http.MethodGet, base+"/api/v1/posts/search?q=%E8%B7%91%E5%9B%BE&limit=10&offset=0", "", "")
+	if got.status != http.StatusOK {
+		t.Fatalf("search status = %d, body = %s", got.status, got.body)
+	}
+	if list := list(t, got.json, "posts"); len(list) != 1 {
+		t.Fatalf("posts = %#v", list)
+	}
+	sent := stubs.community.last(t)
+	if sent.method != http.MethodGet || sent.path != "/api/v1/posts/search" ||
+		sent.query != "q=%E8%B7%91%E5%9B%BE&limit=10&offset=0" {
+		t.Fatalf("upstream request = %s %s?%s", sent.method, sent.path, sent.query)
 	}
 }
 

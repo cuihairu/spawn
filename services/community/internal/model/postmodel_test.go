@@ -866,3 +866,67 @@ func ids(posts []types.Post) []int64 {
 	}
 	return out
 }
+
+// TestPostModel_SearchPosts 关键词搜索：标题/正文包含匹配、大小写不敏感、
+// 仅 published、软删排除、id 倒序、分页钳制、空查询空结果。
+func TestPostModel_SearchPosts(t *testing.T) {
+	m := newPostModel(t, true)
+
+	// 标题命中：跑图 → 仅种子帖 2（开放世界跑图路线分享）
+	posts, total := m.SearchPosts("跑图", 20, 0)
+	if total != 1 || len(posts) != 1 || posts[0].Id != 2 {
+		t.Fatalf("title search want [2] total=1, got %v total=%d", ids(posts), total)
+	}
+
+	// 正文命中：盲目堆数值 → 仅种子帖 1（正文）
+	posts, total = m.SearchPosts("盲目堆数值", 20, 0)
+	if total != 1 || len(posts) != 1 || posts[0].Id != 1 {
+		t.Fatalf("content search want [1] total=1, got %v total=%d", ids(posts), total)
+	}
+
+	// 大小写不敏感：新建英文标题帖，用小写查询命中
+	if _, err := m.Create(1, 1003, "speedrunner", &types.CreatePostReq{
+		Title: "Speedrun Guide", Content: "any%", Type: "discussion",
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	posts, total = m.SearchPosts("speedRUN", 20, 0)
+	if total != 1 || len(posts) != 1 || posts[0].Title != "Speedrun Guide" {
+		t.Fatalf("case-insensitive search failed: %v total=%d", ids(posts), total)
+	}
+
+	// 多命中 id 倒序：查询同时命中 1、2、3 → [3 2 1]
+	posts, total = m.SearchPosts("跑图", 20, 0) // 仅 2 —— 换共享词
+	if _, err := m.Create(1, 1004, "demo2", &types.CreatePostReq{
+		Title: "跑图心得", Content: "补充", Type: "discussion",
+	}); err != nil {
+		t.Fatalf("Create second: %v", err)
+	}
+	posts, total = m.SearchPosts("跑图", 20, 0)
+	if total != 2 || len(posts) != 2 || ids(posts)[0] != 4 || ids(posts)[1] != 2 {
+		t.Fatalf("multi hit want [4 2] total=2, got %v total=%d", ids(posts), total)
+	}
+
+	// 软删排除：删掉帖 2 后不再命中
+	if err := m.Delete(2, 1002); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, total = m.SearchPosts("跑图", 20, 0); total != 1 {
+		t.Fatalf("soft-deleted must be excluded, total = %d", total)
+	}
+
+	// 分页窗口与钳制：limit=1 offset=1；非法值回落护栏
+	posts, total = m.SearchPosts("跑图", 1, 1)
+	if total != 1 || len(posts) != 0 {
+		t.Fatalf("page beyond want empty total=1, got %v total=%d", ids(posts), total)
+	}
+	if posts, total = m.SearchPosts("跑图", -5, 0); len(posts) != 1 {
+		t.Fatalf("limit<=0 must clamp to 20, got %v", ids(posts))
+	}
+	if _, total = m.SearchPosts("  ", 20, 0); total != 0 {
+		t.Fatalf("blank query must return empty, total = %d", total)
+	}
+	if _, total = m.SearchPosts("不存在的词xyz", 20, 0); total != 0 {
+		t.Fatalf("no-hit must be empty, total = %d", total)
+	}
+}

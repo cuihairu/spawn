@@ -21,6 +21,10 @@
 - [x] 进程内全栈 e2e（`internal/e2e`）：真实 rest.Server + 全量路由 + SQLite + JWT 中间件 + realtime-hub 发布桩，编排旅程（话题→帖子→关注→点赞→评论→关注人→通知→已读→私信→回执）+ 数据回放幂等契约（574956b）
 - [x] 顺带修复：`Like` 计数幂等（README 契约「幂等」此前只落在关系表，重复点赞 like_count 仍 +1；现只在关系新增时 +1，并发同用户重放不重计）（574956b）
 
+## 帖子搜索（2026-10-12 巡检推进批次，自定位自 community README「添加全文搜索」——ES 卡外部中间件，先落零基建可交付面）
+- [x] community：`GET /api/v1/posts/search?q=`（公开端点，标题/正文包含匹配、大小写不敏感、仅 published、空白 q 空结果、分页钳制；沿 List/Hot 应用侧过滤口径不下推 SQL）+ 网关反代一条（query 原样透传）；测试四层：模型（命中/大小写/软删/倒序/钳制）、逻辑（钳制/空态 nil 归一）、handler 集成（公开语义/400 缺参）、e2e 旅程补搜索步（本 commit）
+- [x] ES 全文搜索保留为规模化升级路径（community README 长期项改写说明）
+
 ## 观察项（CI 快照复核 2026-10-11，非红不动）
 - [x] Actions 版本升级：四个 action 均已出新主版本并升级（checkout@v7 / setup-node@v7 / setup-go@v7 / pnpm-action@v6，node24 运行时）——2026-10-11 落地（`6d12e81`），CI/docs 双绿验证，run 日志 deprecation 警告清零；ios.yml 同批升级，macOS 位以手动点火 run 实测（见 backlog 同日登记）
 - [x] Ubuntu 26 迁移评估——已完成（2026-10-12，评估零配置改动，动作门仍 10-19）。波及面已发布（runner-images#14748）：`ubuntu-latest` 2026-10-19 起数周内滚移 26.04.1，11-19 收官；工具差异表内 Docker Buildx/Rust/Java 等全同版本，内核 6.17→7.0.0。本仓 Ubuntu job（ci×2/docs×2/nightly）盘点：Go/Node/pnpm 全经 setup action 装载与镜像无关，无 docker、无 apt 依赖；**唯一镜像侧依赖 = nightly 的 CGO gcc**（mattn/go-sqlite3，24.04=gcc13 / 26.04=gcc14，该库对 gcc14 编译广泛验证）。结论：钉 `ubuntu-24.04` 已消除滚动期漂移，**不跟进标签滚动**；10-19 后可将 nightly 单工作流切 `ubuntu-26.04` 做 canary 实测（gcc14 + -race 全绿为门槛），11-19 收官后视 canary 结果再定全局升版，此前不动任何配置

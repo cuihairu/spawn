@@ -44,6 +44,7 @@ type PostStore interface {
 	Share(id int64) (*types.Post, error)
 	IncrementComments(id int64) (*types.Post, error)
 	List(filter PostListFilter) ([]types.Post, int64)
+	SearchPosts(query string, limit, offset int64) ([]types.Post, int64)
 	ListByFollow(topicIds, authorIds []int64, limit, offset int64) ([]types.Post, int64)
 	ListLikedPosts(userId, limit, offset int64) ([]types.Post, int64)
 	Hot(limit int64) []types.Post
@@ -422,6 +423,54 @@ func (m *PostModel) insertLikeRelation(userId, postId int64) (bool, error) {
 		return false, fmt.Errorf("记录点赞关系失败: %w", raErr)
 	}
 	return inserted == 1, nil
+}
+
+// SearchPosts 关键词搜索（标题/正文包含匹配，大小写不敏感，仅 published）。
+// 沿 List/Hot 同款应用侧过滤口径（全量读取后内存过滤，不下推 SQL，双驱动
+// 行为一致）；结果按 id 倒序（新帖在前），q 归一为空时返回空结果集。
+// ES 为规模化升级路径（README 待实现），当前口径对文件库规模足够。
+func (m *PostModel) SearchPosts(query string, limit, offset int64) ([]types.Post, int64) {
+	posts := m.allVisible()
+	if posts == nil {
+		return nil, 0
+	}
+
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return nil, 0
+	}
+
+	var matched []types.Post
+	for _, p := range posts {
+		if p.Status != "published" {
+			continue
+		}
+		if !strings.Contains(strings.ToLower(p.Title), q) &&
+			!strings.Contains(strings.ToLower(p.Content), q) {
+			continue
+		}
+		matched = append(matched, p)
+	}
+
+	// id 倒序：新帖在前（id 单调递增，与软删不复用 id 的语义一致）
+	sort.Slice(matched, func(i, j int) bool { return matched[i].Id > matched[j].Id })
+
+	total := int64(len(matched))
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	start := int(offset)
+	if start > len(matched) {
+		start = len(matched)
+	}
+	end := start + int(limit)
+	if end > len(matched) {
+		end = len(matched)
+	}
+	return matched[start:end], total
 }
 
 // CreatePostLikesTable 创建点赞关系表（开发使用）。先尝试 SQLite 方言，

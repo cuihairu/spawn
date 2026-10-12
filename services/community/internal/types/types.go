@@ -169,6 +169,14 @@ type GetPostReq struct {
 	Id int64 `path:"id"`
 }
 
+// SearchPostsReq：帖子关键词搜索（标题/正文包含匹配，大小写不敏感；
+// q 为空串时返回空结果集）。
+type SearchPostsReq struct {
+	Q      string `form:"q"`
+	Limit  int64  `form:"limit,optional,default=20"`
+	Offset int64  `form:"offset,optional,default=0"`
+}
+
 type GetPostsReq struct {
 	TopicId  int64  `form:"topic_id,optional"`
 	AuthorId int64  `form:"author_id,optional"`

@@ -251,6 +251,16 @@ func TestCommunityEndToEndJourney(t *testing.T) {
 		map[string]any{"topic_id": topicId, "title": "旅程第一帖", "content": "正文"})["post"].(map[string]any)
 	postId := int64(num(t, post, "id"))
 
+	// 2.5) 公开搜索：标题关键词命中、空白查询空结果（无 token 可用）
+	if n := num(t, callOK(t, http.MethodGet, base, "/api/v1/posts/search?q=%E6%97%85%E7%A8%8B", "", nil),
+		"total"); n != 1 {
+		t.Fatalf("search total = %v, want 1", n)
+	}
+	if n := num(t, callOK(t, http.MethodGet, base, "/api/v1/posts/search?q=%20", "", nil),
+		"total"); n != 0 {
+		t.Fatalf("blank search total = %v, want 0", n)
+	}
+
 	// 3) Bob 关注话题 → 关注流含该帖
 	callOK(t, http.MethodPost, base, fmt.Sprintf("/api/v1/topics/%d/follow", topicId), bob, nil)
 	followed := callOK(t, http.MethodGet, base, "/api/v1/posts/followed", bob, nil)

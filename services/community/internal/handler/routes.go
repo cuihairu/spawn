@@ -125,6 +125,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 				Path:    "/posts/hot",
 				Handler: post.GetHotPostsHandler(serverCtx),
 			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/posts/search",
+				Handler: post.SearchPostsHandler(serverCtx),
+			},
 		},
 		rest.WithPrefix("/api/v1"),
 	)

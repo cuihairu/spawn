@@ -28,6 +28,7 @@ Community Service 是 spawn 社区平台的核心服务之一，提供帖子发�
 - `GET /api/v1/posts` - 获取帖子列表（支持 `author_id` 筛选）
 - `GET /api/v1/posts/:id` - 获取帖子详情
 - `GET /api/v1/posts/hot` - 获取热门帖子
+- `GET /api/v1/posts/search?q=` - 帖子关键词搜索（公开端点；标题/正文包含匹配，大小写不敏感，仅 published；空白 q 返回空结果集；`limit`/`offset` 分页）
 - `GET /api/v1/posts/followed` - 关注流（关注的话题/用户的帖子，需认证）
 - `PUT /api/v1/posts/:id` - 更新帖子（需认证）
 - `DELETE /api/v1/posts/:id` - 删除帖子（需认证）
@@ -278,7 +279,9 @@ ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]
 ### 长期（3-6月）
 - [x] 实现实时推送（realtime-hub M2：点赞/评论/回复/关注四触发点
   fire-and-forget 推帧；web WS 实时未读 + 30s 轮询兜底，见 docs/realtime-hub.md）
-- [ ] 添加全文搜索（Elasticsearch）
+- [ ] 全文搜索升级（Elasticsearch）：LIKE 级关键词搜索已落地
+  （`GET /api/v1/posts/search`，应用侧过滤口径，2026-10-12）；ES 作为规模化
+  升级路径（分词/相关性排序/海量数据）留外部中间件引入后跟进
 - [ ] 实现内容推荐系统（ML）
 - [ ] 支持视频内容
 

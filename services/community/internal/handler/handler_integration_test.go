@@ -836,3 +836,74 @@ func TestMessageEndpoints_Flow(t *testing.T) {
 		t.Fatalf("foreign thread = %s (%v)", otherRR.Body.String(), err)
 	}
 }
+
+// TestPostSearchFlow 公开搜索端点走真 handler：命中创建的帖子、
+// 空白查询空结果、无 token 可访问（公开语义）。
+func TestPostSearchFlow(t *testing.T) {
+	httpx.SetErrorHandlerCtx(httperr.ErrorHandler)
+
+	svcCtx, secret := newTestServiceContext(t)
+	token := signToken(t, secret, 888, "searcher")
+
+	createPost := svcCtx.Auth(post.CreatePostHandler(svcCtx))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/posts",
+		bytes.NewBufferString(`{"topic_id":1,"title":"夜巡记录：钟楼怪谈","content":"深夜的钟楼有怪声"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	createPost(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("create post: expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	search := post.SearchPostsHandler(svcCtx) // 公开端点：不包 Auth
+
+	// 标题命中（无 token）
+	srr := httptest.NewRecorder()
+	search(srr, httptest.NewRequest(http.MethodGet, "/api/v1/posts/search?q=%E9%92%9F%E6%A5%BC", nil))
+	if srr.Code != http.StatusOK {
+		t.Fatalf("search: expected 200, got %d body=%s", srr.Code, srr.Body.String())
+	}
+	var got types.PostsResp
+	if err := json.Unmarshal(srr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal PostsResp: %v", err)
+	}
+	if got.Total != 1 || len(got.Posts) != 1 || got.Posts[0].Title != "夜巡记录：钟楼怪谈" {
+		t.Fatalf("search result = %+v", got)
+	}
+
+	// 正文命中
+	srr = httptest.NewRecorder()
+	search(srr, httptest.NewRequest(http.MethodGet, "/api/v1/posts/search?q=%E6%80%AA%E5%A3%B0", nil))
+	if srr.Code != http.StatusOK {
+		t.Fatalf("content search: expected 200, got %d", srr.Code)
+	}
+	got = types.PostsResp{}
+	if err := json.Unmarshal(srr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal PostsResp: %v", err)
+	}
+	if got.Total != 1 {
+		t.Fatalf("content search total = %d, want 1", got.Total)
+	}
+
+	// 空白查询 → 空结果集
+	srr = httptest.NewRecorder()
+	search(srr, httptest.NewRequest(http.MethodGet, "/api/v1/posts/search?q=%20%20", nil))
+	if srr.Code != http.StatusOK {
+		t.Fatalf("blank search: expected 200, got %d", srr.Code)
+	}
+	got = types.PostsResp{}
+	if err := json.Unmarshal(srr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal PostsResp: %v", err)
+	}
+	if got.Total != 0 || got.Posts == nil && len(got.Posts) != 0 {
+		t.Fatalf("blank query must be empty, got total=%d posts=%v", got.Total, got.Posts)
+	}
+
+	// 缺 q → go-zero 参数校验 400
+	srr = httptest.NewRecorder()
+	search(srr, httptest.NewRequest(http.MethodGet, "/api/v1/posts/search", nil))
+	if srr.Code != http.StatusBadRequest {
+		t.Fatalf("missing q: expected 400, got %d", srr.Code)
+	}
+}

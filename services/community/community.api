@@ -277,6 +277,7 @@ service community-api {
 
 	@handler GetHotPosts
 	get /posts/hot (GetPostsReq) returns (PostsResp)
+	get /posts/search (SearchPostsReq) returns (PostsResp)
 }
 
 @server (

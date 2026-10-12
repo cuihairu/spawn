@@ -46,7 +46,7 @@
 | 项 | 卡点 | 依据 |
 |----|------|------|
 | ~~实时推送（WebSocket）~~ | 已解除（realtime-hub M1/M2 落地，2026-10-11） | docs/realtime-hub.md |
-| 全文搜索（Elasticsearch） | 外部中间件未引入 | community README:270 |
+| 全文搜索升级（Elasticsearch） | 外部中间件未引入；LIKE 级关键词搜索已于 2026-10-12 落地（`GET /api/v1/posts/search`，应用侧过滤，见 community README） | community README 长期项 |
 | 内容推荐系统（ML） | 外部模型服务未引入 | community README:271 |
 | 视频内容 | 对象存储/转码基建未立项 | community README:272 |
 | matchmaking / realtime-hub / crawler-jobs / admin-console / mini-program | 拍板不开工（2026-10-09） | mobile_plan 第 4 节 |
