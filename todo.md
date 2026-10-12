@@ -17,6 +17,10 @@
 - [x] web：用户主页「发私信」按钮 + `/messages?peer=` 直开会话（f9122d5）
 - [x] mobile：/messages 私信屏（会话列表 ↔ 聊天线，inverted 列表）、用户主页「私信」按钮、Profile Tab「我的私信」行、API 五函数（cc4a90b）
 
+## community 端到端测试（2026-10-12 巡检推进批次，自定位自 community README 待实现 #1「服务编排、数据回放」）
+- [x] 进程内全栈 e2e（`internal/e2e`）：真实 rest.Server + 全量路由 + SQLite + JWT 中间件 + realtime-hub 发布桩，编排旅程（话题→帖子→关注→点赞→评论→关注人→通知→已读→私信→回执）+ 数据回放幂等契约（574956b）
+- [x] 顺带修复：`Like` 计数幂等（README 契约「幂等」此前只落在关系表，重复点赞 like_count 仍 +1；现只在关系新增时 +1，并发同用户重放不重计）（574956b）
+
 ## 观察项（CI 快照复核 2026-10-11，非红不动）
 - [x] Actions 版本升级：四个 action 均已出新主版本并升级（checkout@v7 / setup-node@v7 / setup-go@v7 / pnpm-action@v6，node24 运行时）——2026-10-11 落地（`6d12e81`），CI/docs 双绿验证，run 日志 deprecation 警告清零；ios.yml 同批升级，macOS 位以手动点火 run 实测（见 backlog 同日登记）
 - [ ] Ubuntu 26 迁移评估（ubuntu-latest 已钉 ubuntu-24.04，2026-10-19 起 runner-images#14748 迁移，波及面明确后再决定是否跟进；10-19 前维持观察不动作）
