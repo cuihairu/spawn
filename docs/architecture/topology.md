@@ -15,7 +15,7 @@
 | api-gateway | Go / go-zero | 8800 | 9095 | BFF：自有聚合 handler + 五路反代（见 §3）+ 统一图片上传入口（见 §3.1） | uploads 卷（图片本地盘存储，选型方案 A） |
 | user-service-rpc | Go / gRPC | 8080 (gRPC) | 9096 | 内网 gRPC 通道（手机/Web 均不直连；protoc 生成代码缺口保留原样） | — |
 
-未落地（README 规划占位）：matchmaking、realtime-hub、crawler-jobs、admin-console、mini-program。
+未落地（README 规划占位）：matchmaking、crawler-jobs、admin-console、mini-program（realtime-hub 已于 2026-10-11 立项落地）。
 
 ## 2. 客户端接入拓扑
 
@@ -84,5 +84,5 @@ web-client 直连拓扑保持不变，网关路由扩容不要求 web 迁移。
 1. BFF 第三阶段（按需）：更多聚合口径（列表聚合已落地 `/home/feed`，字段裁剪模式可复制）；必要时给聚合端点加缓存。
 2. 真机回归：Android release 包已可本地 gradle 出包（`pnpm --dir apps/mobile-app build:android:release`），本地推送/深链分享卡等待真机验证。
 3. data-panel 已落地（2026-10-09，M4 第一里程碑）：mobile 战绩 Tab + 单游戏详情（经网关 `/api/v1/stats/*` 五路反代）、web `/stats` 面板、compose/nightly/Prometheus 接线均同步落地；真机验证顺延。
-4. realtime-hub / matchmaking：实时通道独立于网关，客户端直连 WebSocket 网关（规划）。
+4. realtime-hub：实时通道已经网关 `/ws` 隧道透传（客户端默认走网关，直连变量保留）；matchmaking 仍为规划占位。
 5. 生产化：网关前置 TLS 终结（当前 compose 无证书）、明文 HTTP 收敛、CORS 收紧。

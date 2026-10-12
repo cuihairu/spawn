@@ -57,6 +57,16 @@ Community Service 是 spawn 社区平台的核心服务之一，提供帖子发�
 被关注（follow_user）。写入 `UNIQUE (user_id, actor_id, type, target_id)` 幂等去重，
 自我动作与「回复帖子作者本人」不重复通知；通知写失败不回滚主操作。
 
+### 站内私信
+- `POST /api/v1/messages` - 发送私信（需认证）；成功后经 realtime-hub 向收件人推 `message` 帧
+- `GET /api/v1/messages/conversations` - 会话列表：对端 + 末条消息 + 各自未读数，按最后活跃倒序（需认证）
+- `GET /api/v1/messages/thread/:peer_id` - 与某用户的往来消息，id 倒序分页 + total（需认证）
+- `POST /api/v1/messages/thread/:peer_id/read` - 会话置已读（幂等），返回剩余未读总数并向本人广播 `message.read` 回执（需认证）
+- `GET /api/v1/messages/unread-count` - 未读私信总数（需认证）
+
+约束：自我发送/空正文/超长（>2000 字符）回 400；收件人存在性不校验（与关注同款语义）；
+收发双方同一 `direct_messages` 表各存一行视图，`is_read` 仅翻转收件方行。
+
 ### 内容审核（举报与敏感词）
 - `POST /api/v1/posts/:id/report` - 举报帖子，reason 可选（需认证）
 - `GET /api/v1/moderation/reports` - 举报队列，status 过滤 + 分页（仅管理员）

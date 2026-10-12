@@ -97,6 +97,10 @@ handler / publish handler；`go.work` 纳入（CI 按 go.work 动态发现，自
   3s 超时），厂商协议（APNs/FCM）由桥接服务接——凭据为外部依赖，接缝
   先行。多实例下本地零投递 ≠ 离线，不推（分布式推送决策留部署面）。
   顺手收紧：publish 重复 user_ids 只投一次（原逐次扇出）。
+- **私信消费**（`f08e19d`/`960541c`，2026-10-12 巡检点火批次）：community 落库后
+  `Publish("message", [收件人], {message_id,from_id,from_name,content,created_at})`，
+  会话已读回执 `Publish("message.read", [本人], {unread_count,peer_id})`——hub
+  与网关零改动（帧通道/隧道/推送桥现成），web 消息页与信封徽标实时刷新。
 - **语音信令**（`acdc8ac`）：上行 `{"action":"signal","to":..,"room":..,
   "data":{..}}` 无状态转发（offer/answer/ICE 透传，hub 不解析不存房间），
   目标全部连接收、发端连接排除（本端多设备自信号不回环）；Relay 模式
