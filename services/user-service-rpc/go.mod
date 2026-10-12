@@ -43,7 +43,7 @@ require (
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.10 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.6 // indirect
+	github.com/klauspost/compress v1.20.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -53,10 +53,10 @@ require (
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_golang v1.23.2 // indirect
-	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.66.1 // indirect
-	github.com/prometheus/procfs v0.16.1 // indirect
+	github.com/prometheus/client_golang v1.25.0 // indirect
+	github.com/prometheus/client_model v0.6.3 // indirect
+	github.com/prometheus/common v0.72.0 // indirect
+	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/redis/go-redis/v9 v9.21.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/titanous/json5 v1.0.0 // indirect
@@ -81,10 +81,10 @@ require (
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	go.yaml.in/yaml/v2 v2.4.2 // indirect
+	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.59.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
+	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
