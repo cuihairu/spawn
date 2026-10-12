@@ -370,17 +370,21 @@ func (m *PostModel) RemoveByModerator(id int64) error {
 	return nil
 }
 
-// Like 点赞并返回最新帖子。计数保持单调累加（客户端乐观 +1 契约），
-// 同时幂等落一条点赞关系（post_likes 唯一键防重）供「我的点赞」查询。
+// Like 点赞并返回最新帖子。整体幂等（README 端点契约）：关系落一条
+// （post_likes 唯一键防重，供「我的点赞」查询），计数只在关系新增时 +1，
+// 重复点赞计数不变。
 func (m *PostModel) Like(id, userId int64) (*types.Post, error) {
 	if _, err := m.getFromDB(id); err != nil {
 		return nil, err
 	}
-	if err := m.insertLikeRelation(userId, id); err != nil {
+	inserted, err := m.insertLikeRelation(userId, id)
+	if err != nil {
 		return nil, err
 	}
-	if _, err := m.db.Exec(`UPDATE posts SET like_count = like_count + 1 WHERE id = ?`, id); err != nil {
-		return nil, fmt.Errorf("点赞帖子失败: %w", err)
+	if inserted {
+		if _, err := m.db.Exec(`UPDATE posts SET like_count = like_count + 1 WHERE id = ?`, id); err != nil {
+			return nil, fmt.Errorf("点赞帖子失败: %w", err)
+		}
 	}
 
 	p, err := m.getFromDB(id)
@@ -392,23 +396,32 @@ func (m *PostModel) Like(id, userId int64) (*types.Post, error) {
 	return p, nil
 }
 
-// insertLikeRelation 幂等写入点赞关系（已存在则忽略，不报错）。
+// insertLikeRelation 幂等写入点赞关系，返回是否新插入（重复点赞 false）。
 // SQLite 用 INSERT OR IGNORE，MySQL 语法失败回落 INSERT IGNORE。
-func (m *PostModel) insertLikeRelation(userId, postId int64) error {
-	_, err := m.db.Exec(
+func (m *PostModel) insertLikeRelation(userId, postId int64) (bool, error) {
+	res, err := m.db.Exec(
 		`INSERT OR IGNORE INTO post_likes (user_id, post_id, created_at) VALUES (?, ?, ?)`,
 		userId, postId, time.Now().UTC().Format(time.RFC3339),
 	)
 	if err == nil {
-		return nil
+		inserted, raErr := res.RowsAffected()
+		if raErr != nil {
+			return false, fmt.Errorf("记录点赞关系失败: %w", raErr)
+		}
+		return inserted == 1, nil
 	}
-	if _, retryErr := m.db.Exec(
+	res, retryErr := m.db.Exec(
 		`INSERT IGNORE INTO post_likes (user_id, post_id, created_at) VALUES (?, ?, ?)`,
 		userId, postId, time.Now().UTC().Format(time.RFC3339),
-	); retryErr != nil {
-		return fmt.Errorf("记录点赞关系失败（SQLite: %v；MySQL: %w）", err, retryErr)
+	)
+	if retryErr != nil {
+		return false, fmt.Errorf("记录点赞关系失败（SQLite: %v；MySQL: %w）", err, retryErr)
 	}
-	return nil
+	inserted, raErr := res.RowsAffected()
+	if raErr != nil {
+		return false, fmt.Errorf("记录点赞关系失败: %w", raErr)
+	}
+	return inserted == 1, nil
 }
 
 // CreatePostLikesTable 创建点赞关系表（开发使用）。先尝试 SQLite 方言，

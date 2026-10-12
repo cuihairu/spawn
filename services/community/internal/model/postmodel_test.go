@@ -244,16 +244,17 @@ func TestPostModel_CacheInvalidatedByWrites(t *testing.T) {
 func TestPostModel_ConcurrentLikesAllLand(t *testing.T) {
 	m := newPostModel(t, true)
 
+	// 并发不丢更新：8 个不同用户同时点赞同一帖 → 计数 +8 全部落库
 	const workers = 8
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
-		go func() {
+		go func(i int) {
 			defer wg.Done()
-			if _, err := m.Like(1, 1001); err != nil {
+			if _, err := m.Like(1, int64(2000+i)); err != nil {
 				t.Errorf("Like: %v", err)
 			}
-		}()
+		}(i)
 	}
 	wg.Wait()
 
@@ -263,6 +264,24 @@ func TestPostModel_ConcurrentLikesAllLand(t *testing.T) {
 	}
 	if got.LikeCount != 15+workers {
 		t.Fatalf("like count = %d, want %d", got.LikeCount, 15+workers)
+	}
+
+	// 同一用户并发重复点赞：幂等（README 契约），计数不重计
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := m.Like(1, 2000); err != nil {
+				t.Errorf("replay Like: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if got, err = m.Get(1); err != nil {
+		t.Fatalf("Get after replay: %v", err)
+	}
+	if got.LikeCount != 15+workers {
+		t.Fatalf("replay like count = %d, want %d (idempotent)", got.LikeCount, 15+workers)
 	}
 }
 
@@ -748,15 +767,15 @@ func TestPostModel_ListLikedPosts(t *testing.T) {
 		t.Fatalf("want [2 1] total=2, got %v total=%d", ids(posts), total)
 	}
 
-	// 幂等：重复点赞关系不重复入列，计数单调累加不受影响
+	// 幂等：重复点赞关系不重复入列，计数不重计（README 端点契约）
 	if _, err := m.Like(1, 5); err != nil {
 		t.Fatalf("Like(1) again: %v", err)
 	}
 	if posts, total = m.ListLikedPosts(5, 20, 0); total != 2 {
 		t.Fatalf("idempotent like must keep 2 relation rows, got %d", total)
 	}
-	if got, _ := m.Get(1); got.LikeCount != 17 { // 种子 15 + 2 次
-		t.Fatalf("like count = %d, want 17 (counter keeps incrementing)", got.LikeCount)
+	if got, _ := m.Get(1); got.LikeCount != 16 { // 种子 15 + 1 次
+		t.Fatalf("like count = %d, want 16 (repeat like must not recount)", got.LikeCount)
 	}
 
 	// 用户隔离：他人点赞不影响我的列表
