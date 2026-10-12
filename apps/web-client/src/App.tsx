@@ -35,6 +35,8 @@ function App() {
 
   // 站内通知未读数：登录后拉取 + 30s 轮询驱动导航铃铛徽标；登出在回调里清零。
   const [unreadNotifications, setUnreadNotifications] = useState(0)
+  // 实时帧计数：通知中心页据此即时重拉列表（徽标与列表同源触发）
+  const [notificationTick, setNotificationTick] = useState(0)
   const handleAuthChange = useCallback((next: { token: string; user: UserInfo } | null) => {
     setAuth(next)
     if (!next) {
@@ -61,7 +63,10 @@ function App() {
     queueMicrotask(refresh)
     // realtime-hub WS 即时加速：帧到达即刻重拉（hub 未部署时静默降级为轮询）
     const stopStream = connectNotificationStream(auth.token, () => {
-      if (!cancelled) refresh()
+      if (!cancelled) {
+        refresh()
+        setNotificationTick((t) => t + 1)
+      }
     })
     return () => {
       cancelled = true
@@ -154,7 +159,11 @@ function App() {
               path="/notifications"
               element={
                 auth ? (
-                  <NotificationsPage token={auth.token} onUnreadChange={setUnreadNotifications} />
+                  <NotificationsPage
+                    token={auth.token}
+                    onUnreadChange={setUnreadNotifications}
+                    refreshSignal={notificationTick}
+                  />
                 ) : (
                   <div className="error-page">
                     <p>请先登录</p>

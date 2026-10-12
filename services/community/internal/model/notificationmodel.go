@@ -10,13 +10,14 @@ import (
 // NotificationStore 站内通知仓储接口（与 CommentStore 同款双驱动）。
 // 去噪契约：UNIQUE (user_id, actor_id, type, target_id) + INSERT OR IGNORE，
 // 同一行为者对同一目标的同类动作只产生一条通知（重复点赞不刷屏）。
-// 无 404 语义路径，故不定义哨兵错误。
+// MarkRead 有 404 语义路径（非本人/不存在），哨兵 ErrNotifNotFound。
 type NotificationStore interface {
 	CreateNotificationsTable() error
 	Create(n *types.Notification) error
 	ListByUser(userId, limit, offset int64) ([]*types.Notification, int64, error)
 	CountUnread(userId int64) (int64, error)
 	MarkAllRead(userId int64) error
+	MarkRead(userId, id int64) error
 }
 
 type NotificationModel struct {
@@ -136,6 +137,25 @@ func (m *NotificationModel) CountUnread(userId int64) (int64, error) {
 func (m *NotificationModel) MarkAllRead(userId int64) error {
 	if _, err := m.db.Exec(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0`, userId); err != nil {
 		return fmt.Errorf("标记通知已读失败: %w", err)
+	}
+	return nil
+}
+
+// MarkRead 单条置已读：幂等（已读重标仍成功——MySQL 同值更新影响行数
+// 为 0，回落 COUNT 区分）；非本人或不存在返回 ErrNotifNotFound。
+func (m *NotificationModel) MarkRead(userId, id int64) error {
+	res, err := m.db.Exec(`UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?`, id, userId)
+	if err != nil {
+		return fmt.Errorf("标记通知已读失败: %w", err)
+	}
+	if n, rowErr := res.RowsAffected(); rowErr == nil && n == 0 {
+		var one int
+		if err := m.db.QueryRow(`SELECT COUNT(1) FROM notifications WHERE id = ? AND user_id = ?`, id, userId).Scan(&one); err != nil {
+			return fmt.Errorf("查询通知失败: %w", err)
+		}
+		if one == 0 {
+			return fmt.Errorf("标记通知已读失败: %w", ErrNotifNotFound)
+		}
 	}
 	return nil
 }

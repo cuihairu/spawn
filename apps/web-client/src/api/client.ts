@@ -987,6 +987,15 @@ export async function markAllNotificationsRead(token: string): Promise<void> {
   })
 }
 
+// 单条通知标记已读（幂等；他人/不存在回 404 信封由 request 统一抛错）。
+export async function markNotificationRead(token: string, id: number): Promise<void> {
+  const baseUrl = apiGatewayUrl ?? communityServiceUrl
+  await request<CommonResp>(baseUrl, `/api/v1/notifications/${id}/read`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
 // 网关自有端点（POST /upload、GET /home/feed）专用：无网关地址时按本地默认网关回退。
 const gatewayBaseUrl = apiGatewayUrl ?? 'http://localhost:8800'
 

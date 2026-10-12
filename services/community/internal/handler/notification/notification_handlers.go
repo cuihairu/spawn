@@ -1,4 +1,4 @@
-// Package notification 承载站内通知三个端点的 handler（列表/未读数/全部已读）。
+// Package notification 承载站内通知四个端点的 handler（列表/未读数/全部已读/单条已读）。
 package notification
 
 import (
@@ -47,6 +47,24 @@ func MarkAllReadHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		l := notification.NewMarkAllReadLogic(r.Context(), svcCtx)
 		resp, err := l.MarkAllRead()
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}
+
+// MarkNotificationReadHandler POST /api/v1/notifications/:id/read（登录）
+func MarkNotificationReadHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.NotificationIdReq
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		l := notification.NewMarkNotificationReadLogic(r.Context(), svcCtx)
+		resp, err := l.MarkNotificationRead(&req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {

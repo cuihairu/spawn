@@ -340,6 +340,9 @@ service community-api {
 
 	@handler MarkAllRead
 	post /notifications/read-all returns (CommonResp)
+
+	@handler MarkNotificationRead
+	post /notifications/:id/read (NotificationIdReq) returns (CommonResp)
 }
 
 @server (

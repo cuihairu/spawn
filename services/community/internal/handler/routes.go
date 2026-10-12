@@ -147,6 +147,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/notifications/read-all",
 					Handler: notification.MarkAllReadHandler(serverCtx),
 				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/notifications/:id/read",
+					Handler: notification.MarkNotificationReadHandler(serverCtx),
+				},
 			}...,
 		),
 		rest.WithPrefix("/api/v1"),

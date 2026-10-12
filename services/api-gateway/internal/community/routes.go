@@ -51,6 +51,7 @@ func RegisterCommunityProxyRoutes(server *rest.Server, serverCtx *svc.ServiceCon
 		{Method: http.MethodGet, Path: "/api/v1/notifications", Handler: h},
 		{Method: http.MethodGet, Path: "/api/v1/notifications/unread-count", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/notifications/read-all", Handler: h},
+		{Method: http.MethodPost, Path: "/api/v1/notifications/:id/read", Handler: h},
 
 		// 内容审核：用户举报 + 管理员队列查看/处置（登录与管理员语义由 community 校验）
 		{Method: http.MethodPost, Path: "/api/v1/posts/:id/report", Handler: h},

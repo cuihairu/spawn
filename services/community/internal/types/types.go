@@ -122,6 +122,10 @@ type NotificationsResp struct {
 	Total         int64           `json:"total"`
 }
 
+type NotificationIdReq struct {
+	Id int64 `path:"id"`
+}
+
 type UnreadCountResp struct {
 	Count int64 `json:"count"`
 }

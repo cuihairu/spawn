@@ -4,6 +4,7 @@ import {
   fetchNotifications,
   fetchUnreadNotificationCount,
   markAllNotificationsRead,
+  markNotificationRead,
   type AppNotification,
 } from '../api/client'
 import './notifications.css'
@@ -11,6 +12,8 @@ import './notifications.css'
 interface Props {
   token: string
   onUnreadChange?: (count: number) => void
+  /** App 层实时帧计数：值变化即重拉列表（停在通知页也能即时看到新通知） */
+  refreshSignal?: number
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -27,7 +30,7 @@ function formatTime(value: string): string {
 
 // 通知中心（community 站内通知 web 消费面）：列表 + 未读数 + 全部已读；
 // 点赞/评论/回复类点进原帖，关注类不跳转。
-const NotificationsPage = ({ token, onUnreadChange }: Props) => {
+const NotificationsPage = ({ token, onUnreadChange, refreshSignal = 0 }: Props) => {
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [total, setTotal] = useState(0)
   const [unread, setUnread] = useState(0)
@@ -60,6 +63,11 @@ const NotificationsPage = ({ token, onUnreadChange }: Props) => {
     queueMicrotask(load)
   }, [load])
 
+  useEffect(() => {
+    // 跳过首帧（0 = 挂载时的加载已由上面 effect 覆盖）
+    if (refreshSignal > 0) queueMicrotask(load)
+  }, [refreshSignal, load])
+
   const handleMarkAllRead = useCallback(async () => {
     try {
       await markAllNotificationsRead(token)
@@ -71,12 +79,25 @@ const NotificationsPage = ({ token, onUnreadChange }: Props) => {
     }
   }, [onUnreadChange, token])
 
+  // 点击即标已读（幂等；失败不打扰跳转），未读点与徽标即时收敛；
+  // like/comment/reply 跳原帖，关注类不跳转。
   const openNotification = useCallback(
     (n: AppNotification) => {
+      if (!n.is_read) {
+        setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)))
+        setUnread((prev) => {
+          const next = Math.max(0, prev - 1)
+          onUnreadChange?.(next)
+          return next
+        })
+        markNotificationRead(token, n.id).catch(() => {
+          void load()
+        })
+      }
       if (n.type === 'follow_user') return
       navigate(`/community/posts/${n.target_id}`)
     },
-    [navigate],
+    [load, navigate, onUnreadChange, token],
   )
 
   return (

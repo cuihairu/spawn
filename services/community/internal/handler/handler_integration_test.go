@@ -272,6 +272,42 @@ func TestNotificationEndpoints_Flow(t *testing.T) {
 		t.Fatalf("unread count=%d, want 1", unreadResp.Count)
 	}
 
+	// 单条已读：like_post 置已读 → 未读数 1→0；幂等重标仍 200；他人/不存在 → 404 信封
+	notifId := strconv.FormatInt(listed.Notifications[0].Id, 10)
+	markOne := svcCtx.Auth(notification.MarkNotificationReadHandler(svcCtx))
+	markOneReq := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+notifId+"/read", nil)
+	markOneReq = pathvar.WithVars(markOneReq, map[string]string{"id": notifId})
+	markOneReq.Header.Set("Authorization", "Bearer "+authorToken)
+	markOneRR := httptest.NewRecorder()
+	markOne(markOneRR, markOneReq)
+	if markOneRR.Code != http.StatusOK {
+		t.Fatalf("mark one read: expected 200, got %d body=%s", markOneRR.Code, markOneRR.Body.String())
+	}
+	unreadOneRR := httptest.NewRecorder()
+	unread(unreadOneRR, unreadReq)
+	var unreadRespOne types.UnreadCountResp
+	if err := json.Unmarshal(unreadOneRR.Body.Bytes(), &unreadRespOne); err != nil {
+		t.Fatalf("unmarshal UnreadCountResp: %v", err)
+	}
+	if unreadRespOne.Count != 0 {
+		t.Fatalf("unread count after mark one=%d, want 0", unreadRespOne.Count)
+	}
+	// 幂等重标
+	markOneRR2 := httptest.NewRecorder()
+	markOne(markOneRR2, markOneReq)
+	if markOneRR2.Code != http.StatusOK {
+		t.Fatalf("re-mark one: expected 200, got %d body=%s", markOneRR2.Code, markOneRR2.Body.String())
+	}
+	// 非本人（读者乙拿作者的通知 id）→ 404
+	markForeignReq := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+notifId+"/read", nil)
+	markForeignReq = pathvar.WithVars(markForeignReq, map[string]string{"id": notifId})
+	markForeignReq.Header.Set("Authorization", "Bearer "+likerToken)
+	markForeignRR := httptest.NewRecorder()
+	markOne(markForeignRR, markForeignReq)
+	if markForeignRR.Code != http.StatusNotFound {
+		t.Fatalf("foreign mark one: expected 404, got %d body=%s", markForeignRR.Code, markForeignRR.Body.String())
+	}
+
 	// 全部已读 → 未读数归零
 	markRead := svcCtx.Auth(notification.MarkAllReadHandler(svcCtx))
 	markReq := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/read-all", nil)
@@ -668,7 +704,8 @@ func (brokenNotificationRepo) ListByUser(userId, limit, offset int64) ([]*types.
 func (brokenNotificationRepo) CountUnread(userId int64) (int64, error) {
 	return 0, errors.New("boom")
 }
-func (brokenNotificationRepo) MarkAllRead(userId int64) error { return errors.New("boom") }
+func (brokenNotificationRepo) MarkAllRead(userId int64) error  { return errors.New("boom") }
+func (brokenNotificationRepo) MarkRead(userId, id int64) error { return errors.New("boom") }
 
 // TestNotificationEndpoints_RepoError 仓储故障 → logic 错误分支 → httperr
 // 兜底信封（非哨兵错误一律 400）。

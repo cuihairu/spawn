@@ -2,6 +2,7 @@ package model
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -112,5 +113,41 @@ func TestNotificationUnreadAndMarkAllRead(t *testing.T) {
 	// 幂等：再次执行不报错
 	if err := m.MarkAllRead(7); err != nil {
 		t.Fatalf("second mark all read: %v", err)
+	}
+}
+
+func TestNotificationMarkRead(t *testing.T) {
+	m := newNotificationTestDB(t)
+	if err := m.Create(notif(7, 8, "like_post", 1, false)); err != nil {
+		t.Fatalf("seed1: %v", err)
+	}
+	if err := m.Create(notif(8, 9, "follow_user", 7, false)); err != nil {
+		t.Fatalf("seed2: %v", err)
+	}
+	var targetId int64
+	if err := m.db.QueryRow(`SELECT id FROM notifications WHERE user_id = 7 LIMIT 1`).Scan(&targetId); err != nil {
+		t.Fatalf("scan id: %v", err)
+	}
+
+	// 标记本人通知 → 成功且已读
+	if err := m.MarkRead(7, targetId); err != nil {
+		t.Fatalf("mark read: %v", err)
+	}
+	count, err := m.CountUnread(7)
+	if err != nil || count != 0 {
+		t.Fatalf("unread=%d err=%v, want 0", count, err)
+	}
+
+	// 幂等：已读重标仍成功
+	if err := m.MarkRead(7, targetId); err != nil {
+		t.Fatalf("re-mark read: %v", err)
+	}
+
+	// 非本人 / 不存在 → ErrNotifNotFound
+	if err := m.MarkRead(8, targetId); !errors.Is(err, ErrNotifNotFound) {
+		t.Fatalf("foreign mark: err=%v, want ErrNotifNotFound", err)
+	}
+	if err := m.MarkRead(7, 99999); !errors.Is(err, ErrNotifNotFound) {
+		t.Fatalf("missing mark: err=%v, want ErrNotifNotFound", err)
 	}
 }
