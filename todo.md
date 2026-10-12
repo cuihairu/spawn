@@ -13,6 +13,10 @@
 - [x] community 后端：`direct_messages` 表 + 五端点（发送/会话列表/会话线/会话已读/未读总数）+ `message`/`message.read` 实时帧（f08e19d）
 - [x] 网关反代 + web 消息页：/messages 会话与线、发送框、✉️ 徽标 30s 轮询 + WS 加速（960541c）
 
+## 私信入口补全（2026-10-12 第二批，自定位「私信无发现入口 + mobile 未接」）
+- [x] web：用户主页「发私信」按钮 + `/messages?peer=` 直开会话（f9122d5）
+- [x] mobile：/messages 私信屏（会话列表 ↔ 聊天线，inverted 列表）、用户主页「私信」按钮、Profile Tab「我的私信」行、API 五函数（cc4a90b）
+
 ## 观察项（CI 快照复核 2026-10-11，非红不动）
 - [x] Actions 版本升级：四个 action 均已出新主版本并升级（checkout@v7 / setup-node@v7 / setup-go@v7 / pnpm-action@v6，node24 运行时）——2026-10-11 落地（`6d12e81`），CI/docs 双绿验证，run 日志 deprecation 警告清零；ios.yml 同批升级，macOS 位以手动点火 run 实测（见 backlog 同日登记）
 - [ ] Ubuntu 26 迁移评估（ubuntu-latest 已钉 ubuntu-24.04，2026-10-19 起 runner-images#14748 迁移，波及面明确后再决定是否跟进；10-19 前维持观察不动作）
