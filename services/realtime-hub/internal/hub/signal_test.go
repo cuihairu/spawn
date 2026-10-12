@@ -122,3 +122,27 @@ func TestSignalCrossInstanceViaRelay(t *testing.T) {
 	hubA.handleClientMsg(aConn, signalTo(t, 2, "room-x", map[string]string{"t": "answer"}))
 	expectSignal(t, bConn)
 }
+
+// TestPresenceLocalOnlyUnderRelay 行为锁定：在线状态/watch 沿事件是实例
+// 本地真值，不跨实例同步（跨实例 presence 需分布式状态，属后续演进）。
+func TestPresenceLocalOnlyUnderRelay(t *testing.T) {
+	mr := miniredisRunT(t)
+	hubA, _ := newRelayedHub(t, mr.Addr())
+	hubB, _ := newRelayedHub(t, mr.Addr())
+
+	watcher := &Client{UserId: 1}
+	hubA.Register(watcher)
+	hubA.Watch(watcher, []int64{9})
+
+	// 用户 9 在 B 实例上线：A 的 watcher 不得收到沿事件
+	target := &Client{UserId: 9}
+	hubB.Register(target)
+	select {
+	case extra := <-watcher.send:
+		t.Fatalf("presence leaked across instances: %s", extra)
+	case <-time.After(400 * time.Millisecond):
+	}
+	if st := hubA.Presence([]int64{9}); st[0].Online {
+		t.Fatalf("A should not see B-local presence: %+v", st[0])
+	}
+}

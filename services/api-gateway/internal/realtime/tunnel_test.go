@@ -16,10 +16,16 @@ import (
 	"github.com/zeromicro/go-zero/rest"
 )
 
+// hubSpy 隧道透传观测点：hub 实际收到的 Origin 与 X-Forwarded-For。
+type hubSpy struct {
+	origins []string
+	xffs    []string
+}
+
 // fakeEchoHub gorilla echo 上游：token 缺失回 401，升级成功后原样回显帧。
-func fakeEchoHub(t *testing.T) (*httptest.Server, *[]string) {
+func fakeEchoHub(t *testing.T) (*httptest.Server, *hubSpy) {
 	t.Helper()
-	var gotOrigin []string
+	spy := &hubSpy{}
 	// 与真实 hub 同口径：准入闸在 JWT，Origin 不设限（跨源透传直测）。
 	up := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +33,8 @@ func fakeEchoHub(t *testing.T) (*httptest.Server, *[]string) {
 			http.Error(w, "missing token", http.StatusUnauthorized)
 			return
 		}
-		gotOrigin = append(gotOrigin, r.Header.Get("Origin"))
+		spy.origins = append(spy.origins, r.Header.Get("Origin"))
+		spy.xffs = append(spy.xffs, r.Header.Get("X-Forwarded-For"))
 		conn, err := up.Upgrade(w, r, nil)
 		if err != nil {
 			return
@@ -44,7 +51,7 @@ func fakeEchoHub(t *testing.T) (*httptest.Server, *[]string) {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	return srv, &gotOrigin
+	return srv, spy
 }
 
 // startTunnelTestServer 真实 go-zero rest server；productionLike=true 时
@@ -126,11 +133,15 @@ func dialEcho(t *testing.T, base, origin string, roundTrips int) {
 // TestTunnelEchoThroughRestServer 全量中间件链上握手 + 双向帧往返；
 // query token 与跨源 Origin 头须原样到达 hub。
 func TestTunnelEchoThroughRestServer(t *testing.T) {
-	hub, origins := fakeEchoHub(t)
+	hub, spy := fakeEchoHub(t)
 	base := startTunnelTestServer(t, tunnelCtx(hub.URL), true)
 	dialEcho(t, base, "http://localhost:4173", 3)
-	if len(*origins) != 1 || (*origins)[0] != "http://localhost:4173" {
-		t.Fatalf("origins = %v", *origins)
+	if len(spy.origins) != 1 || spy.origins[0] != "http://localhost:4173" {
+		t.Fatalf("origins = %v", spy.origins)
+	}
+	// 客户端真实 IP 经 X-Forwarded-For/X-Real-Ip 到达 hub
+	if len(spy.xffs) != 1 || spy.xffs[0] != "127.0.0.1" {
+		t.Fatalf("xffs = %v", spy.xffs)
 	}
 }
 
