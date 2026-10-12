@@ -12,6 +12,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { fetchGuides, fetchPublicUser, type Guide, type UserInfo } from '../../api/client';
+import { useAuth } from '../../auth/AuthContext';
 import { colors } from '../../constants/colors';
 
 const PAGE_SIZE = 20;
@@ -21,6 +22,9 @@ const PAGE_SIZE = 20;
 export default function UserProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const userId = Number(id);
+  const { token, user: me } = useAuth();
+  // 登录态且非本人 → 提供私信入口（/messages?peer= 直开会话线）
+  const canMessage = Boolean(token && me && me.id !== userId);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [total, setTotal] = useState(0);
@@ -100,6 +104,15 @@ export default function UserProfileScreen() {
                   <Text style={styles.nickname}>{displayName}</Text>
                   <Text style={styles.username}>@{user?.username || userId}</Text>
                 </View>
+                {canMessage ? (
+                  <Pressable
+                    style={({ pressed }) => [styles.dmBtn, pressed && styles.dmBtnPressed]}
+                    onPress={() => router.push(`/messages?peer=${userId}`)}
+                    hitSlop={8}>
+                    <Ionicons name="chatbubbles" size={15} color="#fff" />
+                    <Text style={styles.dmBtnText}>私信</Text>
+                  </Pressable>
+                ) : null}
               </View>
               <Text style={styles.sectionMeta}>
                 发布的攻略（{total}）
@@ -203,6 +216,24 @@ const styles = StyleSheet.create({
   username: {
     color: colors.textMuted,
     fontSize: 13,
+  },
+  dmBtn: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  dmBtnPressed: {
+    opacity: 0.8,
+  },
+  dmBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
   },
   sectionMeta: {
     color: colors.textMuted,

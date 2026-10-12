@@ -207,6 +207,16 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.section}>
+        <Pressable
+          style={({ pressed }) => [styles.dmEntry, pressed && styles.dmEntryPressed]}
+          onPress={() => router.push('/messages')}>
+          <Ionicons name="chatbubbles-outline" size={18} color={colors.primary} />
+          <Text style={styles.dmEntryText}>我的私信</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </Pressable>
+      </View>
+
+      <View style={styles.section}>
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>我的帖子</Text>
           <Text style={styles.sectionMeta}>
@@ -487,6 +497,24 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     fontWeight: '600',
+  },
+  dmEntry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.card,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  dmEntryPressed: {
+    opacity: 0.8,
+  },
+  dmEntryText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
   },
   sectionMeta: {
     color: colors.textMuted,

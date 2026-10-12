@@ -589,6 +589,82 @@ export async function markAllNotificationsRead(token: string): Promise<void> {
   );
 }
 
+// ========== 站内私信（community 域）：五端点全需 Bearer ==========
+
+export interface DirectMessage {
+  id: number;
+  sender_id: number;
+  recipient_id: number;
+  content: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface DMConversation {
+  peer_id: number;
+  last_message: string;
+  last_at: string;
+  unread: number;
+}
+
+// 发送私信（自我发送/空/超长 400 信封）
+export async function sendDirectMessage(
+  token: string,
+  recipientId: number,
+  content: string,
+): Promise<DirectMessage> {
+  const payload = await request<{ message: DirectMessage }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/messages`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ recipient_id: recipientId, content }),
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+  return payload.message;
+}
+
+// 会话列表：对端 + 末条消息 + 未读数，按最后活跃倒序
+export async function fetchDMConversations(token: string): Promise<DMConversation[]> {
+  const payload = await request<{ conversations: DMConversation[] }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/messages/conversations`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  return payload.conversations ?? [];
+}
+
+// 与某用户的往来消息（id 倒序 + total）
+export async function fetchDMThread(
+  token: string,
+  peerId: number,
+  limit = 50,
+  offset = 0,
+): Promise<{ messages: DirectMessage[]; total: number }> {
+  const payload = await request<{ messages: DirectMessage[]; total: number }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/messages/thread/${peerId}?limit=${limit}&offset=${offset}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  return { messages: payload.messages ?? [], total: payload.total ?? 0 };
+}
+
+// 会话置已读（幂等）；返回剩余未读总数（失败由调用方吞掉）
+export async function markDMThreadRead(token: string, peerId: number): Promise<number> {
+  const payload = await request<{ count: number }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/messages/thread/${peerId}/read`,
+    { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+  );
+  return payload.count ?? 0;
+}
+
+// 未读私信总数
+export async function fetchDMUnreadCount(token: string): Promise<number> {
+  const payload = await request<{ count: number }>(
+    `${COMMUNITY_SERVICE_URL}/api/v1/messages/unread-count`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  return payload.count ?? 0;
+}
+
 // ========== 帖子评论（community 域，区别于攻略评论的 content 域 createComment） ==========
 
 export interface PostComment {
