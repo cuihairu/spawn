@@ -6,7 +6,7 @@
 
 | 依赖 | 版本 | 说明 |
 | --- | --- | --- |
-| Go | ≥ 1.26 | 根目录 `go.work` 声明 `go 1.26.0`（api-gateway 依赖组升级顶高的），聚合六个模块 |
+| Go | ≥ 1.26 | 根目录 `go.work` 声明 `go 1.26.0`（api-gateway 依赖组升级顶高的），聚合八个模块 |
 | Node.js | 24 | 与 CI 一致 |
 | pnpm | 10.22 | 根 `package.json` 以 `packageManager` 钉定 |
 | Docker | 可选 | 一条命令起全部服务与观测栈 |
@@ -27,7 +27,7 @@ pnpm install
 docker compose up --build
 ```
 
-各服务为独立镜像（CGO 构建 + debian:bookworm-slim 运行时），数据源由 `DATASOURCE` 环境变量注入，默认本地 SQLite 文件库并自动建表、写入内嵌种子数据。
+各服务为独立镜像（api-gateway 与 realtime-hub 为 CGO_ENABLED=0 构建 + distroless 运行时，其余 CGO 构建 + debian:bookworm-slim），数据源由 `DATASOURCE` 环境变量注入，默认本地 SQLite 文件库并自动建表、写入内嵌种子数据。
 
 | 服务 | 业务端口 | /metrics 端口 |
 | --- | --- | --- |
@@ -35,7 +35,9 @@ docker compose up --build
 | game-catalog | 8890 | 9092 |
 | content-service | 8891 | 9093 |
 | community | 8892 | 9094 |
+| realtime-hub | 8893 | —（无 /metrics） |
 | api-gateway | 8800 | 9095 |
+| data-panel | 8896 | 9097 |
 | user-service-rpc | 8080 (gRPC) | 9096 |
 
 ## 分别启动后端服务
@@ -47,10 +49,12 @@ go run services/game-catalog/game.go -f services/game-catalog/etc/game-api.yaml
 go run services/user-service/user.go -f services/user-service/etc/user-api.yaml
 go run services/content-service/content.go -f services/content-service/etc/content-api.yaml
 go run services/community/community.go -f services/community/etc/community-api.yaml
+go run services/data-panel/data-panel.go -f services/data-panel/etc/data-panel-api.yaml
+go run services/realtime-hub/realtime-hub.go -f services/realtime-hub/etc/realtime-hub.yaml
 go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
 ```
 
-`api-gateway` 是对外统一入口：JWT 签发与校验、跨服务路由反代、`/home/feed` 聚合都从这里走。生产环境把 `DATASOURCE` 换成 MySQL 连接串即可切换存储，建表与种子迁移在启动时自动完成。
+`api-gateway` 是对外统一入口：JWT 校验（`/upload` 本地校验）与跨服务路由反代、`/home/feed` 聚合都从这里走；登录经反代由 user-service 签发 JWT。生产环境把 `DATASOURCE` 换成 MySQL 连接串即可切换存储，建表与种子迁移在启动时自动完成。
 
 ## 启动 Web 端
 

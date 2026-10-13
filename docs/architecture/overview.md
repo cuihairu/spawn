@@ -25,9 +25,9 @@
 ## 数据流与交互
 
 1. 数据输入：crawler-jobs 从官方商店/赛事/公告抓取数据，写入数据仓库或缓存；data-panel 通过官方 API 或合作接口获取战绩数据。
-2. 处理：game-catalog/content-service/community 按数据模型落库（例如 Postgres/ElasticSearch），同时触发消息总线（Kafka/PubSub）更新榜单和推荐。
+2. 处理：game-catalog/content-service/community 按数据模型落库（SQLite/MySQL 双驱动；Postgres/ElasticSearch 为候选），榜单和推荐由服务内查询与跨服务调用实现（Kafka/PubSub 等消息总线为候选）。
 3. 输出：api-gateway 把聚合后的数据发给各端；realtime-hub 负责实时 WebSocket 推送（站内通知 / 在线状态 / 已读回执 / WebRTC 信令，经网关 `/ws` 隧道透传，多实例 Redis pub/sub，远程推送走 webhook 接桥）。
-4. 反馈：apps 的用户行为、埋点、战绩上传经 shared-utils SDK 上报到数据管道，推荐和榜单再消费这批数据。
+4. 反馈：apps 的战绩上传经网关 `POST /api/v1/stats/records` 直写 data-panel（shared-utils SDK 与独立数据管道为规划）；推荐和榜单消费 data-panel 与 game-catalog 的查询接口。
 
 ## 技术栈：现状与候选
 
@@ -45,7 +45,7 @@ Kafka 消息总线、Terraform + Kubernetes。本文其余章节同属愿景口�
 
 ## 开发协作约定
 
-- 所有服务/应用共享 `packages/config` 中的工具链；代码通过 pnpm workspace 管理。
-- 每个服务提供 `docs/` 子目录记录 API 与运行说明。
-- 使用 `tests/` 下的契约测试确保服务之间的接口兼容性。
-- 通过平台层提供的 CI/CD pipeline 自动化测试、部署。
+- 所有服务/应用共享 `packages/config` 中的工具链（make 目标/lint 配置/env 模板）；代码通过 pnpm workspace 管理。
+- 各服务以目录内 `README.md` 记录 API 与运行说明（`docs/` 子目录为规划）。
+- 服务间接口契约由各服务内单测/集成测试覆盖；跨服务 `tests/` 契约测试为规划（见 `tests/README.md`）。
+- CI/CD 经 `.github/workflows` 自动化测试、文档构建与每日构建（`platform/` 为规划）。

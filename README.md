@@ -11,7 +11,7 @@ The [nightly rolling Release](https://github.com/cuihairu/spawn/releases/tag/nig
 
 | Artifact | Contents |
 | --- | --- |
-| `spawn-<service>-linux-amd64` ×6 | Binaries for the six backend services (CGO build with embedded SQLite driver); run directly after `chmod +x`. Config lives in each service's `etc/` directory in the repo; inject a MySQL connection string via `DATASOURCE` to switch storage |
+| `spawn-<service>-linux-amd64` ×7 | Binaries for the seven services (CGO build with embedded SQLite driver); run directly after `chmod +x`. Config lives in each service's `etc/` directory in the repo; inject a MySQL connection string via `DATASOURCE` to switch storage |
 | `spawn-web-client-linux-amd64.tar.gz` | Static build of the web site; serve it from any static server after extracting |
 | `SHA256SUMS.txt` | Checksums for all assets; verify with `sha256sum -c SHA256SUMS.txt` in the same directory |
 
@@ -51,7 +51,7 @@ Mobile APKs and service container images are not part of the nightly delivery (A
 ```
 
 > The tree above is a roadmap. For actual status see `services/README.md` and `apps/README.md`:
-> the seven services plus web-client and mobile-app have code; matchmaking/realtime-hub/crawler-jobs,
+> the eight services plus web-client and mobile-app have code; matchmaking/crawler-jobs,
 > mini-program, and admin-console have not been created yet.
 
 ## Observability
@@ -74,7 +74,7 @@ Ports and metric details are documented in the "Monitoring & Metrics (Prometheus
 
 ### Module Responsibilities at a Glance
 
-- `apps/`: experience layer. web-client runs the guides/community main site; mobile-app aggregates team-up, match data, and events; mini-program focuses on lightweight browsing and mini-game multiplayer; admin-console provides content and operations configuration.
+- `apps/`: experience layer. web-client runs the guides/community main site; mobile-app aggregates match data, guides, community, and notifications; mini-program focuses on lightweight browsing and mini-game multiplayer; admin-console provides content and operations configuration.
 - `services/`: domain microservices. user-service manages accounts and social graph; game-catalog maintains the game library, leaderboards, and recommendations; content-service + community handle guides, posts, and interactions; matchmaking + realtime-hub cover realtime rooms, voice, and push; data-panel aggregates match and patch data; crawler-jobs periodically fetches external information.
 - `packages/`: unified design system and type contracts. ui-kit ships components and themes; data-models holds protobuf/graphql schemas and TypeScript/Go SDKs; shared-utils provides cross-platform utilities; config centralizes build, lint, and env templates.
 - `platform/`: infrastructure-related IaC, CI/CD, and observability config supporting automated deploys, canary releases, and alerting.
@@ -84,7 +84,7 @@ Ports and metric details are documented in the "Monitoring & Metrics (Prometheus
 
 ### Next Steps
 
-1. Mobile M0–M3 and the M4 first milestone are landed (2026-10-09, see `docs/mobile_plan.md`): Android release packaging works (`android.package` config + `build:android:release` script, aapt/apksigner static checks passed); the data-panel stats tab consumes the gateway `/api/v1/stats/*`. Remaining: on-device install and functional regression — local push, deep-link share cards, and the notification center are still unverified on real devices (this environment has no emulator/device; CI lint+typecheck + `expo export` bundle walkthroughs are the standing substitute).
+1. Mobile M0–M3 code slices and the M4 first milestone are landed (2026-10-09, see `docs/mobile_plan.md`): Android release packaging works (`android.package` config + `build:android:release` script, aapt/apksigner static checks passed); the data-panel stats tab consumes the gateway `/api/v1/stats/*`. Remaining: on-device install and functional regression — local push, deep-link share cards, and the notification center are still unverified on real devices (this environment has no emulator/device; CI runs lint+typecheck, and recorded `expo export` bundle walkthroughs are the standing substitute).
 2. api-gateway BFF phase two is done (2026-10-04): the `GET /home/feed` aggregation endpoint (featured games / hot posts / topics / guides in one request, per-group field trimming + per-upstream failure degradation), consumed by both the web discover page and the mobile discover tab; web-client keeps direct service calls unaffected. More aggregation shapes to come as needed.
 3. `docs/architecture/` overall architecture and data-flow docs are complete (2026-10-04): `topology.md` records the current state (service boundaries/ports/gateway reverse-proxy routes/auth data flow/evolution roadmap), `overview.md` stays at the vision level; future architecture changes update the current-state doc along with each slice.
 
@@ -149,8 +149,25 @@ Match-stats aggregation for the player dashboard; go-zero with SQLite/MySQL dual
 - `POST /api/v1/stats/records` - Ingest stat deltas (JWT-protected, attributed to the token user)
 - Port: 8896
 
-#### 6. Web Client (`apps/web-client`)
-React 19 + Vite + React Router 7 frontend. Pages: home (login & recommendations), discover (one-request home feed), games library + game detail, guide list/detail/editor, community (post feed with followed mode), post detail, notifications (nav bell with unread badge + `/notifications` center: like/comment/reply/follow, mark-all-read), profile, match-stats dashboard (KPI cards + per-game table via the gateway). Guides support "All/Mine" filtering with draft and published save states; guide comments support nested replies and likes; posts support like/share/comments (reply with parent comment, author-only delete); the games library offers keyword search, genre filtering, and pagination, with game cards linking to detail pages that surface related guides. Browsing works without login; write operations require login. Dark theme, responsive layout.
+#### 6. Community Service (`services/community`)
+Posts, topics & circles, follows, likes, comments, notifications, direct messages, and moderation; go-zero with SQLite/MySQL dual-driver storage (default local SQLite). Realtime frames (notification / message / message.read / notification.read) publish to realtime-hub.
+- `GET /api/v1/posts` / `GET /api/v1/posts/hot` / `GET /api/v1/posts/search` - Post list / hot ranking / keyword search
+- `GET /api/v1/topics` / `POST /api/v1/topics` - Topic list & create (topic follows, followed feed)
+- `POST /api/v1/posts/:id/like` / `POST /api/v1/posts/:id/share` - Like (idempotent count) / share
+- `POST /api/v1/posts/:id/comments` / `DELETE /api/v1/posts/:id/comments/:cid` - Comments with nested replies
+- `GET /api/v1/notifications` / `unread-count` / `read-all` - Notification center
+- `GET /api/v1/messages` / `conversations` / `thread/:peer_id` / `unread-count` - Direct messages
+- `POST /api/v1/posts/:id/report` / `GET /api/v1/moderation/reports` - Report & moderation queue
+- Port: 8892
+
+#### 7. Realtime Hub (`services/realtime-hub`)
+WebSocket hub: JWT-authenticated `/ws` upgrade, `/internal/publish` event fanout (single instance or Redis pub/sub relay across instances), `/internal/presence`, and voice signaling passthrough; the gateway also tunnels `/ws` on its own address. Port: 8893.
+
+#### 8. User Service RPC (`services/user-service-rpc`)
+Cluster-internal gRPC port of the user domain (etcd service registration), called by other services and not exposed through the gateway. Business port 8080, /metrics 9096.
+
+#### 9. Web Client (`apps/web-client`)
+React 19 + Vite + React Router 7 frontend. Pages: home (login & recommendations), discover (one-request home feed), games library + game detail, guide list/detail/editor, community (post feed with latest/hot/my-posts/followed modes + keyword search), post detail, notifications (nav bell with unread badge + `/notifications` center: like/comment/reply/follow, mark-all-read), profile, match-stats dashboard (KPI cards + per-game table via the gateway). Guides support "All/Mine" filtering with draft and published save states; guide comments support nested replies and likes; posts support like/share/comments (reply with parent comment, author-only delete); the games library offers keyword search, genre filtering, and pagination, with game cards linking to detail pages that surface related guides. Browsing works without login; write operations require login. Dark theme, responsive layout.
 
 ### Technical Highlights
 
@@ -158,10 +175,12 @@ Cross-service calls go over HTTP: user-service calls game-catalog via `GameCatal
 fetch game data for recommendations, with failure fallback; content-service fetches game titles
 from game-catalog with circuit breaking, retries, and Prometheus metrics. Game repository and
 user recommendation logic have unit tests. `docker-compose.yaml` brings up all services with one
-command, and each service directory has its own `Dockerfile`. All seven services' data layers run
-on the SQLite/MySQL dual driver (a DSN containing `file:` uses SQLite; inject a MySQL connection
-string in production), with in-process TTL+LRU read caching; concurrency safety is guaranteed by
-connection-pool clamping and the cache itself.
+command, and each service directory has its own `Dockerfile` (user-service-rpc has none; it is
+cluster-internal). The five SQLite-backed services (user-service, game-catalog, content-service,
+community, data-panel) run on the SQLite/MySQL dual driver (a DSN containing `file:` uses
+SQLite; inject a MySQL connection string in production), with in-process TTL+LRU read caching;
+concurrency safety is guaranteed by connection-pool clamping and the cache itself. user-service-rpc
+is a gRPC service without a storage layer, and realtime-hub is stateless (in-memory registry).
 
 ### Quick Start
 
@@ -175,6 +194,7 @@ go run services/user-service/user.go -f services/user-service/etc/user-api.yaml
 go run services/content-service/content.go -f services/content-service/etc/content-api.yaml
 go run services/community/community.go -f services/community/etc/community-api.yaml
 go run services/data-panel/data-panel.go -f services/data-panel/etc/data-panel-api.yaml
+go run services/realtime-hub/realtime-hub.go -f services/realtime-hub/etc/realtime-hub.yaml
 go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
 
 # Frontend
@@ -191,6 +211,7 @@ cd apps/web-client && npm install && npm run dev
 | content-service | 8891 | Content service (guides + comments) | Done |
 | community | 8892 | Community service (posts/topics/follows/likes) | Done |
 | data-panel | 8896 | Match-stats panel service (ingest + query) | Done |
+| realtime-hub | 8893 | WebSocket hub (publish fanout, presence, signaling) | Done |
 | user-service-rpc | 8080 (gRPC) | User service RPC (cluster-internal) | Done |
 | web-client | 5173 | Web frontend | Done |
 | mobile-app | — | React Native (Expo) client | In progress — M0–M3 + M4 milestone 1 landed (see `docs/mobile_plan.md`) |

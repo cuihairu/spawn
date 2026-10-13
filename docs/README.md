@@ -2,7 +2,7 @@
 
 现状文档（已落地）：
 
-- `development-guide.md`: 六服务开发指南（环境/配置/数据库/认证/监控/CI/部署）。
+- `development-guide.md`: 八服务开发指南（环境/配置/数据库/认证/监控/CI/部署）。
 - `mobile_plan.md`: 移动端计划与里程碑进度批注。
 - `architecture/`: `overview.md`（愿景层）与 `topology.md`（现状拓扑：服务边界/网关路由面/认证数据流）。
 

@@ -11,7 +11,7 @@
 
 | 产物 | 内容 |
 | --- | --- |
-| `spawn-<服务名>-linux-amd64` ×6 | 六个后端服务二进制（CGO 构建，内嵌 SQLite 驱动），下载后 `chmod +x` 直接运行，配置在仓库各服务 `etc/` 目录，`DATASOURCE` 注入 MySQL 连接串可切换存储 |
+| `spawn-<服务名>-linux-amd64` ×7 | 七个服务二进制（CGO 构建，内嵌 SQLite 驱动），下载后 `chmod +x` 直接运行，配置在仓库各服务 `etc/` 目录，`DATASOURCE` 注入 MySQL 连接串可切换存储 |
 | `spawn-web-client-linux-amd64.tar.gz` | Web 主站静态产物，解压后任意静态服务器可托管 |
 | `SHA256SUMS.txt` | 全部资产校验和，同目录 `sha256sum -c SHA256SUMS.txt` 核对 |
 
@@ -50,8 +50,8 @@
 └── tests                # 跨服务集成测试与合规测试
 ```
 
-> 上树是规划图。落地状态以 `services/README.md`、`apps/README.md` 为准：七服务与 web-client、
-> mobile-app 有代码，matchmaking/realtime-hub/crawler-jobs、mini-program、admin-console 尚未创建。
+> 上树是规划图。落地状态以 `services/README.md`、`apps/README.md` 为准：八服务与 web-client、
+> mobile-app 有代码，matchmaking/crawler-jobs、mini-program、admin-console 尚未创建。
 
 ## 可观测性
 
@@ -71,7 +71,7 @@
 
 ### 模块职责概览
 
-- `apps/`: 聚焦体验层。web-client 负责攻略/社区主站；mobile-app 聚合开黑、战绩、活动；mini-program 侧重轻量浏览与小游戏联机；admin-console 提供内容和运营配置。
+- `apps/`: 聚焦体验层。web-client 负责攻略/社区主站；mobile-app 聚合战绩、攻略、社区与通知；mini-program 侧重轻量浏览与小游戏联机；admin-console 提供内容和运营配置。
 - `services/`: 领域化微服务。user-service 管账号与社交关系；game-catalog 维护游戏库、榜单及推荐；content-service + community 负责攻略、帖子与互动；matchmaking + realtime-hub 承担实时房间、语音、推送；data-panel 汇聚战绩与版本数据；crawler-jobs 定时抓取外部信息。
 - `packages/`: 统一设计系统与类型契约。ui-kit 输出组件、主题；data-models 存放 protobuf/graphql schema 及 TypeScript/Go SDK；shared-utils 提供跨端工具；config 集中构建、Lint、环境模板。
 - `platform/`: 与基础设施相关的 IaC、CI/CD、可观测性配置，支持自动化部署、灰度、告警。
@@ -81,7 +81,7 @@
 
 ### 下一步建议
 
-1. 移动端 M3 收尾（详见 `docs/mobile_plan.md`）：Android release 本地 gradle 出包已落地（2026-10-04：`android.package` 配置 + `build:android:release` 脚本，aapt/apksigner 静态走查通过）；剩真机安装与功能回归，本地推送、深链分享卡都还没在真机上验过。
+1. 移动端 M0–M3 代码切片与 M4 第一里程碑已落地（2026-10-09，详见 `docs/mobile_plan.md`）：Android release 本地 gradle 出包已落地（2026-10-04：`android.package` 配置 + `build:android:release` 脚本，aapt/apksigner 静态走查通过）；战绩 Tab 消费网关 `/api/v1/stats/*`。剩真机安装与功能回归，本地推送、深链分享卡、通知中心都还没在真机上验过（本环境无模拟器/真机；CI 只跑 lint+typecheck，另有记录的 expo export 打包走查作为替代）。
 2. api-gateway BFF 第二阶段已落地（2026-10-04）：`GET /home/feed` 列表聚合端点（精选游戏/热帖/话题/攻略一次拉齐，逐组字段裁剪 + 单上游故障降级）+ mobile `fetchHomeFeed` 消费点预留；web-client 保持直连各服务不受影响。后续按需扩更多聚合口径。
 3. `docs/architecture/` 总体架构与数据流文档已补齐（2026-10-04）：`topology.md` 记录现状（服务边界/端口/网关反代路由面/认证数据流/演进路线），`overview.md` 保持愿景层；后续架构变更随切片同步更新现状文档。
 
@@ -135,7 +135,7 @@ BFF 聚合 + 五路反代的统一接入层，对外只暴露统一的 API（mob
 - `GET /users/:id/recommendations` - 用户推荐
 - `GET /home/feed` - 首页列表聚合（精选游戏/热帖/话题/攻略四路并发，字段裁剪 + 单上游故障分组降级）
 - `GET /s/p/:id` - 帖子分享卡跳板页（og meta + `spawn://` 深链 + Web 入口）
-- 反代：community（帖子/话题/关注/点赞/帖子评论）、content（攻略/评论）、users（注册/资料）、games（列表/详情）、data-panel（战绩）全量路由
+- 反代：community（帖子/话题/关注/点赞/帖子评论/通知/私信/审核）、content（攻略/评论）、users（注册/资料）、games（列表/详情）、data-panel（战绩）全量路由
 - 端口：8800
 
 #### 5. 战绩数据面板服务（`services/data-panel`）
@@ -146,9 +146,26 @@ BFF 聚合 + 五路反代的统一接入层，对外只暴露统一的 API（mob
 - `POST /api/v1/stats/records` - 摄入战绩增量（JWT 保护，归属取令牌用户）
 - 端口：8896
 
-#### 6. Web Client（`apps/web-client`）
+#### 6. 社区服务（`services/community`）
+帖子、话题圈子、关注、点赞、评论、通知、私信与审核；go-zero 实现，SQLite/MySQL 双驱动存储（默认本地 SQLite）。实时帧（notification / message / message.read / notification.read）发布到 realtime-hub。
+- `GET /api/v1/posts` / `GET /api/v1/posts/hot` / `GET /api/v1/posts/search` - 帖子列表 / 热门 / 关键词搜索
+- `GET /api/v1/topics` / `POST /api/v1/topics` - 话题列表与创建（话题关注、关注流）
+- `POST /api/v1/posts/:id/like` / `POST /api/v1/posts/:id/share` - 点赞（幂等计数）/ 分享
+- `POST /api/v1/posts/:id/comments` / `DELETE /api/v1/posts/:id/comments/:cid` - 评论（支持嵌套回复）
+- `GET /api/v1/notifications` / `unread-count` / `read-all` - 通知中心
+- `GET /api/v1/messages` / `conversations` / `thread/:peer_id` / `unread-count` - 私信
+- `POST /api/v1/posts/:id/report` / `GET /api/v1/moderation/reports` - 举报与审核队列
+- 端口：8892
+
+#### 7. 实时中枢（`services/realtime-hub`）
+WebSocket 中枢：JWT 校验的 `/ws` 升级、`/internal/publish` 事件扇出（单实例或 Redis pub/sub 跨实例中继）、`/internal/presence`、语音信令透传；网关同时提供 `/ws` 隧道。端口：8893。
+
+#### 8. 用户服务 RPC（`services/user-service-rpc`）
+用户域的集群内部 gRPC 通路（etcd 服务注册），供其他服务调用，不经过网关暴露。业务端口 8080，/metrics 9096。
+
+#### 9. Web Client（`apps/web-client`）
 React 19 + Vite + React Router 7 前端。页面：首页（登录与推荐）、发现（一次请求聚合四区块）、
-游戏库与游戏详情、攻略列表/详情/创建编辑、社区（帖子流含关注模式）、帖子详情、个人中心、战绩面板（KPI 卡 + 按游戏明细，经网关取数）。
+游戏库与游戏详情、攻略列表/详情/创建编辑、社区（帖子流含最新/热门/我的/关注四种模式与关键词搜索）、帖子详情、个人中心、战绩面板（KPI 卡 + 按游戏明细，经网关取数）。
 攻略支持「全部/我的」筛选和草稿、发布两种保存态；攻略评论支持嵌套回复、点赞，作者可删自己的评论；
 帖子可点赞、分享、评论（带 parent_id 回复，仅作者可删）；游戏库支持关键词搜索、类型过滤与分页，
 游戏卡直达详情页并聚合相关攻略。未登录能浏览，写操作要登录。暗色主题，响应式布局。
@@ -158,8 +175,10 @@ React 19 + Vite + React Router 7 前端。页面：首页（登录与推荐）�
 跨服务调用走 HTTP：user-service 经 `GameCatalogClient` 调 game-catalog 拿游戏数据拼推荐，
 失败降级兜底；content-service 调 game-catalog 取游戏标题带熔断、重试和 Prometheus 指标。
 游戏仓库与用户推荐逻辑有单元测试。`docker-compose.yaml` 一条命令拉起全部服务，各服务目录
-有独立 `Dockerfile`。七服务数据面均已切 SQLite/MySQL 双驱动（DSN 含 `file:` 走 SQLite，
-生产注入 MySQL 连接串），进程内 TTL+LRU 读缓存，并发安全由连接池钳制与缓存自身保证。
+有独立 `Dockerfile`（user-service-rpc 无镜像，集群内部部署）。五个 SQLite 服务（user-service、
+game-catalog、content-service、community、data-panel）数据面均跑 SQLite/MySQL 双驱动（DSN 含
+`file:` 走 SQLite，生产注入 MySQL 连接串），进程内 TTL+LRU 读缓存，并发安全由连接池钳制
+与缓存自身保证。user-service-rpc 是无存储的 gRPC 服务，realtime-hub 无状态（内存注册表）。
 
 ### 快速体验
 
@@ -173,6 +192,7 @@ go run services/user-service/user.go -f services/user-service/etc/user-api.yaml
 go run services/content-service/content.go -f services/content-service/etc/content-api.yaml
 go run services/community/community.go -f services/community/etc/community-api.yaml
 go run services/data-panel/data-panel.go -f services/data-panel/etc/data-panel-api.yaml
+go run services/realtime-hub/realtime-hub.go -f services/realtime-hub/etc/realtime-hub.yaml
 go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
 
 # 前端

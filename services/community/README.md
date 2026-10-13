@@ -34,6 +34,9 @@ Community Service 是 spawn 社区平台的核心服务之一，提供帖子发�
 - `DELETE /api/v1/posts/:id` - 删除帖子（需认证）
 - `POST /api/v1/posts/:id/like` - 点赞帖子 （需认证，幂等，落 post_likes 关系）
 - `POST /api/v1/posts/:id/share` - 分享帖子（需认证）
+- `GET /api/v1/posts/:id/comments` - 帖子评论列表（分页）
+- `POST /api/v1/posts/:id/comments` - 发表评论（需认证，`parent_id` 支持回复）
+- `DELETE /api/v1/posts/:id/comments/:cid` - 删除自己的评论（需认证）
 
 ### 话题相关
 - `POST /api/v1/topics` - 创建话题（需认证）
@@ -53,6 +56,7 @@ Community Service 是 spawn 社区平台的核心服务之一，提供帖子发�
 - `GET /api/v1/notifications` - 我的通知列表，id 倒序分页（需认证）
 - `GET /api/v1/notifications/unread-count` - 未读通知数（需认证）
 - `POST /api/v1/notifications/read-all` - 全部标记已读（需认证）；成功后经 realtime-hub 向本人全部连接广播 `notification.read` 帧（多端徽标即时归零，重播幂等）
+- `POST /api/v1/notifications/:id/read` - 单条标记已读（需认证）
 
 触发点：帖子被点赞（like_post）/被评论（comment_post）/评论被回复（reply_comment）/
 被关注（follow_user）。写入 `UNIQUE (user_id, actor_id, type, target_id)` 幂等去重，
@@ -66,7 +70,7 @@ Community Service 是 spawn 社区平台的核心服务之一，提供帖子发�
 - `GET /api/v1/messages/unread-count` - 未读私信总数（需认证）
 
 约束：自我发送/空正文/超长（>2000 字符）回 400；收件人存在性不校验（与关注同款语义）；
-收发双方同一 `direct_messages` 表各存一行视图，`is_read` 仅翻转收件方行。
+每条消息只写一行 `direct_messages`（收发双方共享同一行），`is_read` 仅翻转收件方视角。
 
 ### 内容审核（举报与敏感词）
 - `POST /api/v1/posts/:id/report` - 举报帖子，reason 可选（需认证）
@@ -151,8 +155,9 @@ type Topic struct {
 
 ## 与其他服务的集成
 
-> 说明：community 是独立域，**无出向调用**——JWT 用共享密钥本地校验（密钥来自
-> `Auth.JWTSecret`，user-service 签发），不回调 user-service 验证身份。
+> 说明：community 是独立域，**无 user-service 出向调用**——JWT 用共享密钥本地校验（密钥来自
+> `Auth.JWTSecret`，user-service 签发），不回调 user-service 验证身份。仅向 realtime-hub
+> 发布实时帧（fire-and-forget，`Url` 为空时通知仍入库但不推 WS）。
 
 ### User Service
 - 仅共享 JWT 密钥做本地令牌校验（无网络调用）
@@ -162,8 +167,8 @@ type Topic struct {
 
 ### API Gateway
 - 统一入口：`/api/v1/topics**`、`/api/v1/posts**`、`/api/v1/users/{following,likes}`、
-  `/api/v1/users/:user_id/follow`、`/api/v1/notifications**`、`/api/v1/moderation/**`、
-  `/api/v1/posts/:id/report` 反代路由
+  `/api/v1/users/:user_id/follow`、`/api/v1/notifications**`、`/api/v1/messages**`、
+  `/api/v1/moderation/**`、`/api/v1/posts/:id/report` 反代路由
   （见 `services/api-gateway/internal/community/routes.go`）；
   另有 integration client（热帖/话题列表/帖子详情）供网关 `/home/feed` 聚合与 `/s/p/:id` 分享卡
 
@@ -188,6 +193,17 @@ Auth:
 Moderation:
   BlockedWords: []
   AdminUserIds: [1]
+
+# 实时通道（realtime-hub）：Url 空则通知不经 WS 推送（no-op）。
+# 生产用 REALTIME_HUB_URL / REALTIME_INTERNAL_TOKEN 环境变量覆盖。
+Realtime:
+  Url: ""
+  InternalToken: ""
+
+# Prometheus 指标端点（go-zero agent 自动暴露 /metrics）
+Prometheus:
+  Host: 0.0.0.0
+  Port: 9094
 ```
 
 ## 启动服务
@@ -234,7 +250,7 @@ curl http://localhost:8892/api/v1/posts/hot?limit=10
 
 `Dockerfile`（CGO 构建，运行时含 sqlite3；数据落 `/app/data/community.db`）：
 ```dockerfile
-FROM golang:1.22 AS builder
+FROM golang:1.26 AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -302,6 +318,5 @@ ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]
 
 ---
 
-**当前版本**: v1.2 (SQLite/MySQL 双驱动 + M3 关注流/我的点赞)
-**最后更新**: 2026-10-04
+**最后更新**: 2026-10-13
 **维护状态**: 可用（SQLite 默认 / MySQL 生产）

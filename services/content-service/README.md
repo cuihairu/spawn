@@ -11,6 +11,7 @@
 - 攻略列表查询（支持按游戏ID、作者ID、标签筛选）
 - 发布攻略
 - 点赞攻略
+- 收藏攻略（幂等）
 - 浏览计数
 
 ### 评论管理
@@ -26,7 +27,7 @@
 - **数据存储**: SQLite/MySQL 双驱动（默认本地 SQLite 文件，`DATASOURCE` 注入 MySQL 连接串），进程内 TTL+LRU 读缓存
 - **端口**: 8891
 - **跨服务调用**: `client/` 内置熔断（连续失败 3 次开启、冷却 5s、半开探测恢复）与指数退避重试（3 次尝试、100ms→1s），失败时降级使用 gameId 作标题
-- **监控**: `/metrics` Prometheus 端点（端口 9093，见 `etc/content-api.yaml`），含 go-zero 内置请求指标与 `content_service_gamecatalog_client_*` 跨服务调用指标（调用量/错误分类/重试/耗时/熔断状态）
+- **监控**: `/metrics` Prometheus 端点（端口 9093，见 `etc/content-api.yaml`），含 go-zero 内置请求指标与 `content_game_catalog_client_*` 跨服务调用指标（调用量/错误分类/耗时/熔断状态/熔断切换次数；重试仅体现为 `retry_exhausted` 状态标签，无独立重试计数）
 
 ## 目录结构
 
@@ -34,9 +35,17 @@
 content/
 ├── content.go              # 主入口文件
 ├── go.mod                  # Go模块定义
+├── client/                 # 跨服务调用（熔断/重试/降级）
+│   ├── gamecatalog.go
+│   ├── breaker.go
+│   ├── retry.go
+│   └── metrics.go
+├── middleware/             # 认证中间件（GET 公开、写接口需令牌）
+├── utils/                  # 工具（auth 等）
 ├── etc/
 │   └── content-api.yaml    # 配置文件
 ├── internal/
+│   ├── cache/              # 进程内 TTL+LRU 读缓存
 │   ├── config/
 │   │   └── config.go       # 配置结构
 │   ├── handler/            # HTTP处理器
@@ -47,10 +56,12 @@ content/
 │   │   ├── listguideshandler.go
 │   │   ├── publishguidehandler.go
 │   │   ├── likeguidehandler.go
+│   │   ├── favoriteguidehandler.go
 │   │   ├── createcommenthandler.go
 │   │   ├── listcommentshandler.go
 │   │   ├── deletecommenthandler.go
 │   │   └── likecommenthandler.go
+│   ├── httperr/            # 统一错误响应
 │   ├── logic/              # 业务逻辑
 │   │   ├── mapper.go
 │   │   ├── createguidelogic.go
@@ -59,17 +70,23 @@ content/
 │   │   ├── listguideslogic.go
 │   │   ├── publishguidelogic.go
 │   │   ├── likeguidelogic.go
+│   │   ├── favoriteguidelogic.go
+│   │   ├── getfavoritestatuslogic.go
+│   │   ├── listfavoriteslogic.go
+│   │   ├── unfavoriteguidelogic.go
 │   │   ├── createcommentlogic.go
 │   │   ├── listcommentslogic.go
 │   │   ├── deletecommentlogic.go
 │   │   └── likecommentlogic.go
+│   ├── metrics/            # 跨服务调用指标（counter/histogram）
 │   ├── svc/
 │   │   └── servicecontext.go  # 服务上下文
 │   └── types/
 │       └── types.go        # 类型定义
 └── model/                  # 数据模型
-    ├── guiderepository.go
-    └── commentrepository.go
+    ├── guidemodel.go
+    ├── commentmodel.go
+    └── favoritemodel.go
 ```
 
 ## API接口
@@ -221,6 +238,22 @@ Port: 8891
 
 MySQL:
   DataSource: "file:data/content.db"  # 含 file:/.db 走 SQLite；生产用 MySQL 连接串
+
+# JWT 校验密钥（与 user-service 共享；生产用 JWT_SECRET 环境变量覆盖）
+Auth:
+  JWTSecret: "tappi-user-service-jwt-secret-key-2024"
+
+# 跨服务调用：game-catalog 标题查询
+# 生产用 GAMECATALOG_BASE_URL / GAMECATALOG_TIMEOUT 环境变量覆盖
+Services:
+  GameCatalog:
+    BaseURL: "http://localhost:8890"
+    Timeout: 5000
+
+# Prometheus 指标端点（go-zero agent 自动暴露 /metrics）
+Prometheus:
+  Host: 0.0.0.0
+  Port: 9093
 ```
 
 DSN 可用环境变量 `DATASOURCE` 覆盖（生产注入 MySQL 连接串）；空表首次启动自动写入内嵌种子数据。

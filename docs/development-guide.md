@@ -10,7 +10,7 @@ spawn 是一个基于 Go-zero 框架的游戏社交平台 monorepo 项目，采�
 ### 1. 工具安装
 
 ```bash
-# 安装 Go (建议 1.25+)
+# 安装 Go (建议 1.26+)
 brew install go
 
 # 安装 goctl 工具
@@ -45,13 +45,14 @@ spawn/
 ├── apps/                 # 面向最终用户的应用
 │   ├── web-client        # Web 站点（React 19 + Vite：登录/榜单/攻略/评论/社区/通知）
 │   └── mobile-app        # React Native（Expo）客户端（游戏/发现/社区/战绩/我的）
-├── services/             # 微服务（以下七个均已落地）
+├── services/             # 微服务（以下八个均已落地）
 │   ├── user-service      # 用户服务 API（:8888，JWT 签发方）
 │   ├── user-service-rpc  # 用户服务 RPC（gRPC :8080，集群内部）
 │   ├── game-catalog      # 游戏库、榜单、推荐（:8890）
 │   ├── content-service   # 攻略、评论、收藏（:8891）
-│   ├── community         # 帖子、话题、关注、点赞、通知（:8892）
+│   ├── community         # 帖子、话题、关注、点赞、通知、私信、审核（:8892）
 │   ├── data-panel        # 战绩摄入与查询（:8896）
+│   ├── realtime-hub      # WebSocket 实时中枢（:8893，非 go-zero）
 │   └── api-gateway       # BFF 聚合 + 五路反代（:8800）
 ├── packages/             # 共享包（config 已落地；ui-kit/data-models 等为规划）
 ├── platform/             # 基础设施（规划）
@@ -1061,13 +1062,15 @@ LastInsertId/RowsAffected/rows.Err）×14、INSERT IGNORE 回落成功 ×3。
 
 ### 1. Docker 构建
 
-各服务目录下均有独立 `Dockerfile`，模式一致（以 `services/community/Dockerfile` 为例）：
+各业务服务目录下均有独立 `Dockerfile`（user-service-rpc 除外——集群内部按设计独立内网部署，无镜像）。
+SQLite 侧服务模式一致（以 `services/community/Dockerfile` 为例）；api-gateway 与
+realtime-hub 为 `CGO_ENABLED=0` 构建 + distroless 运行时：
 **CGO 构建**（SQLite 驱动需要）+ **debian:bookworm-slim 运行时**（含 `sqlite3`）+
 `DATASOURCE` 环境变量注入数据源（默认本地 `file:` SQLite，生产注入 MySQL 连接串）：
 
 ```dockerfile
 # Dockerfile（摘自 services/community/Dockerfile）
-FROM golang:1.22 AS builder
+FROM golang:1.26 AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -1216,6 +1219,7 @@ func TestUserLogic_User(t *testing.T) {
 | content-service | 8891 | 9093 |
 | community | 8892 | 9094 |
 | api-gateway | 8800 | 9095 |
+| data-panel | 8896 | 9097 |
 | user-service-rpc | 8080 (gRPC) | 9096 |
 
 ```bash
@@ -1236,19 +1240,20 @@ zrpc 服务（经 `UnaryPrometheusInterceptor`）：
 
 ### 自定义指标（content-service 跨服务调用）
 
-`services/content-service/client` 对 game-catalog 的跨服务调用（含熔断与重试）导出：
+`services/content-service/client` 对 game-catalog 的跨服务调用（含熔断与重试）导出
+（定义见 `internal/metrics/metrics.go`）：
 
-- `content_service_gamecatalog_client_requests_total{result}` — 调用次数，
-  `result` ∈ success / breaker_open / transient_error / bad_request / canceled / contract_error
-- `content_service_gamecatalog_client_retries_total` — 瞬时错误触发的重试次数
-- `content_service_gamecatalog_client_request_duration_seconds` — 调用总耗时（含重试与退避）
-- `content_service_gamecatalog_client_breaker_state` — 熔断器状态：0=closed 1=half-open 2=open
+- `content_game_catalog_client_calls_total{method,status}` — 调用次数，
+  `status` ∈ success / timeout / circuit_open / retry_exhausted / parse_error
+- `content_game_catalog_client_call_duration_seconds{method,status}` — 调用耗时（秒）
+- `content_circuit_breaker_state` — 熔断器状态：0=closed 1=half-open 2=open
+- `content_circuit_breaker_transitions_total{from,to}` — 熔断状态切换次数
 
 错误率示例（PromQL）：
 
 ```promql
-sum(rate(content_service_gamecatalog_client_requests_total{result!="success"}[5m]))
-  / sum(rate(content_service_gamecatalog_client_requests_total[5m]))
+sum(rate(content_game_catalog_client_calls_total{status!="success"}[5m]))
+  / sum(rate(content_game_catalog_client_calls_total[5m]))
 ```
 
 ### 新服务接入监控
@@ -1272,8 +1277,8 @@ Prometheus:
 
 | 行 | 项 | 选型 | 理由 | 状态 |
 |----|----|------|------|------|
-| 1 | 指标采集面 | Prometheus 静态抓取（`deploy/prometheus/prometheus.yml`，`tappi-services` job 六 target 9091–9096，带 `service` 标签） | 六服务的 go-zero agent `/metrics` 端点早已全量暴露（上表端口即约定），指标面只缺「抓取配置」即补齐；静态抓配零服务发现设施，单实例假定下最简 | 已完成 |
-| 2 | 日志结构化 | go-zero logx `Log.Encoding: json`（六服务 `etc/*.yaml` 增 `Log` 块，`ServiceName` 标识来源，stdout console 模式） | logx 是仓内既有日志栈，JSON 单行天然可机器解析；容器 stdout 即日志流，零代码改动（`ServiceConf.Log` 为 go-zero 内建配置键） | 已完成 |
+| 1 | 指标采集面 | Prometheus 静态抓取（`deploy/prometheus/prometheus.yml`，`tappi-services` job 七 target 9091–9097，带 `service` 标签） | 七服务的 go-zero agent `/metrics` 端点早已全量暴露（上表端口即约定），指标面只缺「抓取配置」即补齐；静态抓配零服务发现设施，单实例假定下最简 | 已完成 |
+| 2 | 日志结构化 | go-zero logx `Log.Encoding: json`（七个服务 `etc/*.yaml` 增 `Log` 块，`ServiceName` 标识来源，stdout console 模式；realtime-hub 非 go-zero，无 `Log` 块） | logx 是仓内既有日志栈，JSON 单行天然可机器解析；容器 stdout 即日志流，零代码改动（`ServiceConf.Log` 为 go-zero 内建配置键） | 已完成 |
 | 3 | 集中收集与可视化 | docker compose 轻量观测栈：Prometheus + Promtail + Loki + Grafana（`deploy/docker-compose.monitoring.yaml`） | 仓内部署形态即 docker compose；Promtail 文件抓取容器 json-file 日志 + Loki 单二进制文件存储，是 ELK（JVM 重）之外同量级最轻组合；Grafana 一处查指标与日志，数据源 provisioning 免手工配置 | 已完成 |
 
 **交付物**：
@@ -1295,10 +1300,10 @@ Prometheus:
 - `deploy/docker-compose.monitoring.yaml` —— 四容器编排
   （Prometheus 9090 / Loki 3100 / Grafana 3000 / Promtail 无外部端口），
   数据卷持久化 Loki/Grafana/positions；
-- 根 `docker-compose.yaml` —— 五服务补发布 `/metrics` 端口
-  （9091–9095，注释「deploy/ 观测栈抓取」）；
-- 六服务 `etc/*.yaml` —— `Log` 块（`ServiceName`/`Mode: console`/
-  `Encoding: json`/`Level: info`）。
+- 根 `docker-compose.yaml` —— 六服务补发布 `/metrics` 端口
+  （9091–9095、9097，注释「deploy/ 观测栈抓取」）；
+- 七个服务 `etc/*.yaml` —— `Log` 块（`ServiceName`/`Mode: console`/
+  `Encoding: json`/`Level: info`；realtime-hub 非 go-zero，无 `Log` 块）。
 
 **启动与验证**：
 
@@ -1308,7 +1313,7 @@ docker compose up -d --build
 # 2. 起观测面
 docker compose -f deploy/docker-compose.monitoring.yaml up -d
 # 3. 验证
-curl localhost:9090/api/v1/targets        # 六 target up
+curl localhost:9090/api/v1/targets        # 七 target up
 curl localhost:3000                        # Grafana（Prometheus/Loki 已装配）
 # Grafana Explore 选 Loki，按 {job="docker", level="error"} 过滤服务日志
 ```
@@ -1325,16 +1330,17 @@ curl localhost:3000                        # Grafana（Prometheus/Loki 已装配
 
 ## 认证与授权（JWT）
 
-### 现状总览（6 个服务）
+### 现状总览（7 个服务）
 
 | 服务 | 鉴权状态 | 实现位置 |
 |------|---------|---------|
 | user-service | 签发 + 全局校验 | 签发：`utils/auth.go` `GenerateToken`（HS256，默认 7 天）；校验：`middleware/auth.go` 全局挂载（`server.Use`），白名单 `/auth/register`、`/auth/login`、`/ping`、`/health`、`/from/` 前缀 |
 | content-service | 可选校验 | `utils/auth.go` + `middleware/auth.go`（GET 公开、写接口需令牌），已有单测 |
 | community | 按路由校验 | `internal/middleware/auth_middleware.go`（`rest.Middleware`），写路由经 `rest.WithMiddlewares` 挂载，已有集成测试 |
-| api-gateway | 透传 | 转发 `Authorization` 头到上游（`upstream_test.go` 覆盖） |
+| api-gateway | 透传 | 转发 `Authorization` 头到上游（`upstream_test.go` 覆盖）；`/upload` 本地校验 JWT |
 | user-service-rpc | 无需鉴权 | 仅集群内部 gRPC 通信，不直接暴露公网 |
 | game-catalog | 按路由校验 | `utils/auth.go` + `middleware/auth.go`，`POST /games` 受保护，4 个 GET 路由保持匿名公开（上一批次补齐） |
+| realtime-hub | WS 握手校验 | `internal/auth/auth.go`（HS256，`/ws?token=` 查询参数校验，失败回 401 拒绝升级） |
 
 ### 令牌机制
 
@@ -1347,6 +1353,11 @@ curl localhost:3000                        # Grafana（Prometheus/Loki 已装配
 ### 受保护路由示例（game-catalog）
 
 ```bash
+# 注册账号（服务无内置种子用户，需先注册再登录）
+curl -s -X POST http://localhost:8888/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"demo","email":"demo@example.com","password":"***","nickname":"demo"}'
+
 # 登录获取令牌（user-service 签发）
 TOKEN=$(curl -s -X POST http://localhost:8888/auth/login \
   -H "Content-Type: application/json" \
@@ -1392,8 +1403,8 @@ docker compose logs -f user-service
 # 查看服务注册（仅 user-service-rpc 走 etcd 注册模式时相关）
 etcdctl get --prefix "" | grep user-rpc
 
-# 测试服务连通性
-curl -v http://localhost:8888/health
+# 测试服务连通性（user-service 未注册 /health，用受保护路由的公开探测路由）
+curl -v http://localhost:8888/from/localdev
 ```
 
 ## CI 流水线
@@ -1409,7 +1420,7 @@ curl -v http://localhost:8888/health
    - web-client：`pnpm web:typecheck`（tsc）+ `pnpm web:lint`（eslint）；
    - mobile-app：`pnpm mobile:typecheck`（tsc）+ `pnpm mobile:lint`（eslint）。
 
-Go 版本跟随 `go.work`（`actions/setup-go@v5` 的 `go-version-file`），模块间共享构建缓存。
+Go 版本跟随 `go.work`（`actions/setup-go@v7` 的 `go-version-file`），模块间共享构建缓存。
 等价的本地验证：
 
 ```bash
@@ -1438,7 +1449,8 @@ CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/�
 
 - `services/` 下无 multipart/FormFile 处理，上传端点从零起步，没有既有实现要兼容。
 - 图片字段只在 community 两处：`Posts.Images`（JSON 字符串数组）与
-  `Topics.CoverImage`。content-service 攻略、user-service 用户没有图片/头像
+  `Topics.CoverImage`。content-service 攻略有 `CoverImage`（创建/更新可传）；
+  user-service 用户没有头像
   字段；移动端头像目前是首字母占位（`profile.tsx`），web-client 仅在发帖
   参数带 `images?: string[]`。字段里存的都是 URL 字符串，指向哪里由后端定。
 - 部署形态：docker compose 单机六服务 + web-client nginx，业务服务无数据卷，
@@ -1561,7 +1573,7 @@ PR 在 git 层 MERGEABLE、与 main 无冲突，红的只有锁文件同步这�
 ## 下一步
 
 1. ~~实现用户认证和授权~~ 已完成（详见上文「认证与授权（JWT）」）：
-   核查 6 个服务均有 JWT 体系——user-service 签发+全局校验、content-service 可选校验、
+   核查 7 个服务均有 JWT 体系——user-service 签发+全局校验、content-service 可选校验、
    community 按路由校验、api-gateway 透传、user-service-rpc 内网免鉴权（设计如此）；
    唯一缺口 game-catalog（有公开写端点 POST /games）已补齐：`utils/auth.go` 校验工具 +
    `middleware/auth.go` + 路由挂载（`POST /games` 受保护、GET 匿名公开）。
@@ -1581,11 +1593,12 @@ PR 在 git 层 MERGEABLE、与 main 无冲突，红的只有锁文件同步这�
    | api-gateway → game-catalog | `services/api-gateway/internal/integration/game_client.go`（GetFeatured）；games 反代 `internal/games/routes.go`（GET /games、GET /games/:id） | `game_client_test.go`；`games/routes_test.go` |
    | api-gateway → community | 反代 `internal/proxy` + `internal/community/routes.go`（话题/帖子/关注流/我的点赞全量路由）；integration client `community_client.go`（GetPost/ListHotPosts/ListTopics，供聚合与分享卡） | `internal/proxy` 上游转发测试（既有）；`community_client_test.go` |
    | api-gateway → content | 反代 `internal/content/routes.go`；integration client `content_client.go`（ListGuides） | `content_client_test.go` |
-   | api-gateway 自有聚合 handler | GET /home/feed（精选游戏/热帖/话题/攻略四路并发 + 字段裁剪 + 分组降级）、GET /s/p/:id（分享卡跳板）、GET /games/featured、GET /users/:id/recommendations | `logic/homefeedlogic_test.go`、`handler/routes_integration_test.go`（按生产装配全量注册） |
+   | api-gateway 自有聚合 handler | GET /home/feed（精选游戏/热帖/话题/攻略四路并发 + 字段裁剪 + 分组降级）、GET /s/p/:id（分享卡跳板）、GET /games/featured、GET /users/:id/recommendations、POST /upload（上传落盘）、GET /uploads/:file（回读） | `logic/homefeedlogic_test.go`、`handler/routes_integration_test.go`（按生产装配全量注册） |
    | content-service → game-catalog | `client/gamecatalog.go`（熔断/重试/指标加持） | `client/*_test.go`（既有，89.7%） |
    | user-service → game-catalog | `internal/integration/gamecatalog_client.go`（GetRecommendations） | `gamecatalog_client_test.go`（新增，97.2%） |
    | 其余服务 → user-service-rpc | `user-service-rpc`（zrpc + etcd） | `user_test.go` 集成测试（run() 起真 zRPC + userclient 端到端 Ping，见「覆盖率台账刷新」一节） |
-   | community | 无出向调用（独立域） | — |
+   | community → realtime-hub | `internal/realtime` publish（点赞/评论/回复/关注/私信实时通知，fire-and-forget） | `internal/realtime` 单测 + e2e 实时流断言 |
+   | realtime-hub → community | 无（hub 不回调业务域，`/internal/publish` 为入向接口） | — |
 
    全部 HTTP 通路的端点/参数/响应契约均已对照服务端真实路由核实
    （曾修复 content-service 客户端路径不一致问题，见 ENHANCEMENT.md）。

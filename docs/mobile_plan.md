@@ -46,7 +46,7 @@
 | 功能 | 原因 |
 |------|------|
 | 小黑盒式战绩数据面板 | data-panel 已于 2026-10-09 落地第一里程碑（后端 + web 面板），mobile 面板作为 M4 增量接网关 `/api/v1/stats/*` |
-| 开黑房 / 语音 / 实时匹配 | matchmaking / realtime-hub 均未落地 |
+| 开黑房 / 语音 / 实时匹配 | realtime-hub 已落地（2026-10-11，含语音信令透传）；matchmaking 未落地 |
 | 运营后台类功能 | admin-console 域，移动端不做 |
 | 支付 / 会员体系 | 后端无此域 |
 | 小程序壳 | 独立 `apps/mini-program`，另行规划 |
@@ -87,7 +87,7 @@
 
 1. **后端 CORS / 明文 HTTP**：手机真机默认禁 http 明文（Android `usesCleartextTraffic`），开发期走局域网 IP + 放行配置，生产必须 HTTPS——上架前需备公网域名 + 证书（当前 compose 无 TLS 终结，属部署域新增项）；
 2. **iOS 开发者账号**：无账号则 iOS 仅模拟器/侧载验证，不影响 Android 首发节奏；
-3. **图片上传**：content-service / community 现无对象存储，首期图片功能限「选图预览」，上传能力另立后端任务。
+3. **图片上传**：已解除——gateway `POST /upload` 本地盘存储已于 2026-10-10 落地（`6642132`），web/mobile 均已接线；生产如需外发 CDN 属新拍板项。
 
 ## 5. 拍板记录
 

@@ -22,8 +22,10 @@ VITE_CONTENT_SERVICE_URL=http://localhost:8891
 VITE_COMMUNITY_SERVICE_URL=http://localhost:8892
 ```
 
-页面路由：`/`（首页）、`/guides`、`/guides/:id`、`/guides/new`、`/guides/:id/edit`、
-`/community`、`/community/posts/:id`。
+页面路由：`/`（首页）、`/discover`（发现，home/feed 聚合）、`/games`、`/games/:id`、
+`/guides`、`/guides/:id`、`/guides/new`、`/guides/:id/edit`、`/community`、
+`/community/posts/:id`、`/notifications`（需登录）、`/messages`（需登录）、`/users/:id`、
+`/stats`（需登录）、`/profile`（需登录）。
 
 ## 开发
 

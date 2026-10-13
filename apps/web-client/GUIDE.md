@@ -17,6 +17,12 @@
 | `/community/posts/:id` | 社区帖子详情 | 发帖/点赞需登录 |
 | `/notifications` | 通知中心（铃铛徽标，实时刷新） | 需要登录 |
 | `/messages` | 私信中心（信封徽标，会话列表 + 会话线） | 需要登录 |
+| `/discover` | 发现页 - home/feed 一次聚合四区块 | 无 |
+| `/games` | 游戏库列表（关键词搜索/类型筛选/分页） | 无 |
+| `/games/:id` | 游戏详情（聚合相关攻略） | 无 |
+| `/stats` | 战绩面板（KPI 卡 + 按游戏明细，经网关取数） | 需要登录 |
+| `/profile` | 个人中心（我的帖子/攻略/收藏） | 需要登录 |
+| `/users/:id` | 用户主页 | 无 |
 
 ## 使用流程
 
@@ -32,7 +38,7 @@
 ### 2. 创建攻略
 
 **需要登录**后：
-1. 点击首页或攻略列表页的"创建攻略"按钮
+1. 点击攻略列表页的"创建攻略"按钮
 2. 填写攻略信息：
    - 游戏 ID（可选）
    - 标题（必填）
@@ -115,7 +121,7 @@ VITE_USER_SERVICE_URL=http://localhost:8888
 VITE_GAME_SERVICE_URL=http://localhost:8890
 VITE_CONTENT_SERVICE_URL=http://localhost:8891
 VITE_COMMUNITY_SERVICE_URL=http://localhost:8892
-VITE_API_GATEWAY_URL=http://localhost:8800  # 可选，配置后登录/推荐/精选优先走网关
+VITE_API_GATEWAY_URL=http://localhost:8800  # 可选，配置后所有服务调用优先走网关
 VITE_REALTIME_HUB_URL=ws://localhost:8893   # 可选，实时 WS 直连 hub；默认走网关隧道 ws://localhost:8800
 ```
 

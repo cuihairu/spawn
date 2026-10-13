@@ -7,10 +7,10 @@
 
 | 服务 | 语言/框架 | 业务端口 | /metrics | 职责边界 | 存储现状 |
 |------|----------|---------|----------|---------|---------|
-| user-service | Go / go-zero | 8888 | 9091 | 账号（注册/登录/JWT 签发）、用户资料、成长体系；经 GameCatalogClient 跨服务拉游戏推荐 | MySQL（默认 DSN 指向本机 3306） |
+| user-service | Go / go-zero | 8888 | 9091 | 账号（注册/登录/JWT 签发）、用户资料；经 GameCatalogClient 跨服务拉游戏推荐 | MySQL（默认 DSN 指向本机 3306） |
 | game-catalog | Go / go-zero | 8890 | 9092 | 游戏库、列表筛选、详情、精选/推荐榜单 | SQLite（默认 `file:data/games.db`）或 MySQL |
 | content-service | Go / go-zero | 8891 | 9093 | 攻略 CRUD/发布/点赞、评论（含嵌套回复） | SQLite（默认 `file:data/content.db`）或 MySQL |
-| community | Go / go-zero | 8892 | 9094 | 帖子流/热榜、话题圈子、关注关系（话题/用户）、点赞/分享计数、关注流、我的点赞、站内通知（点赞/评论/回复/关注四类，唯一键去重） | SQLite/MySQL（post_likes、notifications 关系表等启动建表） |
+| community | Go / go-zero | 8892 | 9094 | 帖子流/热榜/关键词搜索、话题圈子、关注关系（话题/用户）、点赞/分享计数、关注流、我的点赞、站内通知（点赞/评论/回复/关注四类，唯一键去重）、私信、举报审核 | SQLite/MySQL（post_likes、notifications 关系表等启动建表） |
 | data-panel | Go / go-zero | 8896 | 9097 | 战绩摄入（JWT 保护，单调增量 upsert）与玩家战绩查询（公开，win_rate/kd 读侧 4 位小数） | SQLite/MySQL + TTL/LRU 缓存 |
 | api-gateway | Go / go-zero | 8800 | 9095 | BFF：自有聚合 handler + 五路反代（见 §3）+ 统一图片上传入口（见 §3.1） | uploads 卷（图片本地盘存储，选型方案 A） |
 | user-service-rpc | Go / gRPC | 8080 (gRPC) | 9096 | 内网 gRPC 通道（手机/Web 均不直连；protoc 生成代码缺口保留原样） | — |
@@ -56,7 +56,7 @@ web-client 直连拓扑保持不变，网关路由扩容不要求 web 迁移。
 |------|------|------|
 | users | POST /auth/register、POST /auth/login、GET /users/:id（2026-10-11 起 login 亦走反代，信封原样透传） | user-service |
 | games | GET /games、GET /games/:id | game-catalog |
-| community | /api/v1/topics**、/api/v1/posts**、/api/v1/users/{following,likes}、/api/v1/notifications** 等 M1–M3 全量调用面 | community |
+| community | /api/v1/topics**、/api/v1/posts**（含 /posts/search 与 :id/comments）、/api/v1/users/{following,likes}、/api/v1/notifications**、/api/v1/messages**、/api/v1/moderation** 等 M1–M3 全量调用面 | community |
 | content | /api/v1/guides**、/api/v1/comments** | content-service |
 
 反代语义：path+query 透传、hop-by-hop 头剥离、请求体缓冲定长转发（1 MiB 上限，超限 413。缓冲是为绕开 go-zero 上游不解析 chunked 请求体的缺陷）、状态码/响应体原样回传（匿名 401 等语义保持）。
@@ -76,7 +76,9 @@ web-client 直连拓扑保持不变，网关路由扩容不要求 web 迁移。
 
 - go-zero 内置指标经各服务 Prometheus agent 暴露 `/metrics`（端口见 §1）；
   api-gateway 日志 JSON 输出 stdout，由 Promtail 收集进 Loki（deploy/docker-compose.monitoring.yaml）。
-- `docker compose up --build` 一键拉起全部服务；各服务目录有独立 Dockerfile。
+- `docker compose up --build` 一键拉起全部服务；各业务服务目录有独立 Dockerfile
+  （user-service-rpc 无镜像，按设计独立内网部署；api-gateway/realtime-hub 为
+  CGO_ENABLED=0 构建 + distroless 运行时，其余 CGO + debian:bookworm-slim）。
 - 配置：`etc/*.yaml`，上游地址支持环境变量覆盖（`USER_SERVICE_URL` 等）。
 
 ## 6. 演进路线（与 README「下一步建议」对齐）

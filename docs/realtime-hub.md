@@ -29,7 +29,7 @@
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/health` | GET | 探活，200 |
-| `/ws?token=<jwt>` | GET(Upgrade) | 握手校验 JWT，失败即断开；成功后进 registry（userId → 多连接） |
+| `/ws?token=<jwt>` | GET(Upgrade) | 握手校验 JWT，失败回 401 拒绝（Upgrade 前，不产生半开连接）；成功后进 registry（userId → 多连接） |
 | `/internal/publish` | POST | 服务间投递。体 `{"user_ids":[..],"event":{"type":..,"payload":..}}`；头 `X-Internal-Token` 必须匹配配置（未配置=403 拒绝），投递失败不影响调用方主链路 |
 
 - 帧格式：JSON 文本帧 `{"type":"notification","data":{...}}`；服务端

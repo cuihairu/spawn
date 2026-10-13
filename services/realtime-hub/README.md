@@ -1,6 +1,6 @@
 # realtime-hub
 
-WebSocket 实时通道基座：JWT 鉴权长连接 + 内部发布接口，把 community 等服务的通知从 30s 轮询升级为即时推送。单实例内存注册表，直连模式（网关反代为缓冲转发，无法承载 WS 升级，隧道化列入 M3）。设计与分期详见 [`docs/realtime-hub.md`](../../docs/realtime-hub.md)。
+WebSocket 实时通道基座：JWT 鉴权长连接 + 内部发布接口，把 community 等服务的通知从 30s 轮询升级为即时推送。单实例内存注册表；网关 `/ws` 隧道已落地（M3-2），Redis pub/sub 跨实例中继已落地。设计与分期详见 [`docs/realtime-hub.md`](../../docs/realtime-hub.md)。
 
 ## 接口
 

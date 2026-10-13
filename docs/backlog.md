@@ -14,20 +14,23 @@
 
 > 口径：`gh run list` 近 30 笔 run + 最新 run（38112498701 @ `03c8924`）job 日志逐包核对。
 
-**结论：零红、零 flake，六模块全绿，无需修、无需 rerun。**
+**结论：零红、零 flake，八个 Go 模块加 web/mobile 全绿，无需修、无需 rerun。**
+（包数为 2026-10-11 快照口径；2026-10-13 复核实测 api-gateway 12 包、community 19 包、
+realtime-hub 5 包，realtime-hub 快照时已由 go.work 动态纳入，原表漏列，补行如下。）
 
 | 模块 | CI 结论 | 备注 |
 |------|--------|------|
-| api-gateway | ✅ 绿 | 11 包 ok（-race） |
-| community | ✅ 绿 | 14 包 ok（-race） |
+| api-gateway | ✅ 绿 | 11 包 ok（-race；2026-10-13 复核 12 包） |
+| community | ✅ 绿 | 14 包 ok（-race；2026-10-13 复核 19 包） |
 | content-service | ✅ 绿 | 11 包 ok（-race） |
 | data-panel | ✅ 绿 | 10 包 ok（-race） |
 | game-catalog | ✅ 绿 | 8 包 ok（-race） |
 | user-service | ✅ 绿 | 10 包 ok（-race） |
 | user-service-rpc | ✅ 绿 | 4 包 ok（-race） |
+| realtime-hub | ✅ 绿 | 5 包 ok（-race，go.work 动态纳入；2026-10-13 补行） |
 | web + mobile | ✅ 绿 | lint + typecheck job 34s |
 
-- 近 30 笔中 8 笔 `cancelled`：全部为 `concurrency: cancel-in-progress`（`ci-${{ github.ref }}` 组）在连续小步推送时取消旧 run——注解「Canceling since a higher priority waiting request exists」，非失败非 flake，同 commit 终态由后续绿 run 覆盖，不 rerun。
+- 近 30 笔中 8 笔 `cancelled`：全部为 `concurrency: cancel-in-progress`（组名 `ci-` 拼接 `github.ref`，见 ci.yml:14）在连续小步推送时取消旧 run——注解「Canceling since a higher priority waiting request exists」，非失败非 flake，同 commit 终态由后续绿 run 覆盖，不 rerun。
 - 最新 run 两 job 全绿（gofmt+build+test 1m41s；web+mobile 34s），`FAIL` 行数 0，68 包全 ok。
 - Watch 项（非红不动配置）：① ubuntu-latest → Ubuntu 26 迁移（2026-10-19 起）记入待办 #2；② Node 20 deprecation 警告——已处理（2026-10-11 升新主版本：checkout@v7 / setup-node@v7 / setup-go@v7 / pnpm-action@v6，均 node24 运行时，CI 全绿验证）；ios.yml 的 macos 位同批升级，当日手动点火 run 38146648735 实测全绿（prebuild + pod install + 模拟器免签名编译，14m，三个新 action 在 macOS runner 上验证通过）。
 
@@ -47,9 +50,9 @@
 |----|------|------|
 | ~~实时推送（WebSocket）~~ | 已解除（realtime-hub M1/M2 落地，2026-10-11） | docs/realtime-hub.md |
 | 全文搜索升级（Elasticsearch） | 外部中间件未引入；LIKE 级关键词搜索已于 2026-10-12 落地（`GET /api/v1/posts/search`，应用侧过滤，见 community README） | community README 长期项 |
-| 内容推荐系统（ML） | 外部模型服务未引入 | community README:271 |
-| 视频内容 | 对象存储/转码基建未立项 | community README:272 |
-| matchmaking / realtime-hub / crawler-jobs / admin-console / mini-program | 拍板不开工（2026-10-09） | mobile_plan 第 4 节 |
+| 内容推荐系统（ML） | 外部模型服务未引入 | community README:285 |
+| 视频内容 | 对象存储/转码基建未立项 | community README:286 |
+| matchmaking / crawler-jobs / admin-console / mini-program | 拍板不开工（2026-10-09） | mobile_plan 第 4 节（realtime-hub 已于 2026-10-11 解除并落地） |
 | 真机回归（本地推送/深链分享卡/通知中心） | 环境无设备无模拟器；替代口径 = CI 门禁 + `expo export --platform android` 产物走查 | mobile_plan 风险节 |
 | iOS 填空（TestFlight 侧载/Universal Links/APNs） | 外部凭据（Apple 团队/域名 AASA/推送证书） | mobile_plan 拍板记录 2026-10-09 |
 
