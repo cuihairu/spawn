@@ -95,6 +95,18 @@ Ports and metric details are documented in the "Monitoring & Metrics (Prometheus
 - Code generation: use `goctl api new <service>`/`goctl rpc new <service>` to scaffold; API/RPC definitions live in `*.api`/`*.proto` files, with functional code generated via `goctl api go`/`goctl rpc protoc`.
 - Shared config: `packages/config` provides `.env.example`, golangci-lint templates, common `make` targets, etc., which services can reference directly or via `Makefile` include.
 
+
+## 本地测试口径
+
+CI 与本地开发按改动面三路分流——改一行文档不该全量编译。
+
+1. **文档改动**（`*.md`、`docs/**`、图片）：不编译。主 CI workflow 的
+   `paths-ignore` 已跳过这些路径。
+2. **代码改动**：只跑改动子集，不全量。
+   - `go test ./<改动包>/... -race`
+3. **全量**（`go test ./... -race -count=1`）：仅以下情形触发——go.mod / go.sum、
+   `.github/**`、Docker/Compose 配置、发布前。
+
 ## Services & Frontend Status
 
 #### 1. Game Catalog Service (`services/game-catalog`)
