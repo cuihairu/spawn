@@ -17,4 +17,4 @@
 - [x] ES 全文搜索保留为规模化升级路径，community README 长期项已改写说明（574ae0d）
 - [x] Actions 版本升级：checkout/setup-node/setup-go/pnpm-action 全部升主版本，CI/docs 双绿（6d12e81；CI 绿）
 - [x] Ubuntu 26 迁移评估：钉 ubuntu-24.04 消除漂移，nightly CGO gcc 为唯一镜像侧依赖，canary 与升版时间点已记录（abf2190）
-- [x] 文档一致性审计：门面 + 全仓文档 82 项差异清点修复，落 docs/审计-文档一致性.md（b31f2dd；Go 8 模块 -race 全绿 + docs build 绿）
+- [x] 文档一致性审计：门面 + 全仓文档 82 项差异清点修复，落 docs/审计-文档一致性.md（694140c；Go 8 模块 -race 全绿 + docs build 绿）
