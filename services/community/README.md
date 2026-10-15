@@ -312,7 +312,7 @@ ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]
 ## 相关文档
 
 - [API 详细文档](./community.api)
-- [开发指南（六服务总览）](../../docs/development-guide.md)
+- [开发指南（六服务总览）](../../docs/development-guide.zh.md)
 - [Content Service 文档](../content-service/README.md)
 - [项目整体架构](../../docs/architecture/overview.md)
 

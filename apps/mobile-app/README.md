@@ -1,7 +1,7 @@
 # mobile-app
 
 Expo / React Native 客户端（Expo 57 · React Native 0.86 · expo-router 文件式路由）。
-详细进度与里程碑见 [`docs/mobile_plan.md`](../../docs/mobile_plan.md)。
+详细进度与里程碑见 [`docs/mobile_plan.md`](../../docs/mobile_plan.zh.md)。
 
 ## 页面路由（`src/app/`，文件即路由）
 

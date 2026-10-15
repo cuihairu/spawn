@@ -57,7 +57,7 @@
 
 各 go-zero 服务通过配置中的 `Prometheus` 段暴露 `/metrics` 指标端点（go-zero agent，独立监听端口），
 内置请求量/耗时/状态码指标；content-service 另有跨服务调用自定义指标。
-各服务指标端口与指标说明见 `docs/development-guide.md` 的「监控与指标（Prometheus）」章节：
+各服务指标端口与指标说明见 `docs/development-guide.zh.md` 的「监控与指标（Prometheus）」章节：
 
 | 服务 | 业务端口 | /metrics 端口 |
 | --- | --- | --- |
@@ -81,7 +81,7 @@
 
 ### 下一步建议
 
-1. 移动端 M0–M3 代码切片与 M4 第一里程碑已落地（2026-10-09，详见 `docs/mobile_plan.md`）：Android release 本地 gradle 出包已落地（2026-10-04：`android.package` 配置 + `build:android:release` 脚本，aapt/apksigner 静态走查通过）；战绩 Tab 消费网关 `/api/v1/stats/*`。剩真机安装与功能回归，本地推送、深链分享卡、通知中心都还没在真机上验过（本环境无模拟器/真机；CI 只跑 lint+typecheck，另有记录的 expo export 打包走查作为替代）。
+1. 移动端 M0–M3 代码切片与 M4 第一里程碑已落地（2026-10-09，详见 `docs/mobile_plan.zh.md`）：Android release 本地 gradle 出包已落地（2026-10-04：`android.package` 配置 + `build:android:release` 脚本，aapt/apksigner 静态走查通过）；战绩 Tab 消费网关 `/api/v1/stats/*`。剩真机安装与功能回归，本地推送、深链分享卡、通知中心都还没在真机上验过（本环境无模拟器/真机；CI 只跑 lint+typecheck，另有记录的 expo export 打包走查作为替代）。
 2. api-gateway BFF 第二阶段已落地（2026-10-04）：`GET /home/feed` 列表聚合端点（精选游戏/热帖/话题/攻略一次拉齐，逐组字段裁剪 + 单上游故障降级）+ mobile `fetchHomeFeed` 消费点预留；web-client 保持直连各服务不受影响。后续按需扩更多聚合口径。
 3. `docs/architecture/` 总体架构与数据流文档已补齐（2026-10-04）：`topology.md` 记录现状（服务边界/端口/网关反代路由面/认证数据流/演进路线），`overview.md` 保持愿景层；后续架构变更随切片同步更新现状文档。
 
@@ -211,4 +211,4 @@ cd apps/web-client && npm install && npm run dev
 | data-panel | 8896 | 战绩数据面板服务（摄入 + 查询） | 已完成 |
 | user-service-rpc | 8080 (gRPC) | 用户服务 RPC（集群内部） | 已完成 |
 | web-client | 5173 | Web前端 | 已完成 |
-| mobile-app | — | React Native（Expo）客户端 | 实施中（见 `docs/mobile_plan.md`） |
+| mobile-app | — | React Native（Expo）客户端 | 实施中（见 `docs/mobile_plan.zh.md`） |

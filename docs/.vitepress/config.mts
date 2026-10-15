@@ -27,8 +27,8 @@ export default defineConfig({
           { text: '现状拓扑', link: '/architecture/topology' }
         ]
       },
-      { text: '各端说明', link: '/clients' },
-      { text: '开发指南', link: '/development-guide' }
+      { text: '各端说明', link: '/clients.zh' },
+      { text: '开发指南', link: '/development-guide.zh' }
     ],
     sidebar: {
       '/guide/': [
@@ -51,7 +51,7 @@ export default defineConfig({
           text: '指南',
           items: [
             { text: '快速上手', link: '/guide/getting-started' },
-            { text: '各端说明', link: '/clients' }
+            { text: '各端说明', link: '/clients.zh' }
           ]
         },
         {
@@ -64,9 +64,9 @@ export default defineConfig({
         {
           text: '文档',
           items: [
-            { text: '文档索引', link: '/README' },
-            { text: '移动端计划', link: '/mobile_plan' },
-            { text: '开发指南', link: '/development-guide' }
+            { text: '文档索引', link: '/README.zh' },
+            { text: '移动端计划', link: '/mobile_plan.zh' },
+            { text: '开发指南', link: '/development-guide.zh' }
           ]
         }
       ]

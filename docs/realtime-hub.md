@@ -1,150 +1,199 @@
-# realtime-hub 简档（2026-10-11 立项拍板）
+# realtime-hub profile (approved 2026-10-11)
 
-> 状态：M1 开工。拍板记录见 `docs/backlog.md` 待办 #1；架构定位见 `docs/architecture/overview.md`。
+[English](realtime-hub.md) | [简体中文](realtime-hub.zh.md)
 
-## 目标
+> Status: M1 kicked off. Decision record in `docs/backlog.md` to-do #1;
+> architectural position in `docs/architecture/overview.md`.
 
-统一实时推送通道：站内通知即时送达（替代 web 端 30s 轮询的延迟与空转）、
-后续承载在线状态 / 已读回执 / 私信等实时语义。移动端本地推送（expo）
-不受影响；远程推送接桥列为远期项。
+## Goal
 
-## 现状与约束
+One realtime push channel: in-app notifications delivered immediately (replacing
+the delay and idle spin of the web client's 30s polling), later carrying realtime
+semantics such as presence / read receipts / direct messages. Mobile local push
+(expo) is unaffected; a remote push bridge is a long-term item.
 
-- **网关代理带不动 WS**：api-gateway 各 upstream 转发是自研缓冲式实现
-  （读 body → 重建请求 → `http.Client` 往返，`internal/proxy/upstream.go`），
-  无 Hijack。M1/M2 客户端直连 hub；**M3 已补 `/ws` 原始字节透传隧道**
-  （Hijack + 双向 splice，`internal/realtime`），客户端默认走网关，
-  直连（`VITE_REALTIME_HUB_URL`）保留。
-- 端口：8893（hub WS/HTTP）；9091-9097 已被各服务 /metrics 占用，hub
-  指标面 M1 不开。
-- 鉴权：与各服务同款 HS256 JWT（共享 `JWT_SECRET`，claims 结构同
-  `utils.JWTClaims`）。浏览器 WS 无法带自定义 header，握手 token 走
-  query（本地部署口径，访问日志注意脱敏）；Origin 不设限（JWT 是唯一
-  准入闸，令牌不随跨域自动携带）。
-- 单实例内存 registry 起步；水平扩展（Redis pub/sub）M3 已落地
-  （`RedisAddr` 配置启用，尽力而为 + 回环剔除）。
+## Current state and constraints
 
-## 接口设计
+- **The gateway proxy cannot carry WS**: api-gateway's upstream forwarding is a
+  hand-rolled buffered implementation (read body → rebuild request →
+  `http.Client` round trip, `internal/proxy/upstream.go`) with no Hijack. M1/M2
+  clients connected to the hub directly; **M3 added the `/ws` raw-byte
+  passthrough tunnel** (Hijack + bidirectional splice, `internal/realtime`), and
+  clients now default to the gateway, with direct connection
+  (`VITE_REALTIME_HUB_URL`) retained.
+- Port: 8893 (hub WS/HTTP); 9091-9097 are already taken by the services'
+  /metrics, so the hub's metrics face is not opened in M1.
+- Auth: the same HS256 JWT as the services (shared `JWT_SECRET`, claims shape
+  same as `utils.JWTClaims`). Browsers cannot send custom headers on a WS, so
+  the handshake token goes in the query (local-deployment posture — mask it in
+  access logs); Origin is unrestricted (the JWT is the only admission gate, and
+  the token does not travel automatically across origins).
+- Starts as a single-instance in-memory registry; horizontal scaling (Redis
+  pub/sub) landed in M3 (`RedisAddr` config enables it, best-effort with
+  loopback exclusion).
 
-| 端点 | 方法 | 说明 |
+## Interface design
+
+| Endpoint | Method | Notes |
 |------|------|------|
-| `/health` | GET | 探活，200 |
-| `/ws?token=<jwt>` | GET(Upgrade) | 握手校验 JWT，失败回 401 拒绝（Upgrade 前，不产生半开连接）；成功后进 registry（userId → 多连接） |
-| `/internal/publish` | POST | 服务间投递。体 `{"user_ids":[..],"event":{"type":..,"payload":..}}`；头 `X-Internal-Token` 必须匹配配置（未配置=403 拒绝），投递失败不影响调用方主链路 |
+| `/health` | GET | Liveness, 200 |
+| `/ws?token=<jwt>` | GET(Upgrade) | Verifies JWT on handshake; on failure returns 401 and refuses (before the Upgrade, so no half-open connection); on success enters the registry (userId → multiple connections) |
+| `/internal/publish` | POST | Service-to-service delivery. Body `{"user_ids":[..],"event":{"type":..,"payload":..}}`; header `X-Internal-Token` must match the config (unconfigured = 403 refusal), and delivery failure never affects the caller's main path |
 
-- 帧格式：JSON 文本帧 `{"type":"notification","data":{...}}`；服务端
-  ping/pong 保活（30s ping / 读超时 60s，pong 刷新）。
-- 背压：每连接有界发送队列（16），溢出丢弃并计数记日志，发布方永不阻塞。
-- 事件类型 M1 只定义 `notification`；后续类型增量注册，向后兼容。
+- Frame format: JSON text frame `{"type":"notification","data":{...}}`; the
+  server keeps connections alive with ping/pong (30s ping / 60s read timeout,
+  pong refreshes it).
+- Backpressure: each connection has a bounded send queue (16); overflow drops
+  and counts the loss in a log. Publishers are never blocked.
+- Only `notification` is defined as an event type in M1; later types are
+  registered incrementally and remain backward compatible.
 
-## 分期
+## Phases
 
-### M1 骨架（已完成，commit c8f978e）
+### M1 skeleton (done, commit c8f978e)
 
-`services/realtime-hub` 独立 Go 模块（module path
-`github.com/tappi/tappi/services/realtime-hub`，Go 1.26，websocket 库
-`github.com/gorilla/websocket`）：config / main / hub registry / ws
-handler / publish handler；`go.work` 纳入（CI 按 go.work 动态发现，自动
-覆盖 -race）；compose 加服务与 `JWT_SECRET`/`REALTIME_INTERNAL_TOKEN`
-注入；服务 README。
+`services/realtime-hub` as a standalone Go module (module path
+`github.com/tappi/tappi/services/realtime-hub`, Go 1.26, websocket library
+`github.com/gorilla/websocket`): config / main / hub registry / ws handler /
+publish handler; included in `go.work` (CI discovers modules dynamically via
+go.work, so -race coverage is automatic); compose service plus
+`JWT_SECRET`/`REALTIME_INTERNAL_TOKEN` injection; service README.
 
-### M2 接入（已完成，2026-10-11）
+### M2 integration (done, 2026-10-11)
 
-- community：通知创建（like/comment/reply/follow 四触发点）后
-  fire-and-forget publish，写失败仅记日志（与通知写同款契约）。
-- web：通知中心接 WS 实时 +1；断线自动重连（指数退避），降级回 30s
-  轮询（保留现有轮询代码作为兜底，hub 不可达不损功能）。
+- community: after a notification is created (like/comment/reply/follow — four
+  trigger points), publish fire-and-forget; write failures are only logged (same
+  contract as notification writes).
+- web: the notification center gets realtime +1 over WS; automatic reconnect on
+  disconnect (exponential backoff) with fallback to 30s polling (the existing
+  polling code is kept as the safety net, so an unreachable hub does not break
+  the feature).
 
-#### M2 落地记录
+#### M2 landing record
 
-- community：`internal/realtime` 发布器（Url 空 = no-op，3s 超时 goroutine，
-  失败仅 logx），`Realtime` 配置段（`REALTIME_HUB_URL`/`REALTIME_INTERNAL_TOKEN`
-  环境变量）；四触发点通知落库成功后推帧，落库失败不推（防幽灵红点）。
-- web：`src/lib/realtime.ts`（指数退避重连 1s→30s 封顶，静默降级），App 铃铛
-  帧到达即重拉未读数；VITE_REALTIME_HUB_URL 曾进 compose build args，M3 隧道落地后已移除（web 默认走网关，直连变量保留）。
-- 端到端冒烟（compose 实测）：注册 u1/u2 → u1 发帖 → u1 挂 WS → u2 点赞 →
-  u1 收到 `{"type":"notification","data":{...like_post...}}` 帧；停 hub 后
-  点赞仍 200，publish 失败仅 error 日志。
+- community: `internal/realtime` publisher (empty Url = no-op, 3s timeout
+  goroutine, failures only logx), `Realtime` config section
+  (`REALTIME_HUB_URL`/`REALTIME_INTERNAL_TOKEN` env vars); the four trigger
+  points send a frame only after the notification is persisted, and do not send
+  on persistence failure (no ghost red dots).
+- web: `src/lib/realtime.ts` (exponential-backoff reconnect 1s→30s capped, silent
+  degradation); the app bell re-fetches the unread count as soon as a frame
+  arrives. VITE_REALTIME_HUB_URL had been in the compose build args but was
+  removed after the M3 tunnel landed (web defaults to the gateway, the direct
+  variable is retained).
+- End-to-end smoke test (measured on compose): register u1/u2 → u1 posts → u1
+  opens a WS → u2 likes → u1 receives a `{"type":"notification",
+  "data":{...like_post...}}` frame; after stopping the hub, likes still return
+  200 and publish failures only produce an error log.
 
-### M3 远期 → 已全部落地（2026-10-12 用户令连续推进）
+### M3 long-term → all landed (2026-10-12, user order to push straight through)
 
-网关 WS 隧道、已读回执广播、Redis pub/sub 水平扩展、移动端远程推送
-接桥、语音/组队信令（对应 overview.md 的 realtime-hub 愿景）。
+Gateway WS tunnel, read-receipt broadcast, Redis pub/sub horizontal scaling,
+mobile remote-push bridge, voice/teaming signalling (matching the realtime-hub
+vision in overview.md).
 
-#### M3 余项落地记录（2026-10-12）
+#### Remaining M3 items — landing record (2026-10-12)
 
-- **网关 WS 隧道**（`1d38531`）：网关 `/ws` 原始字节透传——Hijack 客户端
-  连接 + 重写请求行/Host（其余头原样透传，Connection/Upgrade/Sec-WebSocket-*
-  即握手本体不剥离）+ 双向 splice；hub 不可达 Hijack 前回 502；JWT 校验
-  仍在 hub，网关补 X-Forwarded-For。`Upstreams.RealtimeHub` 未配置则不
-  注册 /ws（hub 可选部署）。测试覆盖 go-zero 全量中间件链（WithCode/
-  Timeout 包装层 Hijack 委托实测）与裸 writer 两路。**顺带修真 bug**：
-  hub gorilla 默认 CheckOrigin 只放行同源，浏览器跨源（:4173 → :8893）
-  握手必 403，M2 web 浏览器路径一直在静默降级轮询（curl 冒烟测不出）；
-  现准入闸只有 JWT query（令牌不随跨域自动携带，Origin 校验无安全增量）。
-  web 默认 `ws://localhost:8800` 走隧道（`VITE_REALTIME_HUB_URL` 可切直连）。
-- **已读回执**（`3c06d95`）：community mark-all-read 成功后向本人全部
-  连接广播 `notification.read` 帧（重播幂等无害），多端徽标即时归零；
-  写库失败不发布。
-- **Redis 扩展**（`83d2fa5`）：`RedisAddr` 空 = 单实例（默认，行为不变）；
-  配置即启用 pub/sub relay（频道 `realtime-hub:events`，信封带 node id，
-  回环剔除；发布/订阅断连尽力而为只记日志；坏地址启动期 fail fast）。
-  两个非显然坑已堵：go-redis v9 订阅惰性建立（`Receive` 等确认，否则
-  早期消息漏收）；node id 含随机后缀（同进程多 relay 测试不互认回环）。
-  在线状态/watch 沿事件仍为实例本地真值（不跨实例同步）。
-- **推送桥**（`a4b7ca9`）：`PushWebhook` 空不推；单实例模式零投递用户
-  POST webhook（`X-Push-Token`，user_ids 去重合并单请求，fire-and-forget
-  3s 超时），厂商协议（APNs/FCM）由桥接服务接——凭据为外部依赖，接缝
-  先行。多实例下本地零投递 ≠ 离线，不推（分布式推送决策留部署面）。
-  顺手收紧：publish 重复 user_ids 只投一次（原逐次扇出）。
-- **私信消费**（`f08e19d`/`960541c`，2026-10-12 巡检点火批次）：community 落库后
-  `Publish("message", [收件人], {message_id,from_id,from_name,content,created_at})`，
-  会话已读回执 `Publish("message.read", [本人], {unread_count,peer_id})`——hub
-  与网关零改动（帧通道/隧道/推送桥现成），web 消息页与信封徽标实时刷新。
-- **语音信令**（`acdc8ac`）：上行 `{"action":"signal","to":..,"room":..,
-  "data":{..}}` 无状态转发（offer/answer/ICE 透传，hub 不解析不存房间），
-  目标全部连接收、发端连接排除（本端多设备自信号不回环）；Relay 模式
-  跨实例兜底广播；目标离线静默丢弃（重试归端上协商层）；尺寸上限即
-  上行读限 4096。
+- **Gateway WS tunnel** (`1d38531`): the gateway `/ws` raw-byte passthrough —
+  Hijack the client connection + rewrite the request line/Host (other headers
+  pass through unchanged; Connection/Upgrade/Sec-WebSocket-* are the handshake
+  itself and are not stripped) + bidirectional splice; returns 502 before
+  Hijack when the hub is unreachable; JWT verification stays in the hub, and the
+  gateway adds X-Forwarded-For. If `Upstreams.RealtimeHub` is not configured,
+  /ws is not registered (hub is an optional deployment). Tests cover the full
+  go-zero middleware chain (measured Hijack delegation under the WithCode/Timeout
+  wrappers) and the bare-writer path. **Also fixed a real bug in passing**: the
+  hub's gorilla default CheckOrigin allowed only same-origin, so browser
+  cross-origin handshakes (:4173 → :8893) always returned 403 and the M2 web
+  browser path had been silently degrading to polling all along (a curl smoke
+  test could not catch it); the admission gate is now only the JWT query (the
+  token does not travel across origins automatically, so Origin checking adds no
+  security). Web defaults to `ws://localhost:8800` through the tunnel
+  (`VITE_REALTIME_HUB_URL` can switch to direct).
+- **Read receipts** (`3c06d95`): after community mark-all-read succeeds, a
+  `notification.read` frame is broadcast to all of the user's connections (replay
+  is idempotently harmless), so badges on every device reset immediately; no
+  publish on write failure.
+- **Redis scaling** (`83d2fa5`): empty `RedisAddr` = single instance (default,
+  behavior unchanged); configuring it enables the pub/sub relay (channel
+  `realtime-hub:events`, envelope carries the node id for loopback exclusion;
+  publish/subscribe disconnects are best-effort and only logged; a bad address
+  fails fast at startup). Two non-obvious traps plugged: go-redis v9 subscribes
+  lazily (Receive waits for the confirmation, otherwise early messages are
+  missed); the node id carries a random suffix (multiple relays in one test
+  process do not recognize each other's loopback). Presence/watch state along an
+  event is still instance-local truth (not synced across instances).
+- **Push bridge** (`a4b7ca9`): empty `PushWebhook` = no push; in single-instance
+  mode, users with zero local deliveries get a POST to the webhook
+  (`X-Push-Token`, user_ids deduplicated and merged into one request,
+  fire-and-forget with a 3s timeout); vendor protocols (APNs/FCM) are handled by
+  the bridging service — credentials are an external dependency, so the seam
+  comes first. Under multiple instances, zero local deliveries ≠ offline, so no
+  push (distributed push decisions belong to deployment). Tightened in passing:
+  duplicate user_ids in publish are delivered only once (previously fanned out
+  per occurrence).
+- **Direct-message consumption** (`f08e19d`/`960541c`, 2026-10-12 inspection
+  ignition batch): after community persists a message it calls
+  `Publish("message", [recipient], {message_id,from_id,from_name,content,created_at})`,
+  and a conversation read receipt calls
+  `Publish("message.read", [self], {unread_count,peer_id})` — zero changes to the
+  hub and gateway (the frame channel, tunnel and push bridge already exist); the
+  web message page and the envelope badge refresh in realtime.
+- **Voice signalling** (`acdc8ac`): upstream
+  `{"action":"signal","to":..,"room":..,"data":{..}}` is forwarded statelessly
+  (offer/answer/ICE pass through; the hub neither parses nor stores room state);
+  all of the target's connections receive it, excluding the sender's own
+  connection (no loopback for your own signal across devices); Relay mode
+  broadcasts across instances as a fallback; silent drop when the target is
+  offline (retries belong to the endpoint negotiation layer); the size limit is
+  the 4096 upstream read limit.
 
-### M3-1 在线状态（已完成，2026-10-11 拍板开工）
+### M3-1 Presence (done, approved 2026-10-11)
 
-单实例内存档，不依赖网关隧道与 Redis。
+Single-instance in-memory state; does not depend on the gateway tunnel or Redis.
 
-设计口径：
+Design posture:
 
-- 在线定义：userId 活连接 ≥1；事件只在转换沿触发（首连/末断），
-  多端上下线不重复刷帧。
-- 三个面：REST 服务间查询 `GET /internal/presence?user_ids=1,2,3`
-  （X-Internal-Token，fail closed 同 publish，ids 缺失/非法 400）；
-  WS watch 推送（上行 `{"action":"watch|unwatch","user_ids":[..]}`，
-  转换沿 → watcher 收 `{"type":"presence","data":{user_id,online,at}}`）；
-  WS query 快照（上行 `{"action":"query","user_ids":[..]}`，只回请求
-  连接——终端拿不到内部令牌，拉取走 WS 既有 JWT 闸）。
-- 内存有界：单客户端 watch 上限 200（超限静默截断）、单次 ids 上限
-  200；畸形上行静默忽略不断连；hub 不存社会关系（watch 谁由客户端
-  声明，隐私过滤在产品层）。
-- 无新配置、无新依赖；顺手修掉 SendToUsers 在 RLock 下 drops++
-  的潜在竞态（改 atomic）。
+- Online is defined as userId with ≥1 live connection; events fire only on the
+  transition edge (first connect / last disconnect), so multi-device
+  online/offline does not spam duplicate frames.
+- Three faces: REST service-to-service query
+  `GET /internal/presence?user_ids=1,2,3` (X-Internal-Token, fail closed like
+  publish, 400 for missing/invalid ids); WS watch push (upstream
+  `{"action":"watch|unwatch","user_ids":[..]}`, transition edge → watchers
+  receive `{"type":"presence","data":{user_id,online,at}}`); WS query snapshot
+  (upstream `{"action":"query","user_ids":[..]}`, replying only to the requesting
+  connection — endpoints cannot get the internal token, so pulls go through the
+  existing WS JWT gate).
+- Bounded memory: 200 watches per client (silently truncated above the limit) and
+  200 ids per call; malformed upstream frames are silently ignored without
+  disconnecting; the hub stores no social relations (who watches whom is declared
+  by the client, and privacy filtering belongs to the product layer).
+- No new config, no new dependencies; also fixed a potential race in SendToUsers
+  where drops++ happened under an RLock (now atomic).
 
-落地记录：`hub` 增 since/watchers 表与 Watch/Unwatch/Presence/
-replyPresence（转换沿事件锁外投递）；handler 增 presence 端点与
-路由；新增 hub 6 测 + handler 2 测（含 A watch 7 → 7 连收 online、
-REST 快照一致、畸形上行存活、7 断收 offline 端到端）；顺手修掉
-既有 fanout 测试的入表时序竞态（Dial 返回 ≠ 服务端 Join 已执行，
-publish 前轮询连接数）。
+Landing record: `hub` gains since/watchers tables and Watch/Unwatch/Presence/
+replyPresence (transition-edge events delivered outside the lock); handler gains
+the presence endpoint and routing; 6 new hub tests + 2 handler tests (including
+A watching 7 → 7 connections receive online, REST snapshot agreement, surviving
+malformed upstream, and end-to-end 7 disconnects → offline); also fixed a
+registration-timing race in an existing fanout test (Dial returning ≠ the
+server-side Join has run, so the connection count is polled before publish).
 
-## 验收口径
+## Acceptance criteria
 
-- **M1**：`go test ./... -race` 绿；集成——两客户端同连、publish 后各收
-  一帧、无效 JWT 拒断、publish 缺/错 token 403；`docker compose build
-  realtime-hub && up` 后 `/health` 200；CI 全绿。
-- **M2**：web 铃铛收到实时 +1（端到端手动口径 + 集成测试）；停 hub 后
-  web 自动降级轮询不断功能；web 三连门禁绿。
-- **M3**：逐项立项时再定。
+- **M1**: `go test ./... -race` green; integration — two clients connected at the
+  same time each receive one frame after publish, invalid JWT is refused, missing
+  or wrong publish token returns 403; after `docker compose build realtime-hub &&
+  up`, `/health` returns 200; CI all green.
+- **M2**: the web bell receives a realtime +1 (manual end-to-end posture plus
+  integration test); stopping the hub lets web degrade to polling without losing
+  the feature; the web triple gate green.
+- **M3**: decided per item at approval time.
 
-## 铁律沿用
+## Standing rules carried over
 
-非交互；禁 tag/release、禁 force push；push 前 fetch+rebase origin/main；
-每增量测试全绿才提交推送；commit 英文短句；只 add 自己改的文件；Go
-module path `github.com/tappi/tappi` 永不改；只推 main。
+Non-interactive; no tags/releases and no force push; fetch+rebase origin/main
+before pushing; tests all green before committing and pushing each increment;
+short English commit messages; add only files you changed; the Go module path
+`github.com/tappi/tappi` never changes; push main only.
