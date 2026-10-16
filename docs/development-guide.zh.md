@@ -1619,5 +1619,5 @@ PR 在 git 层 MERGEABLE、与 main 无冲突，红的只有锁文件同步这�
 更多详细信息请参考：
 - [Go-zero 官方文档](https://go-zero.dev/)
 - [文档索引](./README.md)
-- [架构文档](./architecture/overview.md)
-- [现状拓扑](./architecture/topology.md)
+- [架构文档](./architecture/overview.zh.md)
+- [现状拓扑](./architecture/topology.zh.md)

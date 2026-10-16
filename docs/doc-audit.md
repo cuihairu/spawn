@@ -117,15 +117,15 @@ mismatch. Every item was fixed this round.
 | D-67 | docs/backlog.md:52 | The deferred table includes realtime-hub as "decided not to start" | Line 10 of the same document says it landed 2026-10-11 | C | P1 | remove realtime-hub from the deferred table |
 | D-68 | docs/backlog.md:19-28 | The CI snapshot misses a realtime-hub row; package counts are stale | realtime-hub has 5 test packages; api-gateway 12 / community 19 packages (measured 2026-10-13) | B | P2 | add the row plus a snapshot-posture note |
 | D-69 | docs/backlog.md:50-51 | community README:271/272 line numbers drifted | Actually :285/:286 | C | P2 | correct the line numbers |
-| D-70 | docs/architecture/overview.md:28 | "Persist by data model (e.g. Postgres/ElasticSearch)" + a Kafka/PubSub message bus | No Postgres/ES/Kafka anywhere in the repo; storage is SQLite/MySQL | A | P2 | describe the dual-driver reality and mark the candidate technologies "candidate" |
-| D-71 | docs/architecture/overview.md:30 | "Report through the shared-utils SDK to a data pipeline" | packages/ holds only config; there is no data pipeline | A | P2 | say stats write straight to data-panel and mark the SDK as planned |
-| D-72 | docs/architecture/overview.md:49 | "Every service provides a docs/ subdirectory" | No services/*/docs exists | A | P2 | say "each service's README.md" |
-| D-73 | docs/architecture/overview.md:50 | "Contract tests under tests/" | tests/ holds only a README that describes itself as planned | A | P2 | say "per-service test coverage; cross-service tests/ is planned" |
-| D-74 | docs/architecture/overview.md:51 | "A CI/CD pipeline provided by the platform layer" | CI lives in .github/workflows; platform/ is planned | C | P2 | use the workflows wording |
-| D-75 | docs/architecture/topology.md:10 | user-service's responsibilities include a "growth system" | No growth/level code exists (grep has no hits) | A | P2 | delete it |
-| D-76 | docs/architecture/topology.md:13 | community's responsibilities miss DMs/moderation/search | routes.go:130,163-207 | B | P2 | complete the responsibilities |
-| D-77 | docs/architecture/topology.md:59 | The community proxy list misses search/comments/messages/moderation | services/api-gateway/internal/community/routes.go:32,42-44,58-67 | B | P2 | complete the list |
-| D-78 | docs/architecture/topology.md:79 | "Every service directory has its own Dockerfile" | user-service-rpc has no Dockerfile | C | P2 | add the qualification (rpc has no image; two services are distroless) |
+| D-70 | docs/architecture/overview.zh.md:28 | "Persist by data model (e.g. Postgres/ElasticSearch)" + a Kafka/PubSub message bus | No Postgres/ES/Kafka anywhere in the repo; storage is SQLite/MySQL | A | P2 | describe the dual-driver reality and mark the candidate technologies "candidate" |
+| D-71 | docs/architecture/overview.zh.md:30 | "Report through the shared-utils SDK to a data pipeline" | packages/ holds only config; there is no data pipeline | A | P2 | say stats write straight to data-panel and mark the SDK as planned |
+| D-72 | docs/architecture/overview.zh.md:49 | "Every service provides a docs/ subdirectory" | No services/*/docs exists | A | P2 | say "each service's README.md" |
+| D-73 | docs/architecture/overview.zh.md:50 | "Contract tests under tests/" | tests/ holds only a README that describes itself as planned | A | P2 | say "per-service test coverage; cross-service tests/ is planned" |
+| D-74 | docs/architecture/overview.zh.md:51 | "A CI/CD pipeline provided by the platform layer" | CI lives in .github/workflows; platform/ is planned | C | P2 | use the workflows wording |
+| D-75 | docs/architecture/topology.zh.md:10 | user-service's responsibilities include a "growth system" | No growth/level code exists (grep has no hits) | A | P2 | delete it |
+| D-76 | docs/architecture/topology.zh.md:13 | community's responsibilities miss DMs/moderation/search | routes.go:130,163-207 | B | P2 | complete the responsibilities |
+| D-77 | docs/architecture/topology.zh.md:59 | The community proxy list misses search/comments/messages/moderation | services/api-gateway/internal/community/routes.go:32,42-44,58-67 | B | P2 | complete the list |
+| D-78 | docs/architecture/topology.zh.md:79 | "Every service directory has its own Dockerfile" | user-service-rpc has no Dockerfile | C | P2 | add the qualification (rpc has no image; two services are distroless) |
 | D-79 | apps/web-client/README.md:25-26 | The route list misses 8 implemented routes | apps/web-client/src/App.tsx:156-264 | B | P2 | complete all 15 |
 | D-80 | apps/web-client/GUIDE.md:9-19 | The route table misses 6 implemented routes | Same as above (/discover /games /games/:id /stats /profile /users/:id) | B | P2 | add the 6 rows (including the permission column) |
 | D-81 | apps/web-client/GUIDE.md:35 | "The create-guide button on the homepage or the guide list page" | Only GuidesPage.tsx:155 has that button | C | P2 | say "the guide list page" |

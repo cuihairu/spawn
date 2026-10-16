@@ -1,19 +1,24 @@
-# 快速上手
+# Getting started
 
-把 spawn 在本机跑起来有两条路：docker compose 一条命令起全部服务，或者按端分开启动。
+[English](getting-started.md) | [简体中文](getting-started.zh.md)
 
-## 环境要求
+Two ways to run spawn locally: one `docker compose` command for all services,
+or start each side separately.
 
-| 依赖 | 版本 | 说明 |
+## Requirements
+
+| Dependency | Version | Notes |
 | --- | --- | --- |
-| Go | ≥ 1.26 | 根目录 `go.work` 声明 `go 1.26.0`（api-gateway 依赖组升级顶高的），聚合八个模块 |
-| Node.js | 24 | 与 CI 一致 |
-| pnpm | 10.22 | 根 `package.json` 以 `packageManager` 钉定 |
-| Docker | 可选 | 一条命令起全部服务与观测栈 |
+| Go | ≥ 1.26 | The root `go.work` declares `go 1.26.0` (raised by the api-gateway dependency group), aggregating eight modules |
+| Node.js | 24 | Same as CI |
+| pnpm | 10.22 | Pinned by `packageManager` in the root `package.json` |
+| Docker | Optional | One command starts all services and the observability stack |
 
-后端工具链（按需）：`goctl`（go-zero 代码生成）、`protoc` 与 `protoc-gen-go`、`protoc-gen-go-grpc`，安装方式见开发指南「Go-zero 开发约定」。
+Backend toolchain (as needed): `goctl` (go-zero code generation), `protoc`
+with `protoc-gen-go` and `protoc-gen-go-grpc` — see the "Go-zero development
+conventions" section of the development guide for installation.
 
-## 获取代码
+## Get the code
 
 ```bash
 git clone https://github.com/cuihairu/spawn.git
@@ -21,28 +26,33 @@ cd spawn
 pnpm install
 ```
 
-## 用 compose 起全部服务
+## Start all services with compose
 
 ```bash
 docker compose up --build
 ```
 
-各服务为独立镜像（api-gateway 与 realtime-hub 为 CGO_ENABLED=0 构建 + distroless 运行时，其余 CGO 构建 + debian:bookworm-slim），数据源由 `DATASOURCE` 环境变量注入，默认本地 SQLite 文件库并自动建表、写入内嵌种子数据。
+Each service is a separate image (api-gateway and realtime-hub are
+CGO_ENABLED=0 builds + distroless runtime, the rest are CGO builds +
+debian:bookworm-slim). Data sources are injected via the `DATASOURCE`
+environment variable; the default is a local SQLite file database with
+automatic table creation and embedded seed data.
 
-| 服务 | 业务端口 | /metrics 端口 |
+| Service | Business port | /metrics port |
 | --- | --- | --- |
 | user-service | 8888 | 9091 |
 | game-catalog | 8890 | 9092 |
 | content-service | 8891 | 9093 |
 | community | 8892 | 9094 |
-| realtime-hub | 8893 | —（无 /metrics） |
+| realtime-hub | 8893 | — (no /metrics) |
 | api-gateway | 8800 | 9095 |
 | data-panel | 8896 | 9097 |
 | user-service-rpc | 8080 (gRPC) | 9096 |
 
-## 分别启动后端服务
+## Start the backend services separately
 
-不使用容器时，各服务独立进程运行，配置文件在各自 `etc/` 目录：
+Without containers, each service runs as its own process, config files in its
+own `etc/` directory:
 
 ```bash
 go run services/game-catalog/game.go -f services/game-catalog/etc/game-api.yaml
@@ -54,26 +64,35 @@ go run services/realtime-hub/realtime-hub.go -f services/realtime-hub/etc/realti
 go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
 ```
 
-`api-gateway` 是对外统一入口：JWT 校验（`/upload` 本地校验）与跨服务路由反代、`/home/feed` 聚合都从这里走；登录经反代由 user-service 签发 JWT。生产环境把 `DATASOURCE` 换成 MySQL 连接串即可切换存储，建表与种子迁移在启动时自动完成。
+`api-gateway` is the unified external entry: JWT verification (checked locally
+for `/upload`) and cross-service route proxying, plus the `/home/feed`
+aggregation, all go through it; login is proxied to user-service, which issues
+the JWT. In production, swapping `DATASOURCE` for a MySQL connection string
+switches the storage — table creation and seed migration complete
+automatically at startup.
 
-## 启动 Web 端
+## Start the web client
 
 ```bash
 pnpm --dir apps/web-client run dev
 ```
 
-web-client 直连各业务服务开发调试，构建用 `pnpm --dir apps/web-client run build`（先 `tsc -b` 类型检查再 vite 打包）。
+web-client connects directly to the business services for development and
+debugging; build it with `pnpm --dir apps/web-client run build` (`tsc -b` type
+checking first, then the vite bundle).
 
-## 启动移动端
+## Start the mobile app
 
 ```bash
 pnpm --dir apps/mobile-app start
 ```
 
-mobile-app 基于 Expo，`expo start` 起开发服务后按提示在模拟器或 Expo Go 中打开；Android release 出包流程见「各端说明」。
+mobile-app is Expo-based: after `expo start` boots the dev server, open it in a
+simulator or Expo Go as prompted; the Android release packaging flow is
+described in "Clients and services" (`docs/clients.md`).
 
-## 延伸阅读
+## Further reading
 
-- [架构总览](/architecture/overview)，愿景与服务边界。
-- [现状拓扑](/architecture/topology)，端口、路由面、认证数据流的现状。
-- [开发指南](/development-guide)，环境到部署的完整手册。
+- [Architecture overview](/architecture/overview) — the vision and service boundaries.
+- [Current topology](/architecture/topology) — ports, the route surface and the auth data flow as built.
+- [Development guide](/development-guide) — the complete manual from environment to deployment.

@@ -19,12 +19,12 @@ export default defineConfig({
     logo: '/logo.svg',
     nav: [
       { text: '首页', link: '/' },
-      { text: '快速上手', link: '/guide/getting-started' },
+      { text: '快速上手', link: '/guide/getting-started.zh' },
       {
         text: '架构',
         items: [
-          { text: '架构总览', link: '/architecture/overview' },
-          { text: '现状拓扑', link: '/architecture/topology' }
+          { text: '架构总览', link: '/architecture/overview.zh' },
+          { text: '现状拓扑', link: '/architecture/topology.zh' }
         ]
       },
       { text: '各端说明', link: '/clients.zh' },
@@ -34,15 +34,15 @@ export default defineConfig({
       '/guide/': [
         {
           text: '快速上手',
-          link: '/guide/getting-started'
+          link: '/guide/getting-started.zh'
         }
       ],
       '/architecture/': [
         {
           text: '架构',
           items: [
-            { text: '架构总览', link: '/architecture/overview' },
-            { text: '现状拓扑', link: '/architecture/topology' }
+            { text: '架构总览', link: '/architecture/overview.zh' },
+            { text: '现状拓扑', link: '/architecture/topology.zh' }
           ]
         }
       ],
@@ -50,15 +50,15 @@ export default defineConfig({
         {
           text: '指南',
           items: [
-            { text: '快速上手', link: '/guide/getting-started' },
+            { text: '快速上手', link: '/guide/getting-started.zh' },
             { text: '各端说明', link: '/clients.zh' }
           ]
         },
         {
           text: '架构',
           items: [
-            { text: '架构总览', link: '/architecture/overview' },
-            { text: '现状拓扑', link: '/architecture/topology' }
+            { text: '架构总览', link: '/architecture/overview.zh' },
+            { text: '现状拓扑', link: '/architecture/topology.zh' }
           ]
         },
         {
