@@ -18,4 +18,4 @@
 - [x] Actions 版本升级：checkout/setup-node/setup-go/pnpm-action 全部升主版本，CI/docs 双绿（6d12e81；CI 绿）
 - [x] Ubuntu 26 迁移评估：钉 ubuntu-24.04 消除漂移，nightly CGO gcc 为唯一镜像侧依赖，canary 与升版时间点已记录（abf2190）
 - [x] 文档一致性审计：门面 + 全仓文档 82 项差异清点修复，落 docs/审计-文档一致性.zh.md（694140c；Go 8 模块 -race 全绿 + docs build 绿）
-- [x] docs 双语第二轮：子目录 architecture/overview.md、architecture/topology.md、guide/getting-started.md 配对与切换器（3 份全量英文译文，zh 侧 .zh.md 重命名，交叉引用与 vitepress 导航同步重指；docs build 绿）
+- [x] docs 双语第二轮：子目录 architecture/overview.md、architecture/topology.md、guide/getting-started.md 配对与切换器（6c04999；3 份全量英文译文，zh 侧 .zh.md 重命名，交叉引用与 vitepress 导航同步重指；另修根目录 3 份 zh 切换器段落粘连，docs build 绿）
