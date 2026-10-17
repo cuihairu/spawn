@@ -1,6 +1,6 @@
 # Development Guide
 
-[English](development-guide.md) | [简体中文](development-guide.zh.md)
+[English](/development-guide) | [简体中文](/zh/development-guide)
 
 > **No English version of this document yet.** The guide is 1,600+ lines of
 > Chinese; rather than ship a low-quality machine translation, the original is

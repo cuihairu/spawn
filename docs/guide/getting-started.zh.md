@@ -1,6 +1,6 @@
 # 快速上手
 
-[English](getting-started.md) | [简体中文](getting-started.zh.md)
+[English](/guide/getting-started) | [简体中文](/zh/guide/getting-started)
 
 把 spawn 在本机跑起来有两条路：docker compose 一条命令起全部服务，或者按端分开启动。
 
@@ -76,6 +76,6 @@ mobile-app 基于 Expo，`expo start` 起开发服务后按提示在模拟器或
 
 ## 延伸阅读
 
-- [架构总览](/architecture/overview.zh)，愿景与服务边界。
-- [现状拓扑](/architecture/topology.zh)，端口、路由面、认证数据流的现状。
-- [开发指南](/development-guide.zh)，环境到部署的完整手册。
+- [架构总览](/zh/architecture/overview)，愿景与服务边界。
+- [现状拓扑](/zh/architecture/topology)，端口、路由面、认证数据流的现状。
+- [开发指南](/zh/development-guide)，环境到部署的完整手册。

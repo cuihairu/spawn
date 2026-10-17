@@ -1,6 +1,6 @@
 # realtime-hub profile (approved 2026-10-11)
 
-[English](realtime-hub.md) | [简体中文](realtime-hub.zh.md)
+[English](/realtime-hub) | [简体中文](/zh/realtime-hub)
 
 > Status: M1 kicked off. Decision record in `docs/backlog.md` to-do #1;
 > architectural position in `docs/architecture/overview.md`.

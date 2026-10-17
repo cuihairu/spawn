@@ -17,7 +17,7 @@ hero:
       link: /development-guide
     - theme: alt
       text: 简体中文
-      link: index.zh.md
+      link: /zh/
 
 features:
   - title: Game catalog & leaderboards

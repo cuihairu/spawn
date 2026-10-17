@@ -1,6 +1,6 @@
 # Backlog Ledger (est. 2026-10-10)
 
-[English](backlog.md) | [简体中文](backlog.zh.md)
+[English](/backlog) | [简体中文](/zh/backlog)
 
 > Single source of truth: status and blockers of every unfinished item.
 > Completed items are not listed here (see git log and each README).

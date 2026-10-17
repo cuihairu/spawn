@@ -1,6 +1,6 @@
 # Architecture overview
 
-[English](overview.md) | [简体中文](overview.zh.md)
+[English](/architecture/overview) | [简体中文](/zh/architecture/overview)
 
 > This document is the vision and direction; **the currently landed service
 > boundaries, ports, gateway proxy topology and data flow** are in

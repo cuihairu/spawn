@@ -1,6 +1,6 @@
 # spawn 手机版本计划（mobile-app）
 
-[English](mobile_plan.md) | [简体中文](mobile_plan.zh.md)
+[English](/mobile_plan) | [简体中文](/zh/mobile_plan)
 > 状态：**已拍板，实施中**（2026-10-02 定稿，M0 首批开工）。
 > 实施进度批注于各里程碑行内；变更记录追加在「拍板记录」表。
 >

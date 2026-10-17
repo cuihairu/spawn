@@ -1,6 +1,6 @@
 # Clients & Services
 
-[English](clients.md) | [简体中文](clients.zh.md)
+[English](/clients) | [简体中文](/zh/clients)
 
 Current state of spawn's clients and services. Planned surfaces only list
 their status; unimplemented features are not described.
@@ -56,7 +56,7 @@ their status; unimplemented features are not described.
   the native project, `build:android:release` runs gradle assembleRelease.
 - On-device regression items (local push, deep-link share cards, notification
   center) still await device verification; progress in the
-  [mobile plan](/mobile_plan.zh).
+  [mobile plan](/mobile_plan).
 
 ## Services (seven go-zero microservices + one realtime hub)
 

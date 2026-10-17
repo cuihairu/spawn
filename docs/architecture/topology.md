@@ -1,6 +1,6 @@
 # Current topology and service boundaries (updated 2026-10-10)
 
-[English](topology.md) | [简体中文](topology.zh.md)
+[English](/architecture/topology) | [简体中文](/zh/architecture/topology)
 
 > This document records the currently landed service boundaries, ports, call
 > topology and data flow; the vision-level architecture direction is in

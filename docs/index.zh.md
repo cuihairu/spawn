@@ -8,13 +8,13 @@ hero:
   actions:
     - theme: brand
       text: 快速上手
-      link: /guide/getting-started.zh
+      link: /zh/guide/getting-started
     - theme: alt
       text: 架构总览
-      link: /architecture/overview.zh
+      link: /zh/architecture/overview
     - theme: alt
       text: 开发指南
-      link: /development-guide.zh
+      link: /zh/development-guide
     - theme: alt
       text: English
       link: /

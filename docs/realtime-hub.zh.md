@@ -1,6 +1,6 @@
 # realtime-hub 简档（2026-10-11 立项拍板）
 
-[English](realtime-hub.md) | [简体中文](realtime-hub.zh.md)
+[English](/realtime-hub) | [简体中文](/zh/realtime-hub)
 > 状态：M1 开工。拍板记录见 `docs/backlog.zh.md` 待办 #1；架构定位见 `docs/architecture/overview.zh.md`。
 
 ## 目标

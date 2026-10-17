@@ -1,6 +1,6 @@
 # spawn 开发指南
 
-[English](development-guide.md) | [简体中文](development-guide.zh.md)
+[English](/development-guide) | [简体中文](/zh/development-guide)
 ## 项目概述
 
 spawn 是一个基于 Go-zero 框架的游戏社交平台 monorepo 项目，采用微服务架构，支持多端应用开发
@@ -1619,5 +1619,5 @@ PR 在 git 层 MERGEABLE、与 main 无冲突，红的只有锁文件同步这�
 更多详细信息请参考：
 - [Go-zero 官方文档](https://go-zero.dev/)
 - [文档索引](./README.md)
-- [架构文档](./architecture/overview.zh.md)
-- [现状拓扑](./architecture/topology.zh.md)
+- [架构文档](/zh/architecture/overview)
+- [现状拓扑](/zh/architecture/topology)
