@@ -1,6 +1,5 @@
 # 现状拓扑与服务边界（2026-10-10 更新）
 
-[English](/architecture/topology) | [简体中文](/zh/architecture/topology)
 
 > 本文记录当前实际落地的服务边界、端口、调用拓扑与数据流；
 > 愿景层面的架构方向见同目录 `overview.zh.md`。两者冲突时以本文为准。

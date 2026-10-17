@@ -1,6 +1,5 @@
 # Documentation vs source-code consistency audit (2026-10-13)
 
-[English](/doc-audit) | [简体中文](/zh/doc-audit)
 
 Run against `~/workspaces/standards/文档与源码一致性审计规范.md`: enumerate the
 documentation surface → collect evidence per item (file:line) → sort into three

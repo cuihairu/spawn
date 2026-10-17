@@ -1,6 +1,5 @@
 # Clients & Services
 
-[English](/clients) | [简体中文](/zh/clients)
 
 Current state of spawn's clients and services. Planned surfaces only list
 their status; unimplemented features are not described.

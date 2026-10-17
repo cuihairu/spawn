@@ -1,6 +1,5 @@
 # Getting started
 
-[English](/guide/getting-started) | [简体中文](/zh/guide/getting-started)
 
 Two ways to run spawn locally: one `docker compose` command for all services,
 or start each side separately.

@@ -1,6 +1,5 @@
 # spawn 开发指南
 
-[English](/development-guide) | [简体中文](/zh/development-guide)
 ## 项目概述
 
 spawn 是一个基于 Go-zero 框架的游戏社交平台 monorepo 项目，采用微服务架构，支持多端应用开发

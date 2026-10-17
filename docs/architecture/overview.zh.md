@@ -1,6 +1,5 @@
 # 架构概览
 
-[English](/architecture/overview) | [简体中文](/zh/architecture/overview)
 
 > 本文是愿景与方向；**当前已落地的服务边界、端口、网关反代拓扑与数据流**
 > 见同目录 `topology.zh.md`（现状文档，冲突时以现状文档为准）。

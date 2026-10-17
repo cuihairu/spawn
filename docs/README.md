@@ -1,6 +1,5 @@
 # Docs
 
-[English](/README) | [简体中文](/zh/README)
 
 Landed documentation:
 

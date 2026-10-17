@@ -1,6 +1,5 @@
 # spawn mobile plan (mobile-app)
 
-[English](/mobile_plan) | [简体中文](/zh/mobile_plan)
 
 > Status: **approved, in implementation** (finalized 2026-10-02, M0 first batch
 > kicked off).

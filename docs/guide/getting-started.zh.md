@@ -1,6 +1,5 @@
 # 快速上手
 
-[English](/guide/getting-started) | [简体中文](/zh/guide/getting-started)
 
 把 spawn 在本机跑起来有两条路：docker compose 一条命令起全部服务，或者按端分开启动。
 
