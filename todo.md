@@ -19,3 +19,10 @@
 - [x] Ubuntu 26 迁移评估：钉 ubuntu-24.04 消除漂移，nightly CGO gcc 为唯一镜像侧依赖，canary 与升版时间点已记录（abf2190）
 - [x] 文档一致性审计：门面 + 全仓文档 82 项差异清点修复，落 docs/审计-文档一致性.zh.md（694140c；Go 8 模块 -race 全绿 + docs build 绿）
 - [x] docs 双语第二轮：子目录 architecture/overview.md、architecture/topology.md、guide/getting-started.md 配对与切换器（6c04999；3 份全量英文译文，zh 侧 .zh.md 重命名，交叉引用与 vitepress 导航同步重指；另修根目录 3 份 zh 切换器段落粘连，docs build 绿）
+- [ ] 审核整改（2026-10-18 独立审核，见 docs/review/luna-review-2026-10-18.md）：
+      按审核报告的三张表逐项处理，**先核对再动手**，每项给 file:line 证据。
+      1) 表一「缺陷」：按风险排序修，高风险优先
+      2) 表二「文档与实现不一致」：以代码为准改文档，或明确标注为规划中
+         **禁止为对齐文档去改业务代码**
+      3) 表三「值得补的能力」：只做评估与分期建议，**不实现**（需用户拍板）
+      每完成一项勾掉并写证据；全部测试通过后 commit+push；不 bump 版本号。
