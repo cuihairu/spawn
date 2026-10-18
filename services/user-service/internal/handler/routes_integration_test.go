@@ -276,6 +276,18 @@ func TestRoutes_RegisterLoginFlow(t *testing.T) {
 		t.Fatalf("data = %v", data)
 	}
 
+	// 邮箱可见性：本人查询带邮箱；查他人 → 邮箱置空（防枚举）
+	if data := body["data"].(map[string]interface{}); data["email"] != "alice@example.com" {
+		t.Fatalf("own email = %v, want full email", data["email"])
+	}
+	status, body, _ = do(t, http.MethodGet, base+"/users/2", token, "")
+	if status != http.StatusOK || code(t, body) != 200 {
+		t.Fatalf("get user 2: status=%d body=%v", status, body)
+	}
+	if data := body["data"].(map[string]interface{}); data["username"] != "bob" || data["email"] != "" {
+		t.Fatalf("cross-user data = %v, want email empty", data)
+	}
+
 	// 不存在用户 → envelope 404
 	status, body, _ = do(t, http.MethodGet, base+"/users/999", token, "")
 	if status != http.StatusOK || code(t, body) != 404 {
@@ -323,8 +335,19 @@ func TestRoutes_UpdateUserInfo(t *testing.T) {
 		t.Fatalf("bad email: status=%d body=%v", status, body)
 	}
 
-	// 用户不存在 → envelope 404
+	// 越权：user 1 改 user 999 的资料 → 403（真实状态码）
 	status, body, _ = do(t, http.MethodPut, base+"/users/999", token,
+		`{"email":"a@b.com","nickname":"x"}`)
+	if status != http.StatusForbidden {
+		t.Fatalf("cross-user update: status=%d body=%v, want 403", status, body)
+	}
+
+	// 用户不存在（本人 token 打本人不存在的 id）→ envelope 404
+	ghostToken, err := svcCtx.Auth.GenerateToken(999, "ghost")
+	if err != nil {
+		t.Fatalf("generate ghost token: %v", err)
+	}
+	status, body, _ = do(t, http.MethodPut, base+"/users/999", ghostToken,
 		`{"email":"a@b.com","nickname":"x"}`)
 	if status != http.StatusOK || code(t, body) != 404 {
 		t.Fatalf("update 999: status=%d body=%v", status, body)

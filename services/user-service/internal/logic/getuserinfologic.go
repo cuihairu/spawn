@@ -53,10 +53,17 @@ func (l *GetUserInfoLogic) GetUserInfo(req *types.GetUserInfoRequest) (resp *typ
 		nickname = user.Username
 	}
 
+	// 邮箱仅本人可见：JWT 中间件注入的 user_id 与目标一致才回传，
+	// 防止已登录用户枚举他人邮箱。
+	var email string
+	if authId, _ := l.ctx.Value("user_id").(int64); authId == req.Id {
+		email = user.Email
+	}
+
 	userInfo := &types.UserInfoResponse{
 		Id:       user.Id,
 		Username: user.Username,
-		Email:    user.Email,
+		Email:    email,
 		Nickname: nickname,
 	}
 

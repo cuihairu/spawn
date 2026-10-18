@@ -320,3 +320,24 @@ func TestValidateEmail_TooLong(t *testing.T) {
 		t.Fatalf("oversized email err = %v", err)
 	}
 }
+
+// TestValidateJWTSecret 启动期守卫：空密钥/纯空白拒绝，任何非空密钥放行。
+func TestValidateJWTSecret(t *testing.T) {
+	for name, secret := range map[string]string{
+		"empty":       "",
+		"whitespace":  "   ",
+		"tab-newline": "\t\n",
+	} {
+		if err := ValidateJWTSecret(secret); err == nil {
+			t.Fatalf("%s secret must be rejected", name)
+		}
+	}
+	for name, secret := range map[string]string{
+		"configured": "real-production-secret",
+		"dev-demo":   WellKnownDevJWTSecret,
+	} {
+		if err := ValidateJWTSecret(secret); err != nil {
+			t.Fatalf("%s secret must pass, got %v", name, err)
+		}
+	}
+}

@@ -80,7 +80,7 @@ func TestUpdateUserInfoLogic_UpdateFailsReadOnly(t *testing.T) {
 		t.Fatalf("find alice: %v", err)
 	}
 
-	l := NewUpdateUserInfoLogic(context.Background(), svcCtx)
+	l := NewUpdateUserInfoLogic(authCtx(alice.Id), svcCtx)
 	resp, err := l.UpdateUserInfo(&types.UpdateUserInfoRequest{
 		Id:       alice.Id,
 		Email:    "alice@new.com",

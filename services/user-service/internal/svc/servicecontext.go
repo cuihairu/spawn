@@ -13,6 +13,7 @@ import (
 	"github.com/tappi/tappi/services/user-service/internal/integration"
 	"github.com/tappi/tappi/services/user-service/model"
 	"github.com/tappi/tappi/services/user-service/utils"
+	"github.com/zeromicro/go-zero/core/logx"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3"
@@ -27,6 +28,15 @@ type ServiceContext struct {
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
+	// JWT 密钥启动期守卫：空密钥拒绝启动；内置演示密钥大声告警
+	// （该密钥源码可见，可被用来伪造任意用户的令牌）。
+	if err := utils.ValidateJWTSecret(c.Auth.JWTSecret); err != nil {
+		panic(err.Error())
+	}
+	if c.Auth.JWTSecret == utils.WellKnownDevJWTSecret {
+		logx.Errorf("正在使用内置演示 JWT 密钥：除本地开发外必须以 JWT_SECRET 环境变量覆盖，否则任何人可伪造登录令牌")
+	}
+
 	// 检测数据库类型并连接
 	var db *sql.DB
 	var err error

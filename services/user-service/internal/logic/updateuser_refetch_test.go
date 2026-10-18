@@ -1,7 +1,6 @@
 package logic
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"testing"
@@ -42,7 +41,7 @@ func TestUpdateUserInfoLogic_RefetchFails500(t *testing.T) {
 	id := insertTestUser(t, svcCtx.DB, "alice", "alice@example.com", "hashed", "Alice")
 	svcCtx.UserModel = &refetchFaultStore{UserStore: svcCtx.UserModel, mode: "findErr"}
 
-	resp, err := NewUpdateUserInfoLogic(context.Background(), svcCtx).UpdateUserInfo(
+	resp, err := NewUpdateUserInfoLogic(authCtx(id), svcCtx).UpdateUserInfo(
 		&types.UpdateUserInfoRequest{Id: id, Email: "alice@new.com", Nickname: "Alicia"})
 	if err != nil {
 		t.Fatalf("expected envelope, got error %v", err)
@@ -59,7 +58,7 @@ func TestUpdateUserInfoLogic_NullNicknameFallback(t *testing.T) {
 	id := insertTestUser(t, svcCtx.DB, "alice", "alice@example.com", "hashed", "Alice")
 	svcCtx.UserModel = &refetchFaultStore{UserStore: svcCtx.UserModel, mode: "nullNickname"}
 
-	resp, err := NewUpdateUserInfoLogic(context.Background(), svcCtx).UpdateUserInfo(
+	resp, err := NewUpdateUserInfoLogic(authCtx(id), svcCtx).UpdateUserInfo(
 		&types.UpdateUserInfoRequest{Id: id, Email: "alice@new.com", Nickname: "Alicia"})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)

@@ -6,6 +6,7 @@ package logic
 import (
 	"context"
 
+	"github.com/tappi/tappi/services/user-service/internal/httperr"
 	"github.com/tappi/tappi/services/user-service/internal/svc"
 	"github.com/tappi/tappi/services/user-service/internal/types"
 	"github.com/tappi/tappi/services/user-service/model"
@@ -35,6 +36,12 @@ func (l *UpdateUserInfoLogic) UpdateUserInfo(req *types.UpdateUserInfoRequest) (
 			Code:    400,
 			Message: "无效的用户ID",
 		}, nil
+	}
+
+	// 越权防护：JWT 中间件注入的 user_id 与目标不一致 → 403（只能改自己的资料）。
+	if authId, _ := l.ctx.Value("user_id").(int64); authId != req.Id {
+		l.Errorw("越权更新用户资料被拒", logx.Field("auth_user_id", authId), logx.Field("target_user_id", req.Id))
+		return nil, httperr.Forbidden("不能修改其他用户的资料")
 	}
 
 	// 验证邮箱格式

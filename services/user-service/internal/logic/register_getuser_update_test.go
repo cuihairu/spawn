@@ -2,12 +2,14 @@ package logic
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/tappi/tappi/services/user-service/internal/httperr"
 	"github.com/tappi/tappi/services/user-service/internal/integration"
 	"github.com/tappi/tappi/services/user-service/internal/svc"
 	"github.com/tappi/tappi/services/user-service/internal/types"
@@ -31,6 +33,11 @@ func envelopeCode(t *testing.T, resp *types.ApiResponse) int {
 		t.Fatal("resp must not be nil")
 	}
 	return resp.Code
+}
+
+// authCtx 模拟 JWT 中间件注入后的请求上下文（user_id 键与 middleware/auth.go 一致）。
+func authCtx(userId int64) context.Context {
+	return context.WithValue(context.Background(), "user_id", userId)
 }
 
 // --- RegisterLogic ---
@@ -151,7 +158,7 @@ func TestRegisterLogicDuplicates(t *testing.T) {
 func TestGetUserInfoLogic(t *testing.T) {
 	svcCtx := newLogicSvcCtx(t)
 	id := insertTestUser(t, svcCtx.DB, "alice", "alice@example.com", "hashed", "Alice")
-	l := NewGetUserInfoLogic(context.Background(), svcCtx)
+	l := NewGetUserInfoLogic(authCtx(id), svcCtx)
 
 	// id <= 0 → 400
 	if resp, err := l.GetUserInfo(&types.GetUserInfoRequest{Id: 0}); err != nil {
@@ -203,12 +210,43 @@ func TestGetUserInfoLogicNicknameFallback(t *testing.T) {
 	}
 }
 
+// --- 用户信息接口越权与邮箱可见性 ---
+
+// TestGetUserInfoLogic_EmailVisibleOnlyToSelf 邮箱仅本人可见：
+// 本人查询回传邮箱；其他登录用户查询得到空邮箱（防枚举）。
+func TestGetUserInfoLogic_EmailVisibleOnlyToSelf(t *testing.T) {
+	svcCtx := newLogicSvcCtx(t)
+	id := insertTestUser(t, svcCtx.DB, "alice", "alice@example.com", "hashed", "Alice")
+
+	// 本人 → 邮箱回传
+	resp, err := NewGetUserInfoLogic(authCtx(id), svcCtx).GetUserInfo(&types.GetUserInfoRequest{Id: id})
+	if err != nil || envelopeCode(t, resp) != 200 {
+		t.Fatalf("self get: err=%v resp=%+v", err, resp)
+	}
+	if info := resp.Data.(*types.UserInfoResponse); info.Email != "alice@example.com" {
+		t.Fatalf("self email = %q, want full email", info.Email)
+	}
+
+	// 他人 → 邮箱置空，其余字段照常
+	resp, err = NewGetUserInfoLogic(authCtx(id+1), svcCtx).GetUserInfo(&types.GetUserInfoRequest{Id: id})
+	if err != nil || envelopeCode(t, resp) != 200 {
+		t.Fatalf("other get: err=%v resp=%+v", err, resp)
+	}
+	info := resp.Data.(*types.UserInfoResponse)
+	if info.Email != "" {
+		t.Fatalf("cross-user email = %q, want empty", info.Email)
+	}
+	if info.Username != "alice" || info.Nickname != "Alice" {
+		t.Fatalf("cross-user info = %+v, want public fields intact", info)
+	}
+}
+
 // --- UpdateUserInfoLogic ---
 
 func TestUpdateUserInfoLogic(t *testing.T) {
 	svcCtx := newLogicSvcCtx(t)
 	id := insertTestUser(t, svcCtx.DB, "alice", "alice@example.com", "hashed", "Alice")
-	l := NewUpdateUserInfoLogic(context.Background(), svcCtx)
+	l := NewUpdateUserInfoLogic(authCtx(id), svcCtx)
 
 	// id <= 0 → 400
 	if resp, err := l.UpdateUserInfo(&types.UpdateUserInfoRequest{Id: -1}); err != nil {
@@ -224,8 +262,9 @@ func TestUpdateUserInfoLogic(t *testing.T) {
 		t.Fatalf("bad email code = %d", code)
 	}
 
-	// 不存在 → 404
-	if resp, err := l.UpdateUserInfo(&types.UpdateUserInfoRequest{Id: 999, Email: "a@b.com", Nickname: "x"}); err != nil {
+	// 不存在 → 404（以目标 id 通过越权检查后触达 FindOne）
+	if resp, err := NewUpdateUserInfoLogic(authCtx(999), svcCtx).
+		UpdateUserInfo(&types.UpdateUserInfoRequest{Id: 999, Email: "a@b.com", Nickname: "x"}); err != nil {
 		t.Fatalf("err = %v", err)
 	} else if code := envelopeCode(t, resp); code != 404 {
 		t.Fatalf("missing code = %d", code)
@@ -248,6 +287,31 @@ func TestUpdateUserInfoLogic(t *testing.T) {
 	}
 	if info := resp.Data.(*types.UserInfoResponse); info.Nickname != "alice" {
 		t.Fatalf("nickname = %q, want username fallback", info.Nickname)
+	}
+}
+
+// TestUpdateUserInfoLogic_CrossUserForbidden 越权防护：登录用户 A 尝试改
+// B 的资料 → 403（httperr 真实状态码），且 B 的资料未被改动。
+func TestUpdateUserInfoLogic_CrossUserForbidden(t *testing.T) {
+	svcCtx := newLogicSvcCtx(t)
+	alice := insertTestUser(t, svcCtx.DB, "alice", "alice@example.com", "hashed", "Alice")
+	bob := insertTestUser(t, svcCtx.DB, "bob", "bob@example.com", "hashed", "Bob")
+
+	resp, err := NewUpdateUserInfoLogic(authCtx(alice), svcCtx).
+		UpdateUserInfo(&types.UpdateUserInfoRequest{Id: bob, Email: "hijacked@evil.com", Nickname: "Hijacked"})
+	if err == nil {
+		t.Fatal("cross-user update must fail")
+	}
+	var appErr *httperr.Error
+	if !errors.As(err, &appErr) || appErr.Status != http.StatusForbidden {
+		t.Fatalf("err = %v (%T), want 403 httperr", err, err)
+	}
+	if resp != nil {
+		t.Fatalf("resp = %+v, want nil on forbidden", resp)
+	}
+	user, err := svcCtx.UserModel.FindOne(bob)
+	if err != nil || user.Email != "bob@example.com" || user.Nickname.String != "Bob" {
+		t.Fatalf("bob mutated: %+v err=%v, want untouched", user, err)
 	}
 }
 
