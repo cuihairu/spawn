@@ -47,10 +47,12 @@ export async function ensureReminderPermission(): Promise<boolean> {
 
 // 开启每日提醒：排定每日 20:05 的本地通知，返回调度 id；权限被拒返回 null。
 export async function scheduleDailyCommunityReminder(): Promise<string | null> {
+  // Android 13+ 的权限弹窗要先存在至少一个通知渠道才会出现（见
+  // ensureAndroidChannel 注释），因此必须先建渠道再询问权限。
+  await ensureAndroidChannel();
   if (!(await ensureReminderPermission())) {
     return null;
   }
-  await ensureAndroidChannel();
   return Notifications.scheduleNotificationAsync({
     content: {
       title: 'spawn 社区有新动静',
