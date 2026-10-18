@@ -17,6 +17,10 @@ type ReportStore interface {
 	GetByID(id int64) (*types.Report, error)
 	ListByStatus(status string, limit, offset int64) ([]*types.Report, int64, error)
 	UpdateStatus(id int64, status string, handledBy int64) error
+	// UpdateStatusIfPending 条件更新：仅当举报仍处于 pending 时落新状态。
+	// 返回是否实际更新（false = 已被并发处置）；处置动作以此原子占位，
+	// 消除先查后改窗口内状态被并发覆盖的 TOCTOU。
+	UpdateStatusIfPending(id int64, status string, handledBy int64) (bool, error)
 }
 
 type ReportModel struct {
@@ -161,4 +165,16 @@ func (m *ReportModel) UpdateStatus(id int64, status string, handledBy int64) err
 		return ErrReportNotFound
 	}
 	return nil
+}
+
+func (m *ReportModel) UpdateStatusIfPending(id int64, status string, handledBy int64) (bool, error) {
+	res, err := m.db.Exec(
+		`UPDATE reports SET status = ?, handled_by = ?, handled_at = ? WHERE id = ? AND status = 'pending'`,
+		status, handledBy, time.Now().UTC().Format(time.RFC3339), id,
+	)
+	if err != nil {
+		return false, fmt.Errorf("更新举报状态失败: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }

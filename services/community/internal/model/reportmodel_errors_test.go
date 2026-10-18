@@ -100,3 +100,10 @@ func TestReportListByStatus_DirtyRowScanFails(t *testing.T) {
 		t.Fatal("ListByStatus with dirty row must error")
 	}
 }
+
+func TestReportUpdateStatusIfPending_ClosedDBErrors(t *testing.T) {
+	m := newClosedReportModel(t)
+	if ok, err := m.UpdateStatusIfPending(1, "resolved", 99); err == nil || ok {
+		t.Fatalf("UpdateStatusIfPending on closed db: ok=%v err=%v, want error", ok, err)
+	}
+}

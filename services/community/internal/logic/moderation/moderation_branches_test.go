@@ -9,15 +9,15 @@ import (
 	"github.com/tappi/tappi/services/community/internal/types"
 )
 
-// failingReportStore 仅 UpdateStatus 投毒的故障注入仓储（其余方法不可达，
-// 嵌入接口即可满足 ReportStore）。
+// failingReportStore 仅 UpdateStatusIfPending 投毒的故障注入仓储（其余方法
+// 不可达，嵌入接口即可满足 ReportStore）。
 type failingReportStore struct {
 	model.ReportStore
 	updateErr error
 }
 
-func (s failingReportStore) UpdateStatus(int64, string, int64) error {
-	return s.updateErr
+func (s failingReportStore) UpdateStatusIfPending(int64, string, int64) (bool, error) {
+	return false, s.updateErr
 }
 
 // --- ReportPost：守卫分支 ---
@@ -171,6 +171,82 @@ func TestListReports_ListByStatusErrorPropagates(t *testing.T) {
 	if _, err := NewListReportsLogic(authContext(1, "管理员"), s).
 		ListReports(&types.ListReportsReq{}); err == nil {
 		t.Fatal("list failure must propagate")
+	}
+}
+
+// stalePendingStore GetByID 永远返回 pending 快照，其余透传真实仓储：
+// 模拟「先查后改」窗口内举报已被并发处置、后到者读到旧状态的竞态。
+type stalePendingStore struct {
+	model.ReportStore
+}
+
+func (s stalePendingStore) GetByID(id int64) (*types.Report, error) {
+	r, err := s.ReportStore.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+	stale := *r
+	stale.Status = "pending"
+	return &stale, nil
+}
+
+// TestHandleReport_ConcurrentHandleLosesRace 原子占位：读到 pending 旧快照但
+// 条件更新竞争失败（已被并发处置）→ 409 Conflict，先到者的结果不被覆盖。
+func TestHandleReport_ConcurrentHandleLosesRace(t *testing.T) {
+	s := newTestServiceContext(t)
+	s.AdminSet = map[int64]bool{1: true}
+	postId := hostPost(t, s)
+	if err := s.ReportRepo.Create(&types.Report{
+		ReporterId: 8, TargetType: "post", TargetId: postId,
+		Reason: "违规", Status: "pending", CreatedAt: "2026-10-10T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("seed report: %v", err)
+	}
+
+	// 竞争对手抢先处置成功（真实仓储条件更新），再蒙上过期读快照
+	realRepo := s.ReportRepo
+	if ok, err := realRepo.UpdateStatusIfPending(1, "dismissed", 2); err != nil || !ok {
+		t.Fatalf("pre-claim: ok=%v err=%v, want claim success", ok, err)
+	}
+	s.ReportRepo = stalePendingStore{ReportStore: realRepo}
+
+	_, err := NewHandleReportLogic(authContext(1, "管理员"), s).
+		HandleReport(&types.HandleReportReq{Id: 1, Action: "resolve"})
+	requireHTTPStatus(t, err, 409)
+
+	// 先到者的处置结果不被覆盖（经真实仓储读取，绕开过期快照）
+	r, err := realRepo.GetByID(1)
+	if err != nil || r.Status != "dismissed" || r.HandledBy != 2 {
+		t.Fatalf("report after race = %+v err=%v, want dismissed by 2", r, err)
+	}
+}
+
+// TestReportStore_UpdateStatusIfPending_DoubleHandle 模型层双处置：
+// 第一次占位成功，第二次返回 false 且状态保留首次结果。
+func TestReportStore_UpdateStatusIfPending_DoubleHandle(t *testing.T) {
+	s := newTestServiceContext(t)
+	postId := hostPost(t, s)
+	if err := s.ReportRepo.Create(&types.Report{
+		ReporterId: 8, TargetType: "post", TargetId: postId,
+		Reason: "违规", Status: "pending", CreatedAt: "2026-10-10T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("seed report: %v", err)
+	}
+
+	ok, err := s.ReportRepo.UpdateStatusIfPending(1, "resolved", 1)
+	if err != nil || !ok {
+		t.Fatalf("first claim: ok=%v err=%v, want true", ok, err)
+	}
+	ok, err = s.ReportRepo.UpdateStatusIfPending(1, "dismissed", 2)
+	if err != nil {
+		t.Fatalf("second claim err: %v", err)
+	}
+	if ok {
+		t.Fatal("second claim must lose (pending-only guard)")
+	}
+	r, err := s.ReportRepo.GetByID(1)
+	if err != nil || r.Status != "resolved" || r.HandledBy != 1 {
+		t.Fatalf("report = %+v err=%v, want resolved by 1", r, err)
 	}
 }
 

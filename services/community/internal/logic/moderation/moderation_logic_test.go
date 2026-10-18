@@ -149,9 +149,9 @@ func TestHandleReport_Dismiss(t *testing.T) {
 		t.Fatalf("after dismiss: report=%+v err=%v", r, err)
 	}
 	if _, err := l.HandleReport(&types.HandleReportReq{Id: 1, Action: "resolve"}); err == nil {
-		t.Fatalf("re-handle should fail, want 400")
+		t.Fatalf("re-handle should fail, want 409")
 	} else {
-		requireHTTPStatus(t, err, 400)
+		requireHTTPStatus(t, err, 409)
 	}
 }
 

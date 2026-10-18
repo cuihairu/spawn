@@ -3,6 +3,7 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -22,6 +23,20 @@ type Auth struct {
 
 func NewAuth(jwtSecret string) *Auth {
 	return &Auth{jwtSecret: []byte(jwtSecret)}
+}
+
+// WellKnownDevJWTSecret 仓库内置演示密钥（etc/*.yaml 与 docker-compose 的
+// 默认值，源码可见）。用它签出的令牌可伪造任意用户：除本地开发外必须以
+// JWT_SECRET 环境变量覆盖，启动期命中此值会大声告警。
+const WellKnownDevJWTSecret = "tappi-user-service-jwt-secret-key-2024"
+
+// ValidateJWTSecret 启动期校验 JWT 密钥：空密钥（未配置）直接拒绝，
+// 避免以空密钥静默接受可被任何人复算的令牌。
+func ValidateJWTSecret(secret string) error {
+	if strings.TrimSpace(secret) == "" {
+		return errors.New("JWT 密钥未配置：校验令牌需要显式密钥（环境变量 JWT_SECRET）")
+	}
+	return nil
 }
 
 func (a *Auth) ParseToken(tokenString string) (*JWTClaims, error) {

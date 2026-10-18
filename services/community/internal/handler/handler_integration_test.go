@@ -435,15 +435,15 @@ func TestModerationReportFlow(t *testing.T) {
 		t.Fatalf("resolved post: expected 404, got %d body=%s", getRR.Code, getRR.Body.String())
 	}
 
-	// 二次处置 → 400
+	// 二次处置 → 409（举报已被处置，条件更新占位竞争失败同款语义）
 	rehandleReq := httptest.NewRequest(http.MethodPost, "/api/v1/moderation/reports/"+reportId+"/handle", bytes.NewBufferString(`{"action":"dismiss"}`))
 	rehandleReq.Header.Set("Content-Type", "application/json")
 	rehandleReq = pathvar.WithVars(rehandleReq, map[string]string{"id": reportId})
 	rehandleReq.Header.Set("Authorization", "Bearer "+adminToken)
 	rehandleRR := httptest.NewRecorder()
 	handle(rehandleRR, rehandleReq)
-	if rehandleRR.Code != http.StatusBadRequest {
-		t.Fatalf("re-handle: expected 400, got %d body=%s", rehandleRR.Code, rehandleRR.Body.String())
+	if rehandleRR.Code != http.StatusConflict {
+		t.Fatalf("re-handle: expected 409, got %d body=%s", rehandleRR.Code, rehandleRR.Body.String())
 	}
 
 	// 举报 Parse 失败分支 → 400 信封

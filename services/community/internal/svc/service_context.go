@@ -16,6 +16,7 @@ import (
 	"github.com/tappi/tappi/services/community/internal/moderation"
 	"github.com/tappi/tappi/services/community/internal/realtime"
 	"github.com/tappi/tappi/services/community/utils"
+	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/rest"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -50,6 +51,20 @@ func (svcCtx *ServiceContext) IsAdmin(userId int64) bool {
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
+	// JWT 密钥启动期守卫：空密钥拒绝启动；内置演示密钥大声告警
+	// （该密钥源码可见，用它签出的令牌可伪造任意用户）。
+	if err := utils.ValidateJWTSecret(c.Auth.JWTSecret); err != nil {
+		panic(err.Error())
+	}
+	if c.Auth.JWTSecret == utils.WellKnownDevJWTSecret {
+		logx.Errorf("正在使用内置演示 JWT 密钥：除本地开发外必须以 JWT_SECRET 环境变量覆盖，否则任何人可伪造登录令牌")
+	}
+
+	// 审核管理员配置启动期校验（演示默认 [1] 在 MySQL 生产部署下拒绝启动）。
+	if err := validateModerationAdmins(c.MySQL.DataSource, c.Moderation.AdminUserIds); err != nil {
+		panic(err.Error())
+	}
+
 	jwtTool := utils.NewAuth(c.Auth.JWTSecret)
 
 	// DSN 含 file: 或 .db → SQLite（开发/测试），否则 MySQL（与
@@ -152,4 +167,27 @@ func ensureSQLiteDir(dsn string) string {
 	}
 	_ = os.MkdirAll(filepath.Dir(path), 0o755)
 	return dsn
+}
+
+// validateModerationAdmins 审核管理员配置启动期校验：
+//   - MySQL（生产姿态）：演示默认 [1] 意味着首位注册者即审核管理员，
+//     拒绝启动；空名单视为显式停用审核处置，仅告警；
+//   - SQLite（开发/测试）：宽松放行，命中演示默认时告警。
+func validateModerationAdmins(dataSource string, adminIds []int64) error {
+	isDemoDefault := len(adminIds) == 1 && adminIds[0] == 1
+	isSQLite := strings.Contains(dataSource, "file:") || strings.Contains(dataSource, ".db")
+
+	if isSQLite {
+		if isDemoDefault {
+			logx.Errorf("Moderation.AdminUserIds 为演示默认 [1]（首位注册者即审核管理员）：仅限本地开发")
+		}
+		return nil
+	}
+	if isDemoDefault {
+		return fmt.Errorf("Moderation.AdminUserIds 为演示默认 [1]（首位注册者即审核管理员），MySQL 部署必须显式配置真实管理员名单")
+	}
+	if len(adminIds) == 0 {
+		logx.Errorf("Moderation.AdminUserIds 为空：无人可查看举报队列与处置（审核处置停用）")
+	}
+	return nil
 }

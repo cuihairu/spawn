@@ -89,3 +89,11 @@ func TestReportUpdateStatus_Missing(t *testing.T) {
 		t.Fatalf("get missing: err=%v, want ErrReportNotFound", err)
 	}
 }
+
+// TestReportUpdateStatusIfPending_Missing 目标不存在：条件更新落空 → ok=false 且无错误。
+func TestReportUpdateStatusIfPending_Missing(t *testing.T) {
+	m := newReportTestDB(t)
+	if ok, err := m.UpdateStatusIfPending(999, "resolved", 1); err != nil || ok {
+		t.Fatalf("pending missing: ok=%v err=%v, want false/nil", ok, err)
+	}
+}

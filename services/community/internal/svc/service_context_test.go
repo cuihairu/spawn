@@ -299,3 +299,63 @@ func TestNewServiceContext_ModerationAdminSet(t *testing.T) {
 		t.Fatalf("AdminSet size = %d, want 2", len(ctx.AdminSet))
 	}
 }
+
+// TestValidateModerationAdmins 审核管理员配置守卫：MySQL 拒绝演示默认 [1]
+// （首位注册者即管理员），SQLite 放行仅靠启动日志告警。
+func TestValidateModerationAdmins(t *testing.T) {
+	cases := []struct {
+		name    string
+		dsn     string
+		admins  []int64
+		wantErr bool
+	}{
+		{"mysql demo default refused", "user:pw@tcp(localhost:3306)/community", []int64{1}, true},
+		{"mysql empty list allowed", "user:pw@tcp(localhost:3306)/community", nil, false},
+		{"mysql real list allowed", "user:pw@tcp(localhost:3306)/community", []int64{7, 9}, false},
+		{"sqlite demo default allowed", "file:data/community.db", []int64{1}, false},
+		{"sqlite empty allowed", ":memory:", nil, false},
+		{"sqlite real list allowed", "file:data/community.db", []int64{7}, false},
+	}
+	for _, tc := range cases {
+		err := validateModerationAdmins(tc.dsn, tc.admins)
+		if tc.wantErr && err == nil {
+			t.Fatalf("%s: expected refusal, got nil", tc.name)
+		}
+		if !tc.wantErr && err != nil {
+			t.Fatalf("%s: expected pass, got %v", tc.name, err)
+		}
+	}
+}
+
+// TestNewServiceContext_MySQLDemoAdminsPanic MySQL 姿态 + 演示默认 [1] →
+// 启动 panic（生产强制显式配置管理员名单）。
+func TestNewServiceContext_MySQLDemoAdminsPanic(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("demo admin list on MySQL must panic at startup")
+		}
+		if msg, ok := r.(string); !ok || !strings.Contains(msg, "演示默认") {
+			t.Fatalf("panic = %v, want demo-default admin message", r)
+		}
+	}()
+
+	var c config.Config
+	c.MySQL.DataSource = "user:pw@tcp(localhost:3306)/community"
+	c.Auth.JWTSecret = "svc-test-secret"
+	c.Moderation.AdminUserIds = []int64{1}
+	NewServiceContext(c)
+}
+
+// TestNewServiceContext_EmptyJWTSecretPanics 空 JWT 密钥 → 启动拒绝。
+func TestNewServiceContext_EmptyJWTSecretPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("empty jwt secret must panic at startup")
+		}
+	}()
+
+	c := baseConfig(t)
+	c.Auth.JWTSecret = "  "
+	NewServiceContext(c)
+}
