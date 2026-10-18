@@ -43,16 +43,17 @@ func (l *MarkDMThreadReadLogic) MarkDMThreadRead(req *types.DMThreadReadReq) (re
 		return nil, err
 	}
 
-	var remaining int64
-	if n, err := l.svcCtx.MessageRepo.CountUnread(userId); err == nil {
-		remaining = n
-		l.svcCtx.Realtime.Publish("message.read", []int64{userId}, map[string]any{
-			"unread_count": remaining,
-			"peer_id":      req.PeerId,
-		})
-	} else {
+	// 未读统计失败必须显式报错：静默回落 0 会让多端徽标被清零。
+	remaining, err := l.svcCtx.MessageRepo.CountUnread(userId)
+	if err != nil {
 		l.Errorf("count unread after mark dm read: %v", err)
+		return nil, httperr.Internal("count unread failed")
 	}
+
+	l.svcCtx.Realtime.Publish("message.read", []int64{userId}, map[string]any{
+		"unread_count": remaining,
+		"peer_id":      req.PeerId,
+	})
 
 	return &types.UnreadCountResp{Count: remaining}, nil
 }
