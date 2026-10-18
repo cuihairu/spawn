@@ -1438,7 +1438,10 @@ CD（部署流水线）暂未配置：当前无生产部署目标（K8s 集群/�
 
 ## 待拍板材料（2026-10-05）
 
-以下两项只备料未动手：未合并 PR、未动 dependabot 分支、未开工上传后端。
+> 时点快照，当时状态「只备料未动手」。两项其后均已结清：上传后端
+> 2026-10-08 拍板走方案 A 并落地（见下文「状态」「落地记录」）；
+> dependabot PR #2 同日按方案 A 合并、后续批次方案 D 代做（见
+> 「结局」补记）。
 
 ### 1. 图片上传后端存储选型
 
@@ -1604,8 +1607,9 @@ PR 在 git 层 MERGEABLE、与 main 无冲突，红的只有锁文件同步这�
    （曾修复 content-service 客户端路径不一致问题，见 ENHANCEMENT.md）。
 4. ~~集成监控和日志收集~~ 已完成（见上文「监控与指标（Prometheus）→
    设计决策：监控集成与日志收集」）：指标采集面（Prometheus 静态抓取
-   `deploy/prometheus/prometheus.yml` 六 target，根 compose 补发布
-   /metrics 端口 9091–9095）、日志结构化（六服务 `etc/*.yaml` 增 logx
+   `deploy/prometheus/prometheus.yml` 七 target（9091–9097），根 compose
+   发布 /metrics 端口 9091–9095、9097，9096 为 user-service-rpc 内部端口
+   不在根 compose）、日志结构化（八服务 `etc/*.yaml` 增 logx
    `Log.Encoding: json` + ServiceName）、集中收集与可视化
    （`deploy/docker-compose.monitoring.yaml`：Promtail 抓容器 JSON 日志
    → Loki → Grafana 统一查指标与日志，数据源 provisioning 免配置）。

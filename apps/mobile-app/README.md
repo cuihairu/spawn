@@ -16,7 +16,9 @@ Expo / React Native 客户端（Expo 57 · React Native 0.86 · expo-router 文�
 
 - `EXPO_PUBLIC_API_URL`：api-gateway 地址；不设则开发期默认 `http://<devHost>:8800`
   （见 `src/api/client.ts`）。生产指向网关域名。
-- 实时通道：默认走网关 `/ws` 隧道（`ws://localhost:8800`）。
+- 实时通道：当前未接 WS——通知未读数走 30s 轮询（`src/app/(tabs)/community.tsx`）
+  + 本地通知（`src/lib/notifications.ts`）；接入网关 `/ws` 隧道列为规划
+  （web 端已接，见 `apps/web-client/src/lib/realtime.ts`）。
 
 ## 常用脚本
 

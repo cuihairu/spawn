@@ -20,6 +20,7 @@ VITE_USER_SERVICE_URL=http://localhost:8888
 VITE_GAME_SERVICE_URL=http://localhost:8890
 VITE_CONTENT_SERVICE_URL=http://localhost:8891
 VITE_COMMUNITY_SERVICE_URL=http://localhost:8892
+VITE_REALTIME_HUB_URL=ws://localhost:8800  # 通知/私信实时帧，缺省即网关 /ws 隧道
 ```
 
 页面路由：`/`（首页）、`/discover`（发现，home/feed 聚合）、`/games`、`/games/:id`、

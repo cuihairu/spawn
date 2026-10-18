@@ -170,13 +170,22 @@ Web Client 集成了以下后端服务：
 ### Game Catalog API
 - `GET /games/featured` - 获取精选游戏
 
+### Community API（经网关）
+- 帖子/话题/关注/点赞/评论/通知/私信等 `/api/v1/*` 端点
+  （见 `services/community/README.md`）
+
+### 其他（经网关）
+- `GET /api/v1/stats/*` - 战绩数据（data-panel）
+- `GET /home/feed` - 首页聚合流
+- `POST /upload` - 图片上传（网关落盘，返回 `/uploads/<hash>.<ext>` URL）
+
 ## 响应式设计
 
 响应式布局：窄屏单列，宽屏网格，两端共用同一套暗色主题。
 
 ## 注意事项
 
-1. **需要后端服务运行**：确保 user-service、game-catalog、content-service 与 community（社区页面）都在运行
+1. **需要后端服务运行**：确保 user-service、game-catalog、content-service、community（社区页面）、api-gateway（`/stats`、`/home/feed`、`/upload` 聚合入口）与 data-panel（战绩）都在运行；实时功能另需 realtime-hub（`VITE_REALTIME_HUB_URL`，缺省 `ws://localhost:8800`）
 2. **登录状态持久化**：登录状态会写入 LocalStorage，刷新页面后仍可继续使用
 3. **草稿功能**：草稿保存后不会在攻略列表中显示，需要发布后才可见
 4. **权限控制**：只有作者可以编辑和删除自己的攻略和评论

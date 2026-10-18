@@ -15,4 +15,5 @@
 
 > 上表「状态」列区分已落地与规划：「规划（未落地）」 服务目录暂不存在，
 > 职责描述为设计目标，非现状。
-> 建议统一 observability、配置管理、服务模板（如 NestJS/FastAPI/Go kit），并在 packages/data-models 中维护契约。
+> 建议统一 observability、配置管理、服务模板（如 NestJS/FastAPI/Go kit）；
+> packages/data-models 目前为规划条目（packages/ 仅 config 已落地，见 packages/README.md）。

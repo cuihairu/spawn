@@ -12,7 +12,7 @@ Community Service 是 spawn 社区平台的核心服务之一，提供帖子发�
 3. 配置文件创建
 4. Handler 和 Routes 生成
 5. JWT 认证中间件（受保护接口需要 `Authorization: Bearer <token>`）
-6. SQLite/MySQL 双驱动仓储层（Post/Topic/Follow/PostLike，表结构见 `internal/model`；空表启动自动写入内嵌种子）
+6. SQLite/MySQL 双驱动仓储层（Post/Topic/Follow/PostLike/Comment/Notification/Report/DirectMessage，表结构见 `internal/model`；空表启动自动写入内嵌种子）
 7. 进程内 TTL+LRU 读缓存（话题/帖子单查；关注/点赞关系为写多读少不缓存）
 8. 统一错误码与错误响应结构（`code` + `message`）
 9. 业务逻辑层（发帖/改帖/删帖/列表/热门、话题创建/关注/取关/关注列表、用户关注/取关、关注流、我的点赞）
@@ -312,7 +312,7 @@ ENTRYPOINT ["/usr/local/bin/community","-f","etc/community-api.yaml"]
 ## 相关文档
 
 - [API 详细文档](./community.api)
-- [开发指南（六服务总览）](../../docs/development-guide.zh.md)
+- [开发指南（八服务总览）](../../docs/development-guide.zh.md)
 - [Content Service 文档](../content-service/README.md)
 - [项目整体架构](../../docs/architecture/overview.zh.md)
 

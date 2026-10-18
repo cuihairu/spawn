@@ -26,10 +26,16 @@
       全修（以码对文档）；表三 6 项只评估分期留拍板。user-service 9 包 / community
       全包 go test -race 绿，mobile lint+tsc+expo export 绿，docs build 绿；
       版本号未动、未打 tag。
-- [ ] 文档时效性清理（2026-10-18 用户令：很多文档已过时）：
-      在本轮审核整改完成之后执行，避免与整改冲突。
-      1) 通读 README / docs，找出与当前代码不符的描述（能力、配置项、命令、路径、版本）
-      2) 以代码为准修正文档；**禁止为对齐文档去改业务代码**
-      3) 已废弃但仍留在文档里的功能，明确标注「已移除」或删除，不要留成"看起来还能用"
-      4) 命令行示例逐条跑一遍，跑不通的改掉或删掉
-      5) 构建通过后 commit+push，回报改动文件清单
+- [x] 文档时效性清理（2026-10-18 用户令：很多文档已过时）：
+      全仓 50 份 .md 三路并行清查（2 路 API 配额中断由本人吸收），13 处失实
+      全部以代码为准修正，零业务代码改动：mobile README 撤「走网关 /ws」假声明
+      （实际 30s 轮询 + 本地通知，src/lib 无 WS 代码）、community README 仓储层
+      补四表 + 六服务→八服务、content-service metrics 前缀更正
+      `content_service_gamecatalog_client_*`（client/metrics.go:35）与目录树根
+      content-service/、web GUIDE 补 community/stats/home/feed/upload 集成面与
+      网关/data-panel/realtime-hub 前置、web README env 补 VITE_REALTIME_HUB_URL
+      （src/lib/realtime.ts:5-6）、COMPLETION_SUMMARY「至今仍缺」标题与 2026-10-10
+      已落地更新和解、services/README data-models 标规划、realtime-hub README
+      链接文字对齐 .zh.md、dev-guide 七 target（9091–9097，9096=rpc 不在根
+      compose）+ 待拍板材料标注已结清。docs build 绿（vitepress v1.6.4，
+      build complete in 5.12s）。

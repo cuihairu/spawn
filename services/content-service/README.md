@@ -27,12 +27,12 @@
 - **数据存储**: SQLite/MySQL 双驱动（默认本地 SQLite 文件，`DATASOURCE` 注入 MySQL 连接串），进程内 TTL+LRU 读缓存
 - **端口**: 8891
 - **跨服务调用**: `client/` 内置熔断（连续失败 3 次开启、冷却 5s、半开探测恢复）与指数退避重试（3 次尝试、100ms→1s），失败时降级使用 gameId 作标题
-- **监控**: `/metrics` Prometheus 端点（端口 9093，见 `etc/content-api.yaml`），含 go-zero 内置请求指标与 `content_game_catalog_client_*` 跨服务调用指标（调用量/错误分类/耗时/熔断状态/熔断切换次数；重试仅体现为 `retry_exhausted` 状态标签，无独立重试计数）
+- **监控**: `/metrics` Prometheus 端点（端口 9093，见 `etc/content-api.yaml`），含 go-zero 内置请求指标与 `content_service_gamecatalog_client_*` 跨服务调用指标（调用量/错误分类/耗时/熔断状态/熔断切换次数；重试仅体现为 `retry_exhausted` 状态标签，无独立重试计数）
 
 ## 目录结构
 
 ```
-content/
+content-service/
 ├── content.go              # 主入口文件
 ├── go.mod                  # Go模块定义
 ├── client/                 # 跨服务调用（熔断/重试/降级）
