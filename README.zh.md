@@ -73,7 +73,7 @@
 
 - `apps/`: 聚焦体验层。web-client 负责攻略/社区主站；mobile-app 聚合战绩、攻略、社区与通知；mini-program 侧重轻量浏览与小游戏联机；admin-console 提供内容和运营配置。
 - `services/`: 领域化微服务。user-service 管账号与社交关系；game-catalog 维护游戏库、榜单及推荐；content-service + community 负责攻略、帖子与互动；matchmaking + realtime-hub 承担实时房间、语音、推送；data-panel 汇聚战绩与版本数据；crawler-jobs 定时抓取外部信息。
-- `packages/`: 统一设计系统与类型契约。ui-kit 输出组件、主题；data-models 存放 protobuf/graphql schema 及 TypeScript/Go SDK；shared-utils 提供跨端工具；config 集中构建、Lint、环境模板。
+- `packages/`: 统一设计系统与类型契约。`config` 已落地（pnpm workspace、tsconfig、eslint、prettier、commitlint、环境变量模板）；ui-kit / data-models / shared-utils 为规划条目，目录尚未创建；packages 统一发布 version 供 apps 和 services 复用。
 - `platform/`: 与基础设施相关的 IaC、CI/CD、可观测性配置，支持自动化部署、灰度、告警。
 - `tools/`: CLI、脚本、代码生成器、数据迁移任务等辅助开发效率。
 - `docs/`: 存放产品策划、技术方案、API、运营手册；搭配文档站或知识库。

@@ -1283,7 +1283,7 @@ Prometheus:
 
 **交付物**：
 
-- `deploy/prometheus/prometheus.yml` —— 静态抓取六服务 `/metrics`；
+- `deploy/prometheus/prometheus.yml` —— 静态抓取七服务 `/metrics`；
   目标经 `host.docker.internal`（`extra_hosts: host-gateway`）指向宿主
   已发布端口，宿主机裸跑与根 compose 两种运行方式同样可达
   （user-service-rpc 不在根 compose——依赖 etcd 按设计独立内网部署，

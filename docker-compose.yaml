@@ -11,7 +11,9 @@ services:
       COMMUNITY_SERVICE_URL: http://community:8892
       DATA_PANEL_URL: http://data-panel:8896
       # 与 user-service 的 Auth.JWTSecret 同值：上传入口网关本地校验 JWT。
-      JWT_SECRET: tappi-user-service-jwt-secret-key-2024
+      # 默认值为仓库内置演示密钥（服务启动期会告警）；生产必须以宿主环境
+      # 变量 JWT_SECRET / REALTIME_INTERNAL_TOKEN 覆盖。
+      JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
       # realtime-hub WS 隧道：/ws 原始透传（未配置则网关不注册 /ws）。
       REALTIME_HUB_URL: http://realtime-hub:8893
     volumes:
@@ -40,7 +42,7 @@ services:
     build:
       context: ./services/content-service
     environment:
-      JWT_SECRET: tappi-user-service-jwt-secret-key-2024
+      JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
       GAMECATALOG_BASE_URL: http://game-catalog:8890
       GAMECATALOG_TIMEOUT: "5000"
     ports:
@@ -55,7 +57,7 @@ services:
       DATASOURCE: file:/app/data/users.db
       GAMECATALOG_BASE_URL: http://game-catalog:8890
       GAMECATALOG_TIMEOUT: "5000"
-      JWT_SECRET: tappi-user-service-jwt-secret-key-2024
+      JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
     depends_on:
       - game-catalog
     ports:
@@ -67,10 +69,10 @@ services:
     build:
       context: ./services/community
     environment:
-      JWT_SECRET: tappi-user-service-jwt-secret-key-2024
+      JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
       # realtime-hub 未就绪时 community 启动不受影响（发布失败仅记日志）。
       REALTIME_HUB_URL: http://realtime-hub:8893
-      REALTIME_INTERNAL_TOKEN: tappi-realtime-internal-token-2024
+      REALTIME_INTERNAL_TOKEN: "${REALTIME_INTERNAL_TOKEN:-tappi-realtime-internal-token-2024}"
     depends_on:
       - realtime-hub
     ports:
@@ -83,7 +85,7 @@ services:
       context: ./services/data-panel
     environment:
       # 与 user-service 的 Auth.JWTSecret 同值：战绩摄入 Bearer 校验。
-      JWT_SECRET: tappi-user-service-jwt-secret-key-2024
+      JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
     ports:
       - "8896:8896"
       - "9097:9097" # /metrics（deploy/ 观测栈抓取）
@@ -94,9 +96,9 @@ services:
       context: ./services/realtime-hub
     environment:
       # 与 user-service 的 Auth.JWTSecret 同值：/ws 握手 JWT 校验。
-      JWT_SECRET: tappi-user-service-jwt-secret-key-2024
+      JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
       # 服务间发布令牌（community 等调用方携带 X-Internal-Token）。
-      REALTIME_INTERNAL_TOKEN: tappi-realtime-internal-token-2024
+      REALTIME_INTERNAL_TOKEN: "${REALTIME_INTERNAL_TOKEN:-tappi-realtime-internal-token-2024}"
     ports:
       - "8893:8893"
     restart: unless-stopped

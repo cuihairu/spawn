@@ -1,8 +1,9 @@
 # realtime-hub profile (approved 2026-10-11)
 
 
-> Status: M1 kicked off. Decision record in `docs/backlog.md` to-do #1;
-> architectural position in `docs/architecture/overview.md`.
+> Status: M1–M3 landed (2026-10-12, see M3 section below). Decision record
+> in `docs/backlog.md` to-do #1; architectural position in
+> `docs/architecture/overview.md`.
 
 ## Goal
 

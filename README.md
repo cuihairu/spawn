@@ -76,7 +76,7 @@ Ports and metric details are documented in the "Monitoring & Metrics (Prometheus
 
 - `apps/`: experience layer. web-client runs the guides/community main site; mobile-app aggregates match data, guides, community, and notifications; mini-program focuses on lightweight browsing and mini-game multiplayer; admin-console provides content and operations configuration.
 - `services/`: domain microservices. user-service manages accounts and social graph; game-catalog maintains the game library, leaderboards, and recommendations; content-service + community handle guides, posts, and interactions; matchmaking + realtime-hub cover realtime rooms, voice, and push; data-panel aggregates match and patch data; crawler-jobs periodically fetches external information.
-- `packages/`: unified design system and type contracts. ui-kit ships components and themes; data-models holds protobuf/graphql schemas and TypeScript/Go SDKs; shared-utils provides cross-platform utilities; config centralizes build, lint, and env templates.
+- `packages/`: unified design system and type contracts. config has landed (pnpm workspace, tsconfig, eslint, prettier, commitlint, env templates); ui-kit / data-models / shared-utils are planned entries, not yet created; packages ship a single version for apps and services to reuse.
 - `platform/`: infrastructure-related IaC, CI/CD, and observability config supporting automated deploys, canary releases, and alerting.
 - `tools/`: CLIs, scripts, code generators, data migration jobs, and other developer-efficiency helpers.
 - `docs/`: product plans, technical designs, API docs, ops manuals; paired with a docs site or knowledge base.

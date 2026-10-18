@@ -1,6 +1,6 @@
 # realtime-hub 简档（2026-10-11 立项拍板）
 
-> 状态：M1 开工。拍板记录见 `docs/backlog.zh.md` 待办 #1；架构定位见 `docs/architecture/overview.zh.md`。
+> 状态：M1–M3 已落地（2026-10-12，见下方 M3 小节）。拍板记录见 `docs/backlog.zh.md` 待办 #1；架构定位见 `docs/architecture/overview.zh.md`。
 
 ## 目标
 
