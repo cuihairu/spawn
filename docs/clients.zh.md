@@ -49,6 +49,6 @@ spawn 的客户端与服务端现状一览。规划中的端只列状态，不�
 | user-service-rpc | `services/user-service-rpc` | 用户域 gRPC 内部接口（zrpc + etcd） | 复用 user-service 存储 |
 | realtime-hub | `services/realtime-hub` | WebSocket 推送/在线状态/语音信令（8893，无 /metrics） | —（内存注册表，可选 Redis pub/sub 中继） |
 
-端口表在[快速上手](/zh/guide/getting-started)，服务边界与认证数据流的现状记录在[现状拓扑](/zh/architecture/topology)。
+端口表在快速上手，服务边界与认证数据流的现状记录在现状拓扑。
 
 规划中的服务：matchmaking（组队匹配）、crawler-jobs（外部信息抓取）尚未创建（realtime-hub 已于 2026-10-11 落地，见上表），见仓库 README 的目录规划。

@@ -75,6 +75,6 @@ mobile-app 基于 Expo，`expo start` 起开发服务后按提示在模拟器或
 
 ## 延伸阅读
 
-- [架构总览](/zh/architecture/overview)，愿景与服务边界。
-- [现状拓扑](/zh/architecture/topology)，端口、路由面、认证数据流的现状。
-- [开发指南](/zh/development-guide)，环境到部署的完整手册。
+- 架构总览，愿景与服务边界。
+- 现状拓扑，端口、路由面、认证数据流的现状。
+- 开发指南，环境到部署的完整手册。
