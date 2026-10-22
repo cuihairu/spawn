@@ -185,7 +185,9 @@ game-catalog、content-service、community、data-panel）数据面均跑 SQLite
 ```bash
 # 启动全部服务（需 Docker）
 
-<p align="center">[![Status](https://img.shields.io/badge/status-in%20development-orange)](https://github.com/cuihairu/spawn/releases)</p>
+<p align="center">
+<a href="https://github.com/cuihairu/spawn/releases"><img alt="Status" src="https://img.shields.io/badge/status-in%20development-orange"></a>
+</p>
 docker compose up --build
 
 # 单独运行服务
