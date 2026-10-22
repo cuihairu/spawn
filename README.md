@@ -199,7 +199,7 @@ is a gRPC service without a storage layer, and realtime-hub is stateless (in-mem
 ```bash
 # Start all services (Docker required)
 
-[![Status](https://img.shields.io/badge/status-in%20development-orange)](https://github.com/cuihairu/spawn/releases)
+<p align="center">[![Status](https://img.shields.io/badge/status-in%20development-orange)](https://github.com/cuihairu/spawn/releases)</p>
 docker compose up --build
 
 # Run a single service
