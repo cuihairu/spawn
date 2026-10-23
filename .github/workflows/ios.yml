@@ -15,7 +15,7 @@ concurrency:
 jobs:
   build:
     name: expo prebuild + iphonesimulator build
-    runs-on: macos-latest
+    runs-on: ${{ vars.CI_RUNNER || 'macos-latest' }}
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7.0.1
