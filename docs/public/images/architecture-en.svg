@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1140" viewBox="0 0 1280 1140" role="img" aria-labelledby="title desc" xml:lang="en">
+<title id="title">spawn · Game Community Platform</title>
+<desc id="desc">Seven go-zero microservices + WebSocket realtime hub · React web + Expo mobile · SQLite/MySQL dual driver · one monorepo</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="context-stroke"/></marker></defs>
+<style>text{font-family:Arial,'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#172b4d}.title{font-size:30px;font-weight:700}.name{font-size:22px;font-weight:700}.body{font-size:16px;fill:#435570}.small{font-size:14px;fill:#52647b}.label{font-size:14px;fill:#435570;paint-order:stroke;stroke:#f8fafc;stroke-width:5px;stroke-linejoin:round}.edge{fill:none;stroke-linejoin:round}.control{stroke-dasharray:7 5}</style>
+<rect width="1280" height="1140" rx="20" fill="#f8fafc"/>
+<text x="40" y="48" class="title" text-anchor="start">spawn · Game Community Platform</text>
+<text x="40" y="80" class="body" text-anchor="start">Seven go-zero microservices + WebSocket realtime hub · React web + Expo mobile · SQLite/MySQL dual driver · one monorepo</text>
+<path d="M260 220 V250 H340 V280" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow)"/>
+<text x="268" y="262" class="label" text-anchor="start">HTTPS</text>
+<path d="M1020 220 V245 H580 V280" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow)"/>
+<text x="790" y="238" class="label" text-anchor="start">HTTPS</text>
+<path d="M580 345 H700" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow)"/>
+<text x="640" y="338" class="label" text-anchor="middle">WSS /ws</text>
+<path d="M340 410 V455" class="edge" style="stroke:#2563eb;stroke-width:2"/>
+<path d="M960 410 V455" class="edge control" style="stroke:#64748b;stroke-width:2"/>
+<path d="M60 455 H1204" class="edge" style="stroke:#2563eb;stroke-width:2"/>
+<path d="M168 455 V500" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow)"/>
+<path d="M400 455 V500" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow)"/>
+<path d="M632 455 V500" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow)"/>
+<path d="M864 455 V500" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow)"/>
+<path d="M1096 455 V500" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow)"/>
+<text x="360" y="443" class="label" text-anchor="start">5 proxy routes · JWT passthrough</text>
+<text x="700" y="443" class="label" text-anchor="start" style="fill:#64748b">publish fanout</text>
+<path d="M680 670 V870" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow)"/>
+<text x="690" y="770" class="label" text-anchor="start">all services</text>
+<path d="M960 410 V430 H1264 V915 H1220" class="edge control" style="stroke:#64748b;stroke-width:2" marker-end="url(#arrow)"/>
+<text x="1244" y="650" class="label" text-anchor="end" style="fill:#64748b">relay</text>
+<path d="M168 670 V730" class="edge control" style="stroke:#64748b;stroke-width:2" marker-end="url(#arrow)"/>
+<text x="182" y="712" class="label" text-anchor="start" style="fill:#64748b">gRPC</text>
+<path d="M340 960 V1010" class="edge control" style="stroke:#64748b;stroke-width:2" marker-end="url(#arrow)"/>
+<text x="352" y="998" class="label" text-anchor="start" style="fill:#64748b">metrics</text>
+<g><rect x="60" y="120" width="400" height="100" rx="14" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+<text x="78" y="154" class="name" text-anchor="start">Web Client</text>
+<text x="78" y="186" class="body" text-anchor="start">React 19 + Vite</text>
+</g>
+<g><rect x="820" y="120" width="400" height="100" rx="14" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+<text x="838" y="154" class="name" text-anchor="start">Mobile App</text>
+<text x="838" y="186" class="body" text-anchor="start">Expo · iOS / Android</text>
+</g>
+<g><rect x="60" y="280" width="520" height="130" rx="14" fill="#eef2ff" stroke="#a5b4fc" stroke-width="1.5"/>
+<text x="78" y="314" class="name" text-anchor="start">api-gateway</text>
+<text x="78" y="346" class="body" text-anchor="start">BFF aggregation · 5 proxy routes</text>
+<text x="78" y="373" class="body" text-anchor="start">auth passthrough · JWT issued by user-service</text>
+</g>
+<g><rect x="700" y="280" width="520" height="130" rx="14" fill="#eef2ff" stroke="#a5b4fc" stroke-width="1.5"/>
+<text x="718" y="314" class="name" text-anchor="start">realtime-hub</text>
+<text x="718" y="346" class="body" text-anchor="start">WebSocket /ws tunnel · publish fanout</text>
+<text x="718" y="373" class="body" text-anchor="start">presence · voice signaling · Redis pub/sub relay</text>
+</g>
+<g><rect x="60" y="500" width="216" height="170" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+<text x="78" y="534" class="name" text-anchor="start">user-service</text>
+<text x="78" y="566" class="body" text-anchor="start">accounts · auth · profiles</text>
+<text x="78" y="593" class="body" text-anchor="start">JWT issuer</text>
+</g>
+<g><rect x="292" y="500" width="216" height="170" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+<text x="310" y="534" class="name" text-anchor="start">game-catalog</text>
+<text x="310" y="566" class="body" text-anchor="start">games · tags</text>
+<text x="310" y="593" class="body" text-anchor="start">leaderboards</text>
+</g>
+<g><rect x="524" y="500" width="216" height="170" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+<text x="542" y="534" class="name" text-anchor="start">content-service</text>
+<text x="542" y="566" class="body" text-anchor="start">guides · news · CMS</text>
+<text x="542" y="593" class="body" text-anchor="start">comments · favourites</text>
+</g>
+<g><rect x="756" y="500" width="216" height="170" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+<text x="774" y="534" class="name" text-anchor="start">community</text>
+<text x="774" y="566" class="body" text-anchor="start">posts · topics · circles</text>
+<text x="774" y="593" class="body" text-anchor="start">likes · DM · notifications</text>
+</g>
+<g><rect x="988" y="500" width="216" height="170" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+<text x="1006" y="534" class="name" text-anchor="start">data-panel</text>
+<text x="1006" y="566" class="body" text-anchor="start">match-data ingestion</text>
+<text x="1006" y="593" class="body" text-anchor="start">stats · player profiles</text>
+</g>
+<g><rect x="60" y="730" width="400" height="100" rx="14" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="78" y="764" class="name" text-anchor="start">user-service-rpc</text>
+<text x="78" y="796" class="body" text-anchor="start">internal gRPC · etcd registry</text>
+</g>
+<g><rect x="900" y="730" width="320" height="100" rx="14" fill="none" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="918" y="764" class="name" text-anchor="start" style="fill:#64748b">planned</text>
+<text x="918" y="791" class="body" text-anchor="start">matchmaking · crawler-jobs</text>
+<text x="918" y="818" class="small" text-anchor="start">not yet created</text>
+</g>
+<g><rect x="60" y="870" width="640" height="90" rx="14" fill="#ecfdf5" stroke="#86c9b3" stroke-width="1.5"/>
+<text x="78" y="904" class="name" text-anchor="start">SQLite / MySQL</text>
+<text x="78" y="936" class="body" text-anchor="start">dual driver · DATASOURCE switches storage</text>
+</g>
+<g><rect x="740" y="870" width="480" height="90" rx="14" fill="#ecfdf5" stroke="#86c9b3" stroke-width="1.5"/>
+<text x="758" y="904" class="name" text-anchor="start">Redis</text>
+<text x="758" y="936" class="body" text-anchor="start">pub/sub relay across hub instances</text>
+</g>
+<g><rect x="60" y="1010" width="1160" height="80" rx="14" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.5"/>
+<text x="78" y="1044" class="name" text-anchor="start">Observability</text>
+<text x="78" y="1076" class="body" text-anchor="start">each service /metrics (9091–9097) · structured JSON logs → Loki · Grafana dashboards</text>
+</g>
+<text x="40" y="1120" class="small" text-anchor="start">实线：业务数据 · 虚线：控制/规划 · 无圆点交叉不表示连通</text>
+</svg>
