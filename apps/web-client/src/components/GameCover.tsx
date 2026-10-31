@@ -8,14 +8,15 @@ interface Props {
 // 封面图加载失败回退：用隐藏 Image 预检远程封面（images.tappi.dev 等），
 // 仅加载成功才应用 background-image；失败时挂 .cover-fallback 品牌渐变占位，
 // 避免渲染成空黑块。GameCard 与 DiscoverPage 复用。
+// failed 以「失败的 src」推导：src 变化时自动复位，无需在 effect 内 setState。
 const GameCover = ({ src, className }: Props) => {
-  const [failed, setFailed] = useState(false);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const failed = failedSrc === src;
 
   useEffect(() => {
-    setFailed(false);
     if (!src) return;
     const img = new Image();
-    img.onerror = () => setFailed(true);
+    img.onerror = () => setFailedSrc(src);
     img.src = src;
     return () => {
       img.onerror = null;
