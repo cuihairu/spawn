@@ -48,13 +48,13 @@ const GameDetailPage = () => {
 
   if (error && !game) {
     return (
-      <div className="games-page">
-        <div className="error-banner" role="alert">
-          {error}
-        </div>
-        <button type="button" className="secondary-btn" onClick={() => navigate('/games')}>
-          返回游戏库
+      <div className="error-page">
+        <h1>游戏详情</h1>
+        <p>{error}</p>
+        <button type="button" onClick={() => id && load(id)}>
+          重试
         </button>
+        <Link to="/games">返回游戏库</Link>
       </div>
     )
   }
