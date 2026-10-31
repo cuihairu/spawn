@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { fetchUserGameStat, type GameStat } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
@@ -44,8 +45,12 @@ export default function GameStatDetailScreen() {
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <Pressable style={styles.back} onPress={() => router.back()} hitSlop={8}>
-          <Text style={styles.backText}>‹</Text>
+        <Pressable
+          accessibilityLabel="返回"
+          style={styles.back}
+          onPress={() => router.back()}
+          hitSlop={8}>
+          <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
         <Text style={styles.headerTitle} numberOfLines={1}>
           {stat?.game_title || gameId || '游戏战绩'}
@@ -140,11 +145,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     width: 32,
-  },
-  backText: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: '600',
   },
   headerTitle: {
     flex: 1,
