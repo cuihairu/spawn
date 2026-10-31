@@ -237,7 +237,7 @@ export default function PostDetailScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Pressable style={styles.back} onPress={() => router.back()} hitSlop={8}>
+          <Pressable accessibilityLabel="返回" style={styles.back} onPress={() => router.back()} hitSlop={8}>
             <Ionicons name="chevron-back" size={20} color={colors.text} />
           </Pressable>
           <Text style={styles.headerTitle}>帖子详情</Text>
@@ -254,7 +254,7 @@ export default function PostDetailScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Pressable style={styles.back} onPress={() => router.back()} hitSlop={8}>
+          <Pressable accessibilityLabel="返回" style={styles.back} onPress={() => router.back()} hitSlop={8}>
             <Ionicons name="chevron-back" size={20} color={colors.text} />
           </Pressable>
           <Text style={styles.headerTitle}>帖子详情</Text>
@@ -275,7 +275,7 @@ export default function PostDetailScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
-        <Pressable style={styles.back} onPress={() => router.back()} hitSlop={8}>
+        <Pressable accessibilityLabel="返回" style={styles.back} onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
         <Text style={styles.headerTitle} numberOfLines={1}>
@@ -450,7 +450,7 @@ export default function PostDetailScreen() {
               <Text style={styles.replyBarText} numberOfLines={1}>
                 回复 @{replyTo.author_name ?? `用户${replyTo.author_id}`}
               </Text>
-              <Pressable onPress={() => setReplyTo(null)} hitSlop={8}>
+              <Pressable accessibilityLabel="关闭" onPress={() => setReplyTo(null)} hitSlop={8}>
                 <Ionicons name="close" size={16} color={colors.textMuted} />
               </Pressable>
             </View>

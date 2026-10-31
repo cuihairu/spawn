@@ -92,7 +92,7 @@ export default function GamesScreen() {
               placeholderTextColor={colors.textMuted}
             />
             {keywordInput ? (
-              <Pressable hitSlop={8} onPress={() => setKeywordInput('')}>
+              <Pressable accessibilityLabel="清空搜索" hitSlop={8} onPress={() => setKeywordInput('')}>
                 <Ionicons name="close-circle" size={16} color={colors.textMuted} />
               </Pressable>
             ) : null}

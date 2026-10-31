@@ -109,14 +109,14 @@ export default function GuidesScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Pressable style={styles.back} onPress={() => router.back()} hitSlop={8}>
+        <Pressable accessibilityLabel="返回" style={styles.back} onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
         <Text style={styles.headerTitle} numberOfLines={1}>
           {title ? `${title} · 攻略` : '攻略广场'}
         </Text>
         {token ? (
-          <Pressable style={styles.back} onPress={() => router.push('/guide-compose')} hitSlop={8}>
+          <Pressable accessibilityLabel="创建攻略" style={styles.back} onPress={() => router.push('/guide-compose')} hitSlop={8}>
             <Ionicons name="create-outline" size={20} color={colors.primary} />
           </Pressable>
         ) : (

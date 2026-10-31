@@ -158,7 +158,7 @@ export default function GuideComposeScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
-        <Pressable style={styles.back} onPress={() => router.back()} hitSlop={8}>
+        <Pressable accessibilityLabel="关闭" style={styles.back} onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="close" size={20} color={colors.text} />
         </Pressable>
         <Text style={styles.headerTitle}>{editId !== null ? '编辑攻略' : '写攻略'}</Text>

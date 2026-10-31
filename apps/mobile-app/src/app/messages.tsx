@@ -113,7 +113,7 @@ export default function MessagesScreen() {
       {activePeer === null ? (
         <View style={styles.back} />
       ) : (
-        <Pressable style={styles.back} onPress={() => router.push('/messages')} hitSlop={8}>
+        <Pressable accessibilityLabel="返回" style={styles.back} onPress={() => router.push('/messages')} hitSlop={8}>
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
       )}

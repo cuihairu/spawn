@@ -114,7 +114,7 @@ export default function ComposeScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
-        <Pressable style={styles.back} onPress={() => router.back()} hitSlop={8}>
+        <Pressable accessibilityLabel="关闭" style={styles.back} onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="close" size={20} color={colors.text} />
         </Pressable>
         <Text style={styles.headerTitle}>发帖</Text>
@@ -171,7 +171,7 @@ export default function ComposeScreen() {
         <Text style={styles.label}>图片（可选，最多 {MAX_IMAGES} 张）</Text>
         <View style={styles.imageRow}>
           {images.map((img, index) => (
-            <Pressable key={`${img.uri}-${index}`} onPress={() => removeImage(index)} hitSlop={4}>
+            <Pressable accessibilityLabel="关闭" key={`${img.uri}-${index}`} onPress={() => removeImage(index)} hitSlop={4}>
               <Image source={{ uri: img.uri }} style={styles.imageThumb} />
               <View style={styles.imageRemoveBadge}>
                 <Ionicons name="close" size={12} color="#fff" />
