@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchHomeFeed, type HomeFeed } from '../api/client'
+import GameCover from '../components/GameCover'
 // 复用 community.css 的 community-card/post-meta/secondary-btn/error-banner 通用样式。
 import './community.css'
 import './discover.css'
@@ -86,13 +87,7 @@ const DiscoverPage = () => {
             <div className="feed-game-list">
               {data.featured_games.map((game) => (
                 <Link key={game.id} to={`/games/${game.id}`} className="feed-game">
-                  <div
-                    className="feed-game-cover"
-                    style={{
-                      backgroundImage: game.cover_image ? `url(${game.cover_image})` : undefined,
-                    }}
-                    aria-hidden="true"
-                  />
+                  <GameCover src={game.cover_image} className="feed-game-cover" />
                   <div className="feed-game-main">
                     <div className="feed-game-title">{game.title}</div>
                     <div className="feed-game-meta">

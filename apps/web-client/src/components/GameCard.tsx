@@ -1,5 +1,6 @@
 import type { GameSummary } from '../api/client'
 import { Link } from 'react-router-dom'
+import GameCover from './GameCover'
 
 interface Props {
   game: GameSummary
@@ -16,13 +17,7 @@ const GameCard = ({ game, highlight = false }: Props) => {
       style={{ textDecoration: 'none' }}
       aria-label={`查看游戏 ${game.title} 详情`}
     >
-      <div
-        className="game-card__cover"
-        style={{
-          backgroundImage: game.coverImage ? `url(${game.coverImage})` : undefined,
-        }}
-        aria-hidden="true"
-      />
+      <GameCover src={game.coverImage} className="game-card__cover" />
       <div className="game-card__body">
         <header>
           <p className="game-card__genre">{game.genres.join(' / ') || '未知类型'}</p>

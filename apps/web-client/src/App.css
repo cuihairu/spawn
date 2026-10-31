@@ -372,3 +372,9 @@
     animation: none !important;
   }
 }
+
+/* 封面图加载失败占位：品牌渐变，替代空黑块（配合 GameCover） */
+.cover-fallback {
+  background-image: linear-gradient(135deg, rgba(98, 89, 255, 0.35), rgba(134, 80, 230, 0.22));
+  background-color: rgba(139, 150, 255, 0.14);
+}
