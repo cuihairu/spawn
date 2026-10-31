@@ -362,3 +362,13 @@
     gap: 0.25rem 1rem;
   }
 }
+
+/* 无障碍：尊重系统"减弱动态效果"偏好，关闭所有过渡与动画 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
