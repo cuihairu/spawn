@@ -255,6 +255,10 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   back: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     width: 32,
   },
   headerTitle: {
@@ -311,6 +315,9 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   chip: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     borderRadius: 999,
@@ -391,6 +398,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   retryBtn: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: 8,

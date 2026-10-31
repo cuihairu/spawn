@@ -349,6 +349,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   topicChip: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.card,
     borderRadius: 10,
     borderWidth: 1,
@@ -376,6 +379,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   retryBtn: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: 8,

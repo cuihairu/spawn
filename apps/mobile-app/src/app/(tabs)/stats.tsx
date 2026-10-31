@@ -354,6 +354,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   retryBtn: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: 8,

@@ -158,6 +158,8 @@ const styles = StyleSheet.create({
     paddingTop: 72,
   },
   back: {
+    minHeight: 44,
+    justifyContent: 'center',
     alignSelf: 'flex-start',
     marginBottom: 16,
   },
@@ -220,6 +222,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   switchMode: {
+    minHeight: 44,
+    justifyContent: 'center',
     alignItems: 'center',
     marginTop: 20,
     paddingVertical: 8,

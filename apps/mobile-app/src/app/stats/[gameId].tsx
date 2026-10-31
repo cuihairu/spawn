@@ -134,6 +134,10 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   back: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     width: 32,
   },
   backText: {
@@ -160,6 +164,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   retryBtn: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: 8,

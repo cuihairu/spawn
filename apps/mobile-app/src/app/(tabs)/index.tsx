@@ -242,6 +242,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   rankEntry: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -316,6 +317,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   chip: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     color: colors.text,
     backgroundColor: colors.background,
     borderRadius: 6,
@@ -339,6 +343,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   retryBtn: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: 8,

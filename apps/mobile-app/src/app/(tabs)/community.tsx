@@ -480,6 +480,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   topicChip: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.card,
     borderRadius: 16,
     borderWidth: 1,
@@ -544,6 +547,9 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   modeBtn: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.card,
     borderRadius: 8,
     borderWidth: 1,
@@ -671,6 +677,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   retryBtn: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: 8,

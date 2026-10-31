@@ -197,6 +197,10 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   back: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     width: 32,
   },
   headerTitle: {
@@ -207,6 +211,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   readAllBtn: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: 8,
@@ -300,6 +307,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   retryBtn: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: 8,
