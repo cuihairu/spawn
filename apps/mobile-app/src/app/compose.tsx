@@ -176,7 +176,7 @@ export default function ComposeScreen() {
             <Pressable accessibilityLabel="关闭" key={`${img.uri}-${index}`} onPress={() => removeImage(index)} hitSlop={4}>
               <Image source={{ uri: img.uri }} style={styles.imageThumb} />
               <View style={styles.imageRemoveBadge}>
-                <Ionicons name="close" size={12} color="#fff" />
+                <Ionicons name="close" size={12} color={colors.white} />
               </View>
             </Pressable>
           ))}
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   submitText: {
-    color: '#1a1105',
+    color: colors.onPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   topicChipTextActive: {
-    color: '#1a1105',
+    color: colors.onPrimary,
     fontWeight: '600',
   },
   titleInput: {
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
     minHeight: 160,
   },
   error: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 13,
   },
   imageRow: {

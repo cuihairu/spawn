@@ -274,7 +274,7 @@ export default function CommunityScreen() {
           </Pressable>
         ) : null}
         <Pressable style={styles.composeBtn} onPress={openCompose} hitSlop={8}>
-          <Ionicons name="create-outline" size={16} color="#1a1105" />
+          <Ionicons name="create-outline" size={16} color={colors.onPrimary} />
           <Text style={styles.composeBtnText}>发帖</Text>
         </Pressable>
       </View>
@@ -450,13 +450,13 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#ff6b6b',
+    backgroundColor: colors.danger,
     paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
   badgeText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 10,
     fontWeight: '700',
   },
@@ -470,7 +470,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   composeBtnText: {
-    color: '#1a1105',
+    color: colors.onPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -499,7 +499,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   topicChipTextActive: {
-    color: '#1a1105',
+    color: colors.onPrimary,
     fontWeight: '600',
   },
   topicManage: {
@@ -614,10 +614,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   hotBadge: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 11,
     borderWidth: 1,
-    borderColor: '#ff6b6b',
+    borderColor: colors.danger,
     borderRadius: 4,
     paddingHorizontal: 4,
     paddingVertical: 1,

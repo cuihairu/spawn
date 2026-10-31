@@ -203,7 +203,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   error: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 13,
     marginTop: 10,
   },
@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   submitText: {
-    color: '#1a1105',
+    color: colors.onPrimary,
     fontSize: 15,
     fontWeight: '600',
   },

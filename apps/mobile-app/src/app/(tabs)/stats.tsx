@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   loginBtnText: {
-    color: '#1a1105',
+    color: colors.onPrimary,
     fontSize: 15,
     fontWeight: '600',
   },
@@ -350,7 +350,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   errorText: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 13,
   },
   retryBtn: {

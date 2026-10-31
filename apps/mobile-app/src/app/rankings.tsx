@@ -7,7 +7,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { fetchFeaturedGames, type Game } from '../api/client';
 import { colors } from '../constants/colors';
 
-const RANK_COLORS = ['#ffd700', '#c0c0c0', '#cd7f32'];
+const RANK_COLORS = [colors.rankGold, colors.rankSilver, colors.rankBronze];
 
 // 榜单页（Stack 路由）：GET /games/featured 按 trending_score 排序的热门榜。
 export default function RankingsScreen() {
@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   errorText: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 14,
   },
   retryBtn: {

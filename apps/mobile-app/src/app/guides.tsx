@@ -305,7 +305,7 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   searchBtnText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   chipTextActive: {
-    color: '#fff',
+    color: colors.white,
     fontWeight: '600',
   },
   card: {

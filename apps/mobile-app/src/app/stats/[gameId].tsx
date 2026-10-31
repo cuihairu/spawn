@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   errorText: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 14,
   },
   retryBtn: {

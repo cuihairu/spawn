@@ -246,7 +246,7 @@ export default function MessagesScreen() {
           onPress={handleSend}
           disabled={sending || draft.trim().length === 0}>
           {sending ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.sendBtnText}>发送</Text>
           )}
@@ -308,11 +308,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   loginBtnText: {
-    color: '#fff',
+    color: colors.white,
     fontWeight: '600',
   },
   error: {
-    color: '#ff6b6b',
+    color: colors.danger,
     paddingHorizontal: 16,
     paddingVertical: 8,
     fontSize: 13,
@@ -354,13 +354,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   badge: {
-    backgroundColor: '#dc2626',
+    backgroundColor: colors.dangerStrong,
     borderRadius: 999,
     paddingVertical: 2,
     paddingHorizontal: 6,
   },
   badgeText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 11,
     fontWeight: '700',
   },
@@ -382,7 +382,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   bubbleTextMe: {
-    color: '#fff',
+    color: colors.white,
   },
   bubbleTime: {
     color: colors.textMuted,
@@ -419,7 +419,7 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   sendBtnText: {
-    color: '#fff',
+    color: colors.white,
     fontWeight: '600',
   },
 });

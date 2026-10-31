@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   searchBtnText: {
-    color: '#1a1105',
+    color: colors.onPrimary,
     fontSize: 14,
     fontWeight: '600',
   },

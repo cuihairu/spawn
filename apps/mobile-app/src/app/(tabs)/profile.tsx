@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   loginBtnText: {
-    color: '#1a1105',
+    color: colors.onPrimary,
     fontSize: 15,
     fontWeight: '600',
   },
@@ -443,7 +443,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: {
-    color: '#1a1105',
+    color: colors.onPrimary,
     fontSize: 22,
     fontWeight: '800',
   },
@@ -466,7 +466,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   error: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 13,
   },
   refreshBtn: {
@@ -578,7 +578,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   logoutText: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 15,
   },
   hint: {

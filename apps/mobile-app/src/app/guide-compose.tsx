@@ -336,7 +336,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   submitText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   chipTextActive: {
-    color: '#fff',
+    color: colors.white,
     fontWeight: '600',
   },
   titleInput: {

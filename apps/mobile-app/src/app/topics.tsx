@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   followText: {
-    color: '#1a1105',
+    color: colors.onPrimary,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -341,7 +341,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   inlineError: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 12,
     textAlign: 'center',
     paddingBottom: 8,

@@ -521,7 +521,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   errorText: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 14,
     textAlign: 'center',
   },
@@ -567,10 +567,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   hotBadge: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 11,
     borderWidth: 1,
-    borderColor: '#ff6b6b',
+    borderColor: colors.danger,
     borderRadius: 4,
     paddingHorizontal: 5,
     paddingVertical: 1,
@@ -640,7 +640,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   followText: {
-    color: '#1a1105',
+    color: colors.onPrimary,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -688,7 +688,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   actionError: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 12,
     textAlign: 'center',
   },
@@ -724,7 +724,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   reportSubmitText: {
-    color: '#1a1105',
+    color: colors.onPrimary,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -806,7 +806,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   commentDeleteBtn: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 12,
   },
   composer: {
@@ -856,7 +856,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   sendText: {
-    color: '#1a1105',
+    color: colors.onPrimary,
     fontSize: 14,
     fontWeight: '600',
   },

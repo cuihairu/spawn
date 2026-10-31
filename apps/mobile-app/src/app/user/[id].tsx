@@ -109,7 +109,7 @@ export default function UserProfileScreen() {
                     style={({ pressed }) => [styles.dmBtn, pressed && styles.dmBtnPressed]}
                     onPress={() => router.push(`/messages?peer=${userId}`)}
                     hitSlop={8}>
-                    <Ionicons name="chatbubbles" size={15} color="#fff" />
+                    <Ionicons name="chatbubbles" size={15} color={colors.white} />
                     <Text style={styles.dmBtnText}>私信</Text>
                   </Pressable>
                 ) : null}
@@ -203,7 +203,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   avatarText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 22,
     fontWeight: '700',
   },
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   dmBtnText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 13,
     fontWeight: '600',
   },

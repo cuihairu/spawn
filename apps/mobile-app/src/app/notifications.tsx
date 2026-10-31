@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#ff6b6b',
+    backgroundColor: colors.danger,
   },
   typeChip: {
     alignSelf: 'flex-start',
