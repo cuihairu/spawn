@@ -39,26 +39,27 @@ Tappi's web client is a competent, coherent dark dashboard that gets the big thi
 - **Screenshot:** `docs/review/2026-10-31-ui-audit-impeccable/web-games_1-desktop.png`
 - **Location:** `apps/web-client/src/pages/GameDetailPage.tsx` (error branch)
 - **Why it matters:** When the game fetch fails, the page shows only a floating error banner + a "返回游戏库" link — no page title, no explanation, no retry. The user is left with a mostly-empty screen and no way to know what page they were on.
-- **Fix (todo):** Render the page title (e.g. "游戏详情") with a friendly message and a 重试 button in the error branch, mirroring the guides/community pattern.
+- **Fix (done):** Render the page title (e.g. "游戏详情") with a friendly message and a 重试 button in the error branch, mirroring the guides/community pattern. Commit: `30c181c fix(ui): add heading and retry to game detail error`.
 
 ### [P3] Impeccable detector: overused font + side-tab accent (slop)
 
 - **Location:** `apps/web-client/src/App.css:147` and `src/index.css:11` (`font-family: 'Inter' …` — overused font), `pages/guides.css:669` (`.markdown-body blockquote { border-left: 3px solid #7083ff }` — side-tab accent)
 - **Why it matters:** Both are the recognizable "AI-generated UI" tells the impeccable detector flags (Inter is the most overused face; a thick one-side accent border on a card is a slop signal). Not functional breakage.
 - **Fix (todo):** Consider a more distinctive typeface and a subtler blockquote accent; leave until a design pass (changing them is a visual-direction decision, out of scope here).
+- **未修原因：** 字体与 blockquote 强调属视觉方向决策，报告本身将其列为「design pass / out of scope」；换字体/去侧边条会改变品牌观感，需用户拍板，本整改不动视觉方向。
 
 ### [P3] No `prefers-reduced-motion` handling
 
 - **Location:** `apps/web-client/src/App.css` — `transition: transform 0.2s` (nav-brand hover), `transition: all 0.2s` (buttons/links), no `@media (prefers-reduced-motion: reduce)` anywhere
 - **Why it matters:** Users who disable motion still get the hover scale/color transitions. Minor (transitions are subtle), but the audit dimension requires it.
-- **Fix (todo):** Add a global `@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }`.
+- **Fix (done):** Add a global `@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }`. Commit: `f52ca04 fix(ui): honor prefers-reduced-motion on web client`.
 
 ### [P3] External cover images fail to load → dark placeholder blocks
 
 - **Screenshot:** `docs/review/2026-10-31-ui-audit-impeccable/web-discover-desktop.png`
 - **Location:** `apps/web-client/src/pages/DiscoverPage.tsx:92` (`.feed-game-cover` uses `images.tappi.dev` URLs); same pattern in `GameCard.tsx`
 - **Why it matters:** The cover host is not reachable in this environment, so every game cover renders as an empty dark rectangle — the discover feed looks broken. If the host is genuinely used in prod this needs an `onError` fallback.
-- **Fix (todo):** Add an image `onError` fallback to a branded placeholder, or serve covers from the gateway.
+- **Fix (done):** Add an image `onError` fallback to a branded placeholder, or serve covers from the gateway. Commit: `fb28fc9 fix(ui): add cover image fallback on load error`（`GameCover` 预检 + `.cover-fallback` 渐变；另 `2b00365` 修订 effect 内 setState 合规）。
 
 ## Notes
 
@@ -102,31 +103,32 @@ This is a genuinely well-engineered native app on the data/state side: every scr
 
 - **Location:** shared style objects across `apps/mobile-app/src/app/` — chips/tabs at 28–32px (`guides.tsx:155,168` `chip`; `guide-compose.tsx:182,199,228,233` `chip`; `(tabs)/community.tsx:287,295` `topicChip`, `:338,343,348` `modeBtn`), `retryBtn` ~36px (in ~10 screens), `back` ~32px, `rankEntry` ~40px (`(tabs)/index.tsx:105,110`), `followBtn` 34–36px (`post/[id].tsx:306`, `topics.tsx:187`), `switchMode` ~36px (`login.tsx:135`), `readAllBtn` ~32px (`notifications.tsx:104`)
 - **Why it matters:** The Apple HIG minimum is 44pt (Material 48dp). ~45 Pressable instances render below that, and most have no `hitSlop` to compensate (only the back buttons do). Small targets cause mis-taps and are especially hard for motor-impaired and large-finger users.
-- **Fix (todo):** Raise the shared `chip`/`retryBtn`/`back`/`followBtn`/`modeBtn` styles to `minHeight: 44` (or add `paddingVertical`), rather than editing each instance.
+- **Fix (done):** Raise the shared `chip`/`retryBtn`/`back`/`followBtn`/`modeBtn` styles to `minHeight: 44` (or add `paddingVertical`), rather than editing each instance. Commit: `664a3b2 fix(ui): raise mobile touch targets to 44pt`（39 个样式对象 minHeight/minWidth 44，17 文件）。
 
 ### [P2] No native headers; status bar cleared with hardcoded paddings
 
 - **Location:** `apps/mobile-app/src/app/_layout.tsx:18` (`<Stack screenOptions={{ headerShown: false }} />`); every pushed screen hand-rolls a back button and hardcodes `paddingTop: 64` (e.g. `rankings.tsx:100`, `guides.tsx:254`, `game/[id]`, `post/[id].tsx:498`, `notifications.tsx:196`, `topics.tsx:216`) or `72` (`login.tsx:158`)
 - **Why it matters:** `useSafeAreaInsets()` is never used (`SafeAreaView`/`useSafeAreaInsets` absent from the whole tree). The 64/72px guesses clear the status bar on the common notch devices but not reliably on Android status-bar variants, foldables, or when the OS inset differs — content can slide under the status bar or sit with excess space. There is also no native header/title, so detail screens depend on a hand-rolled text back link. iOS edge-swipe-back still works (native Stack), but the affordance and inset handling are guesswork.
-- **Fix (todo):** Either enable native headers on the root `Stack` (per-screen `headerShown`) or wrap content in `SafeAreaView`/`useSafeAreaInsets()`; remove the hardcoded paddings.
+- **Fix (done):** Either enable native headers on the root `Stack` (per-screen `headerShown`) or wrap content in `SafeAreaView`/`useSafeAreaInsets()`; remove the hardcoded paddings. Commit: `6a5a771 fix(ui): use safe area insets for header padding`（10 屏改用 `useSafeAreaInsets()`，删 64/72 硬编码；expo-router ExpoRoot 已含 SafeAreaProvider）。
 
 ### [P2] Hard-coded hex colors scattered outside the token palette
 
 - **Location:** `apps/mobile-app/src/app/**` — `#1a1105` (button text, 6 screens), `#ff6b6b` (error/destructive), `#dc2626` (`messages.tsx:355`), `#fff`, `RANK_COLORS` (`rankings.tsx:9`: `#ffd700/#c0c0c0/#cd7f32`), plus `#c9c4ff`/`#a99cf5`-style accents in web-only CSS
 - **Why it matters:** ~30 values bypass `constants/colors.ts`, so theming is inconsistent and a dark/light scheme can't be introduced without a hunt. Contrast is fine (checked: `#1a1105` on orange 6.03:1, `#ff6b6b` on bg 6.53:1, `#dc2626` white 4.83:1, rank colors 5.1–11.5:1), so this is a maintainability issue, not a readability one.
-- **Fix (todo):** Fold these into `constants/colors.ts` as semantic tokens (danger, onPrimary, rankGold/Silver/Bronze, …) and reference them.
+- **Fix (done):** Fold these into `constants/colors.ts` as semantic tokens (danger, onPrimary, rankGold/Silver/Bronze, …) and reference them. Commit: `e15bb7d fix(ui): fold hardcoded colors into semantic tokens`（`onPrimary/white/danger/dangerStrong/rankGold/Silver/Bronze` 8 个 token，18 文件，tsx 内硬编码 hex 归零）。
 
 ### [P2] No adaptivity across screen sizes / orientation
 
 - **Location:** whole app — no `useWindowDimensions`, no size-class logic, fixed pixel layouts
 - **Why it matters:** Landscape and larger phones render the same single-column layout; content may clip or waste space in landscape. No hinge/multi-window awareness.
 - **Fix (todo):** Introduce `useWindowDimensions()` for landscape/wide layouts; ensure `ScrollView` content can scroll in landscape.
+- **未修原因：** 这是一次开放式响应式设计（断点/横屏重排/折叠感知），需渲染验证且涉及视觉方向拍板；本环境无模拟器/仿真器、无 web 渲染（报告自身已注明），盲改布局无法验证、风险高于收益。留待设备验收 + 设计 pass，随 `impeccable adapt` 另行立项。
 
 ### [P3] "‹" text back button has a poor accessible name
 
 - **Location:** `apps/mobile-app/src/app/stats/[gameId].tsx:41` (back is a `<Text>‹</Text>` inside a Pressable)
 - **Why it matters:** A screen reader announces a lone "‹" character instead of "返回". (The other back buttons are "← 返回" text, which is acceptable.)
-- **Fix (todo):** Use an Ionicons chevron-back with `accessibilityLabel="返回"`, matching the other screens.
+- **Fix (done):** Use an Ionicons chevron-back with `accessibilityLabel="返回"`, matching the other screens. Commit: `400d211 fix(ui): label stats back button for screen readers`（`‹` Text 换 chevron-back + label，删 backText 死样式）。
 
 ## Positive findings (mobile)
 
@@ -144,13 +146,14 @@ This is a genuinely well-engineered native app on the data/state side: every scr
 
 ## Recommended next steps
 
-1. **[P2] `impeccable harden`** — raise shared chip/retry/back styles to 44pt minimum touch targets.
-2. **[P2] `impeccable adapt`** — replace `headerShown:false` + hardcoded `paddingTop` with native headers or `useSafeAreaInsets()`.
-3. **[P2] `impeccable colorize`** — fold ~30 hard-coded hex values into semantic tokens.
-4. **[P3] `impeccable polish`** — final pass on the `‹` back button and reduced-motion handling (web).
+1. **[P2] `impeccable harden`** — raise shared chip/retry/back styles to 44pt minimum touch targets. **Done** (`664a3b2`).
+2. **[P2] `impeccable adapt`** — replace `headerShown:false` + hardcoded `paddingTop` with native headers or `useSafeAreaInsets()`. **Done** (`6a5a771`, insets 方案）。
+3. **[P2] `impeccable colorize`** — fold ~30 hard-coded hex values into semantic tokens. **Done** (`e15bb7d`).
+4. **[P3] `impeccable polish`** — final pass on the `‹` back button and reduced-motion handling (web). **Done**（`400d211` + `f52ca04`）。
 
 ## Summary counts
 
 - **Total issues:** 13 (web 7, mobile 6) — 0 P0, 2 P1, 7 P2, 4 P3
-- **Fixed in this pass:** 4 (web nav overflow, web button contrast, web error copy, mobile icon-only labels)
-- **Commits:** `ed79698`, `05cfe57`, `49e6518` (web), `a759ffa` (mobile)
+- **Fixed:** 11 — 首次 4（`ed79698` nav 溢出、`05cfe57` 对比度、`49e6518` 网络错误文案、`a759ffa` mobile 图标标签）+ 整改跟进 7（web `30c181c` 游戏详情错误态、`f52ca04` reduced-motion、`fb28fc9`+`2b00365` 封面回退；mobile `664a3b2` 44pt 触控、`6a5a771` 安全区 insets、`e15bb7d` 语义色 token、`400d211` ‹ 返回标签）。
+- **Deferred (未修原因见各条目):** 2 — web 字体/侧边条强调（视觉方向，留 design pass）、mobile 横屏/宽屏适配（响应式设计，需设备渲染验证）。
+- **整改验证（跟进 pass，2026-11-01）:** web `tsc`/`eslint`/`vite build` 全绿；mobile `tsc`/`eslint`/`expo export --platform android` 全绿（3.1MB hbc）；版本号未动、未打 tag。
