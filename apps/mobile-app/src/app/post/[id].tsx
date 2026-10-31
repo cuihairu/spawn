@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -44,6 +45,7 @@ export default function PostDetailScreen() {
   const postId = Number(id);
   const [post, setPost] = useState<Post | null>(null);
   const [followingIds, setFollowingIds] = useState<Set<number>>(new Set());
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -236,7 +238,7 @@ export default function PostDetailScreen() {
   if (loading && !post) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
           <Pressable accessibilityLabel="返回" style={styles.back} onPress={() => router.back()} hitSlop={8}>
             <Ionicons name="chevron-back" size={20} color={colors.text} />
           </Pressable>
@@ -253,7 +255,7 @@ export default function PostDetailScreen() {
   if (error || !post) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
           <Pressable accessibilityLabel="返回" style={styles.back} onPress={() => router.back()} hitSlop={8}>
             <Ionicons name="chevron-back" size={20} color={colors.text} />
           </Pressable>
@@ -274,7 +276,7 @@ export default function PostDetailScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Pressable accessibilityLabel="返回" style={styles.back} onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
@@ -495,7 +497,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 64,
     paddingBottom: 8,
   },
   back: {

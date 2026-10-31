@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { router, useNavigation } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../auth/AuthContext';
 import { colors } from '../constants/colors';
@@ -22,6 +23,7 @@ export default function LoginScreen() {
   const navigation = useNavigation();
   const { login, register } = useAuth();
   const [mode, setMode] = useState<Mode>('login');
+  const insets = useSafeAreaInsets();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
@@ -58,7 +60,7 @@ export default function LoginScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + 24 }]} keyboardShouldPersistTaps="handled">
         {canGoBack ? (
           <Pressable style={styles.back} onPress={() => router.back()} hitSlop={8}>
             <Text style={styles.backText}>← 返回</Text>
@@ -155,7 +157,6 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     padding: 24,
-    paddingTop: 72,
   },
   back: {
     minHeight: 44,

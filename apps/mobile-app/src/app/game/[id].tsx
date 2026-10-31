@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { fetchGameById, fetchGuides, type Game, type Guide } from '../../api/client';
@@ -11,6 +12,7 @@ export default function GameDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [game, setGame] = useState<Game | null>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,7 +52,7 @@ export default function GameDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Pressable accessibilityLabel="返回" style={styles.back} onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
@@ -185,7 +187,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 64,
     paddingBottom: 8,
   },
   back: {

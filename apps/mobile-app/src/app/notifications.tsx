@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import {
@@ -34,6 +35,7 @@ const TYPE_LABELS: Record<string, string> = {
 export default function NotificationsScreen() {
   const { token } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const insets = useSafeAreaInsets();
   const [total, setTotal] = useState(0);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -96,7 +98,7 @@ export default function NotificationsScreen() {
   };
 
   const renderHeader = () => (
-    <View style={styles.header}>
+    <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
       <Pressable accessibilityLabel="返回" style={styles.back} onPress={() => router.back()} hitSlop={8}>
         <Ionicons name="chevron-back" size={20} color={colors.text} />
       </Pressable>
@@ -193,7 +195,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 64,
     paddingBottom: 8,
   },
   back: {

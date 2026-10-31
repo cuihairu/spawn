@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { fetchFeaturedGames, type Game } from '../api/client';
@@ -11,6 +12,7 @@ const RANK_COLORS = ['#ffd700', '#c0c0c0', '#cd7f32'];
 // 榜单页（Stack 路由）：GET /games/featured 按 trending_score 排序的热门榜。
 export default function RankingsScreen() {
   const [games, setGames] = useState<Game[]>([]);
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,7 +36,7 @@ export default function RankingsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Pressable accessibilityLabel="返回" style={styles.back} onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
@@ -97,7 +99,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 64,
     paddingBottom: 8,
   },
   back: {

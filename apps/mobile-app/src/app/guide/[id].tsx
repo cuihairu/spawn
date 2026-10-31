@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import {
@@ -41,6 +42,7 @@ export default function GuideDetailScreen() {
   const guideId = Number(id);
   const [guide, setGuide] = useState<Guide | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
+  const insets = useSafeAreaInsets();
   const [commentTotal, setCommentTotal] = useState(0);
   const [fav, setFav] = useState<FavoriteStatus>({ favorited: false, count: 0 });
   const [favBusy, setFavBusy] = useState(false);
@@ -288,7 +290,7 @@ export default function GuideDetailScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Pressable accessibilityLabel="返回" style={styles.back} onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
@@ -392,7 +394,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 64,
     paddingBottom: 8,
   },
   back: {

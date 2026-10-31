@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fetchUserGameStat, type GameStat } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
@@ -16,6 +17,7 @@ export default function GameStatDetailScreen() {
   const { gameId } = useLocalSearchParams<{ gameId: string }>();
   const { user, ready } = useAuth();
   const [stat, setStat] = useState<GameStat | null>(null);
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,7 +43,7 @@ export default function GameStatDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Pressable style={styles.back} onPress={() => router.back()} hitSlop={8}>
           <Text style={styles.backText}>‹</Text>
         </Pressable>
@@ -130,7 +132,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 64,
     paddingBottom: 8,
   },
   back: {

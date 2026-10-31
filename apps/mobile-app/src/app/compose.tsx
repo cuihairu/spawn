@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -29,6 +30,7 @@ export default function ComposeScreen() {
   const { token } = useAuth();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [topicId, setTopicId] = useState<number | null>(null);
+  const insets = useSafeAreaInsets();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [images, setImages] = useState<ImagePicker.ImagePickerAsset[]>([]);
@@ -113,7 +115,7 @@ export default function ComposeScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Pressable accessibilityLabel="关闭" style={styles.back} onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="close" size={20} color={colors.text} />
         </Pressable>
@@ -208,7 +210,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 64,
     paddingBottom: 8,
   },
   back: {
