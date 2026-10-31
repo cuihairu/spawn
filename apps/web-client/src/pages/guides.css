@@ -71,7 +71,7 @@
 
 .guide-search-submit {
   padding: 0.5rem 1rem;
-  background-color: #7083ff;
+  background-color: #5a68e8;
   color: white;
   border: none;
   border-radius: 6px;
@@ -81,7 +81,7 @@
 }
 
 .guide-search-submit:hover {
-  background-color: #5f6fe6;
+  background-color: #4f56d4;
 }
 
 .filter-tabs {
@@ -105,14 +105,14 @@
 }
 
 .filter-tab.active {
-  background-color: #7083ff;
+  background-color: #5a68e8;
   color: white;
-  border-color: #9f6bff;
+  border-color: #8650e6;
 }
 
 .create-guide-btn {
   padding: 0.5rem 1.5rem;
-  background-color: #4caf50;
+  background-color: #2e7d32;
   color: white;
   border: none;
   border-radius: 6px;
@@ -124,7 +124,7 @@
 }
 
 .create-guide-btn:hover {
-  background-color: #45a049;
+  background-color: #286e2c;
 }
 
 .error-banner {
@@ -374,7 +374,7 @@
 
 .action-btn {
   padding: 0.75rem 1.5rem;
-  background-color: #7083ff;
+  background-color: #5a68e8;
   color: white;
   border: none;
   border-radius: 6px;
@@ -384,7 +384,7 @@
 }
 
 .action-btn:hover:not(:disabled) {
-  background-color: #9f6bff;
+  background-color: #8650e6;
 }
 
 .action-btn:disabled {
@@ -393,7 +393,7 @@
 }
 
 .action-btn.liked {
-  background-color: #4caf50;
+  background-color: #2e7d32;
 }
 
 .guide-stats-bar {
@@ -503,12 +503,12 @@
 }
 
 .publish-btn {
-  background-color: #4caf50;
+  background-color: #2e7d32;
   color: white;
 }
 
 .publish-btn:hover:not(:disabled) {
-  background-color: #45a049;
+  background-color: #286e2c;
 }
 
 .form-actions button:disabled {
@@ -533,7 +533,7 @@
 .error-page button,
 .error-page a {
   padding: 0.75rem 1.5rem;
-  background-color: #7083ff;
+  background-color: #5a68e8;
   color: white;
   border: none;
   border-radius: 6px;
@@ -545,7 +545,7 @@
 
 .error-page button:hover,
 .error-page a:hover {
-  background-color: #9f6bff;
+  background-color: #8650e6;
 }
 
 /* 响应式 */
@@ -802,8 +802,8 @@
 }
 
 .guide-tag-chip.active {
-  background-color: #7083ff;
-  border-color: #9f6bff;
+  background-color: #5a68e8;
+  border-color: #8650e6;
   color: white;
 }
 

@@ -74,7 +74,7 @@
 
 .comment-submit-btn {
   padding: 0.5rem 1.5rem;
-  background-color: #7083ff;
+  background-color: #5a68e8;
   color: white;
   border: none;
   border-radius: 6px;
@@ -84,7 +84,7 @@
 }
 
 .comment-submit-btn:hover:not(:disabled) {
-  background-color: #9f6bff;
+  background-color: #8650e6;
 }
 
 .comment-submit-btn:disabled {
