@@ -124,13 +124,23 @@ async function request<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(new URL(path, baseUrl), {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers ?? {}),
-    },
-    ...options,
-  })
+  let response: Response
+  try {
+    response = await fetch(new URL(path, baseUrl), {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers ?? {}),
+      },
+      ...options,
+    })
+  } catch (err) {
+    // 网络层失败（DNS/CORS/连接拒绝）会抛 TypeError，浏览器原文 "Failed to fetch"
+    // 对中文用户没有意义，统一换成可读文案。
+    if (err instanceof TypeError) {
+      throw new Error('网络请求失败，请检查网络连接或稍后重试')
+    }
+    throw err
+  }
 
   if (!response.ok) {
     let detail = response.statusText
