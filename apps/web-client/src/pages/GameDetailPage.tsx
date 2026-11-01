@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { fetchGameById, fetchGuides, type GameDetail, type Guide } from '../api/client'
+import { fetchGameById, fetchGuides, updateGameTags, type GameDetail, type Guide } from '../api/client'
 import './games.css'
 
 // 游戏详情（/games/:id）：hero + 简介/类型/平台/标签 + 相关攻略，对等 mobile game/[id]。
-const GameDetailPage = () => {
+// token 传入时提供「联运」标签运营维护入口（登录用户按现有写接口口径，角色细化随 GP-103）。
+const GameDetailPage = ({ token }: { token?: string }) => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [savingTag, setSavingTag] = useState(false)
   const [game, setGame] = useState<GameDetail | null>(null)
   const [guides, setGuides] = useState<Guide[]>([])
   const [loading, setLoading] = useState(false)
@@ -34,6 +36,23 @@ const GameDetailPage = () => {
       setGuides([])
     }
   }, [])
+
+  // 运营维护：整体覆盖标签，仅切换「联运」一枚，其余标签原样保留
+  const [tagError, setTagError] = useState<string | null>(null)
+  const toggleCoPublish = useCallback(async () => {
+    if (!game || savingTag || !token) return
+    const tags = game.tags ?? []
+    const next = tags.includes('联运') ? tags.filter((t) => t !== '联运') : [...tags, '联运']
+    setSavingTag(true)
+    setTagError(null)
+    try {
+      setGame(await updateGameTags(game.id, next, token))
+    } catch (err) {
+      setTagError((err as Error).message || '更新标签失败')
+    } finally {
+      setSavingTag(false)
+    }
+  }, [game, savingTag, token])
 
   useEffect(() => {
     if (!id) return
@@ -126,16 +145,33 @@ const GameDetailPage = () => {
         </section>
       ) : null}
 
-      {game.tags?.length ? (
+      {game.tags?.length || token ? (
         <section className="game-detail-section">
           <h2>标签</h2>
           <div className="game-detail-chips">
-            {game.tags.map((tag) => (
+            {(game.tags ?? []).map((tag) => (
               <span key={tag} className="game-detail-chip game-detail-chip--accent">
                 {tag}
               </span>
             ))}
           </div>
+          {token ? (
+            <div className="game-detail-tag-admin">
+              <button
+                type="button"
+                className="secondary-btn"
+                disabled={savingTag}
+                onClick={toggleCoPublish}
+              >
+                {savingTag ? '保存中...' : game.tags?.includes('联运') ? '取消联运标记' : '标记为联运'}
+              </button>
+              {tagError ? (
+                <span className="secondary-text" role="alert">
+                  {tagError}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </section>
       ) : null}
 

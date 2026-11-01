@@ -19,12 +19,22 @@ const GamesPage = () => {
   // 游戏详情页类型 chip 跳转带 ?genre=，与本地切换共用一份状态
   const [searchParams, setSearchParams] = useSearchParams()
   const [genre, setGenre] = useState(searchParams.get('genre') ?? '')
+  // 「联运」标签筛选（?tag=），只影响展示，不自动开通支付/下载能力
+  const [tag, setTag] = useState(searchParams.get('tag') ?? '')
 
   const selectGenre = (next: string) => {
     setGenre(next)
     const params = new URLSearchParams(searchParams)
     if (next) params.set('genre', next)
     else params.delete('genre')
+    setSearchParams(params, { replace: true })
+  }
+
+  const selectTag = (next: string) => {
+    setTag(next)
+    const params = new URLSearchParams(searchParams)
+    if (next) params.set('tag', next)
+    else params.delete('tag')
     setSearchParams(params, { replace: true })
   }
 
@@ -36,6 +46,7 @@ const GamesPage = () => {
         const data = await fetchGames({
           ...(keyword ? { keyword } : {}),
           ...(genre ? { genre } : {}),
+          ...(tag ? { tag } : {}),
           limit: PAGE_SIZE,
           offset: nextOffset,
         })
@@ -49,7 +60,7 @@ const GamesPage = () => {
         setLoading(false)
       }
     },
-    [keyword, genre],
+    [keyword, genre, tag],
   )
 
   useEffect(() => {
@@ -100,6 +111,14 @@ const GamesPage = () => {
             {g}
           </button>
         ))}
+        <button
+          type="button"
+          className={`genre-chip genre-chip--accent ${tag ? 'genre-chip--active' : ''}`}
+          aria-pressed={tag !== ''}
+          onClick={() => selectTag(tag ? '' : '联运')}
+        >
+          联运 {tag ? '✕' : ''}
+        </button>
       </div>
 
       {error ? (

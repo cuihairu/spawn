@@ -72,6 +72,17 @@
   color: #ffffff;
 }
 
+/* 「联运」标签筛选 chip：橙色点缀，与类型筛选区分 */
+.genre-chip--accent {
+  border-color: #e8710a;
+  color: #f0a35e;
+}
+.genre-chip--accent.genre-chip--active {
+  background-color: #e8710a;
+  border-color: #e8710a;
+  color: #1a1105;
+}
+
 .games-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -180,6 +191,14 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+/* 运营维护入口：联运标签切换按钮 + 错误提示 */
+.game-detail-tag-admin {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
 }
 
 .game-detail-chip {

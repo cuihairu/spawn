@@ -39,10 +39,17 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 
 	// 受保护路由：写接口需要 Bearer 令牌（由 user-service 签发）
 	server.AddRoutes(
-		rest.WithMiddleware(middleware.AuthMiddleware(serverCtx), rest.Route{
-			Method:  http.MethodPost,
-			Path:    "/games",
-			Handler: CreateGameHandler(serverCtx),
-		}),
+		rest.WithMiddleware(middleware.AuthMiddleware(serverCtx),
+			rest.Route{
+				Method:  http.MethodPost,
+				Path:    "/games",
+				Handler: CreateGameHandler(serverCtx),
+			},
+			rest.Route{
+				Method:  http.MethodPatch,
+				Path:    "/games/:id/tags",
+				Handler: UpdateGameTagsHandler(serverCtx),
+			},
+		),
 	)
 }

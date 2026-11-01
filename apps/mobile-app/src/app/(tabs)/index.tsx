@@ -21,6 +21,7 @@ const PAGE_SIZE = 20;
 export default function GamesScreen() {
   const [keywordInput, setKeywordInput] = useState('');
   const [keyword, setKeyword] = useState(''); // 提交后的搜索词，空串 = 全量热度榜
+  const [coPublish, setCoPublish] = useState(false); // 「联运」标签筛选开关（只影响展示，不开通能力）
   const [games, setGames] = useState<Game[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -28,11 +29,12 @@ export default function GamesScreen() {
   // 同关键词重复搜索/下拉刷新时自增，驱动 effect 重跑
   const [nonce, setNonce] = useState(0);
 
-  // 初始加载与换词重查：首个语句即 await，setState 全部落在异步续体里。
+  // 初始加载与换词/换标签重查：首个语句即 await，setState 全部落在异步续体里。
   useEffect(() => {
     void (async () => {
       const result = await fetchGames({
         keyword: keyword || undefined,
+        tag: coPublish ? '联运' : undefined,
         limit: PAGE_SIZE,
         offset: 0,
       });
@@ -44,7 +46,7 @@ export default function GamesScreen() {
     }).finally(() => {
       setLoading(false);
     });
-  }, [keyword, nonce]);
+  }, [keyword, coPublish, nonce]);
 
   const runSearch = () => {
     setLoading(true); // 事件回调里同步置加载态，配合 effect 的 finally 复位
@@ -64,6 +66,7 @@ export default function GamesScreen() {
     void (async () => {
       const result = await fetchGames({
         keyword: keyword || undefined,
+        tag: coPublish ? '联运' : undefined,
         limit: PAGE_SIZE,
         offset: games.length,
       });
@@ -113,12 +116,26 @@ export default function GamesScreen() {
             <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
           </Pressable>
         </View>
+        <View style={styles.filterRow}>
+          <Pressable
+            accessibilityLabel="筛选联运游戏"
+            accessibilityRole="button"
+            accessibilityState={{ selected: coPublish }}
+            style={[styles.coPublishChip, coPublish && styles.coPublishChipActive]}
+            onPress={() => setCoPublish((v) => !v)}>
+            <Text style={[styles.coPublishText, coPublish && styles.coPublishTextActive]}>
+              联运 {coPublish ? '✕' : ''}
+            </Text>
+          </Pressable>
+        </View>
       </View>
 
       {keyword ? (
         <Text style={styles.resultMeta}>
           「{keyword}」共 {total} 个结果
         </Text>
+      ) : coPublish ? (
+        <Text style={styles.resultMeta}>联运游戏 · 共 {total} 款</Text>
       ) : (
         <Text style={styles.resultMeta}>按热度浏览 · 共 {total} 款</Text>
       )}
@@ -257,6 +274,31 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.text,
     fontSize: 14,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  coPublishChip: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+  },
+  coPublishChipActive: {
+    backgroundColor: colors.primary,
+  },
+  coPublishText: {
+    color: colors.primary,
+    fontSize: 13,
+  },
+  coPublishTextActive: {
+    color: colors.onPrimary,
+    fontWeight: '600',
   },
   resultMeta: {
     color: colors.textMuted,

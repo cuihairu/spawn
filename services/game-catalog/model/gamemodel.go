@@ -64,6 +64,7 @@ type GameStore interface {
 	List(filter GameFilter) ([]*Game, int)
 	Get(id string) (*Game, error)
 	Create(game *Game) (*Game, error)
+	SetTags(id string, tags []string) (*Game, error)
 	Featured(limit int) []*Game
 	Recommend(userId string, genres []string, limit int) []*Game
 }
@@ -246,6 +247,25 @@ func (m *GameModel) Create(game *Game) (*Game, error) {
 
 	m.cache.Delete(gameKeyID(game.Id))
 	return game, nil
+}
+
+// SetTags 整体替换游戏标签（全量覆盖，幂等）：先读确认存在，再 UPDATE 并失效缓存。
+// 标签为展示信息（如「联运」），能力开通由独立映射表控制，本方法不触碰能力配置。
+func (m *GameModel) SetTags(id string, tags []string) (*Game, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, ErrGameNotFound
+	}
+	if _, err := m.Get(id); err != nil {
+		return nil, err
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+	if _, err := m.db.Exec(`UPDATE games SET tags = ? WHERE id = ?`, encodeList(tags), id); err != nil {
+		return nil, fmt.Errorf("更新游戏标签失败: %w", err)
+	}
+	m.cache.Delete(gameKeyID(id))
+	return m.Get(id)
 }
 
 // all 全量读取游戏目录，按 id 排序保证跨方言确定性

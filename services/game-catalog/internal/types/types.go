@@ -64,6 +64,12 @@ type CreateGameRequest struct {
 	CoverImage  string   `json:"cover_image"`
 }
 
+// UpdateGameTagsRequest 整体覆盖游戏标签（运营维护入口，如标记「联运」）。
+type UpdateGameTagsRequest struct {
+	Id   string   `path:"id"`
+	Tags []string `json:"tags"`
+}
+
 type GameDetailResponse struct {
 	Game Game `json:"game"`
 }

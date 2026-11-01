@@ -436,3 +436,53 @@ func TestRecommend_TieBreaksByScore(t *testing.T) {
 		t.Fatalf("tie order = %s,%s, want score desc", rec[0].Id, rec[1].Id)
 	}
 }
+
+// SetTags 整体覆盖标签：落库可查、可清空、幂等；未找到返回哨兵；
+// 更新后按 tag 过滤可见（「联运」筛选链路）。
+func TestSetTags_ReplacesAndFilters(t *testing.T) {
+	m := newTestGameModel(t, false)
+	mustSeedGames(t, m, sampleFixture()...)
+
+	updated, err := m.SetTags("g-a", []string{"story", "联运"})
+	if err != nil {
+		t.Fatalf("set tags: %v", err)
+	}
+	if len(updated.Tags) != 2 || updated.Tags[1] != "联运" {
+		t.Fatalf("updated tags = %v, want [story 联运]", updated.Tags)
+	}
+
+	// 幂等：同值再写一次结果一致
+	updated2, err := m.SetTags("g-a", []string{"story", "联运"})
+	if err != nil || len(updated2.Tags) != 2 {
+		t.Fatalf("idempotent set tags: %v %v", updated2, err)
+	}
+
+	// 落库可查（Get 走缓存也应一致）
+	got, err := m.Get("g-a")
+	if err != nil || len(got.Tags) != 2 || got.Tags[1] != "联运" {
+		t.Fatalf("get after set tags: %v %v", got, err)
+	}
+
+	// 按 tag 过滤命中且不影响其它游戏（Limit>0 才返回分页切片）
+	games, total := m.List(GameFilter{Tag: "联运", Limit: 20})
+	if total != 1 || len(games) != 1 || games[0].Id != "g-a" {
+		first := "<empty>"
+		if len(games) > 0 {
+			first = games[0].Id
+		}
+		t.Fatalf("filter 联运 got total=%d rows=%d first=%s", total, len(games), first)
+	}
+
+	// 清空：传空数组清掉全部标签
+	cleared, err := m.SetTags("g-a", []string{})
+	if err != nil || len(cleared.Tags) != 0 {
+		t.Fatalf("clear tags: %v %v", cleared, err)
+	}
+	if _, total := m.List(GameFilter{Tag: "联运", Limit: 20}); total != 0 {
+		t.Fatalf("filter 联运 after clear got %d rows", total)
+	}
+
+	if _, err := m.SetTags("missing", []string{"x"}); !errors.Is(err, ErrGameNotFound) {
+		t.Fatalf("missing game err = %v, want ErrGameNotFound", err)
+	}
+}

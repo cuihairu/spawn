@@ -156,3 +156,50 @@ func readAll(t *testing.T, resp *http.Response) string {
 	}
 	return buf.String()
 }
+
+// TestRoutes_PatchGameTagsRequiresAuth 验证 PATCH /games/:id/tags 受 JWT 保护；
+// 有效令牌覆盖标签返回 200，未找到游戏返回 404。
+func TestRoutes_PatchGameTagsRequiresAuth(t *testing.T) {
+	base, sign := newAuthedTestServer(t)
+
+	// 1) 匿名 PATCH → 401
+	req, _ := http.NewRequest(http.MethodPatch, base+"/games/game-elden-ring/tags", bytes.NewReader([]byte(`{"tags":["联运"]}`)))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("anonymous PATCH: %v", err)
+	}
+	body := readAll(t, resp)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous PATCH status = %d, want 401 (body %s)", resp.StatusCode, body)
+	}
+
+	// 2) 有效令牌 PATCH 已存在游戏 → 200，返回带「联运」标签的游戏
+	req, _ = http.NewRequest(http.MethodPatch, base+"/games/game-elden-ring/tags", bytes.NewReader([]byte(`{"tags":["soulslike","联运"]}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+sign(validRouteClaims()))
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("authed PATCH: %v", err)
+	}
+	body = readAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("authed PATCH status = %d, want 200 (body %s)", resp.StatusCode, body)
+	}
+	if !bytes.Contains([]byte(body), []byte(`"联运"`)) {
+		t.Fatalf("authed PATCH body = %s, want updated tags containing 联运", body)
+	}
+
+	// 3) 有效令牌 PATCH 不存在的游戏 → 404
+	req, _ = http.NewRequest(http.MethodPatch, base+"/games/game-missing/tags", bytes.NewReader([]byte(`{"tags":["联运"]}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+sign(validRouteClaims()))
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("authed PATCH missing: %v", err)
+	}
+	body = readAll(t, resp)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("authed PATCH missing status = %d, want 404 (body %s)", resp.StatusCode, body)
+	}
+}

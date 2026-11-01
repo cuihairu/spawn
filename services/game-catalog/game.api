@@ -62,6 +62,11 @@ type CreateGameRequest {
 	CoverImage string `json:"cover_image"`
 }
 
+type UpdateGameTagsRequest {
+	Id string `path:"id"`
+	Tags []string `json:"tags"`
+}
+
 type RecommendationsRequest {
 	UserId string `form:"userId,optional"`
 	Genres string `form:"genres,optional"`
@@ -81,6 +86,9 @@ service game-catalog {
 
 	@handler CreateGameHandler
 	post /games (CreateGameRequest)
+
+	@handler UpdateGameTagsHandler
+	patch /games/:id/tags (UpdateGameTagsRequest) returns (GameDetailResponse)
 
 	@handler GetFeaturedGamesHandler
 	get /games/featured (FeaturedRequest) returns (FeaturedResponse)

@@ -24,5 +24,7 @@ func RegisterGameProxyRoutes(server *rest.Server, serverCtx *svc.ServiceContext)
 	server.AddRoutes([]rest.Route{
 		{Method: http.MethodGet, Path: "/games", Handler: h},
 		{Method: http.MethodGet, Path: "/games/:id", Handler: h},
+		// 运营标签维护（PATCH 标签）：Authorization 头透传，鉴权在 game-catalog 侧。
+		{Method: http.MethodPatch, Path: "/games/:id/tags", Handler: h},
 	})
 }

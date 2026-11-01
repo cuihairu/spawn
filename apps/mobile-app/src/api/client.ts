@@ -44,6 +44,7 @@ export interface GameListResult {
 
 export interface GamesQuery {
   keyword?: string;
+  tag?: string;
   limit?: number;
   offset?: number;
 }
@@ -182,6 +183,7 @@ export async function fetchPublicUser(userId: number): Promise<UserInfo> {
 export async function fetchGames(query: GamesQuery = {}): Promise<GameListResult> {
   const params = new URLSearchParams();
   if (query.keyword) params.set('keyword', query.keyword);
+  if (query.tag) params.set('tag', query.tag);
   params.set('limit', String(query.limit ?? 20));
   params.set('offset', String(query.offset ?? 0));
   return request<GameListResult>(`${GAME_SERVICE_URL}/games?${params.toString()}`);

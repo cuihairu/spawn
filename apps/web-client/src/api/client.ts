@@ -265,6 +265,7 @@ export async function fetchGames(
     keyword?: string
     genre?: string
     platform?: string
+    tag?: string
     sort?: string
     limit?: number
     offset?: number
@@ -275,6 +276,7 @@ export async function fetchGames(
   if (params?.keyword) searchParams.set('keyword', params.keyword)
   if (params?.genre) searchParams.set('genre', params.genre)
   if (params?.platform) searchParams.set('platform', params.platform)
+  if (params?.tag) searchParams.set('tag', params.tag)
   if (params?.sort) searchParams.set('sort', params.sort)
   searchParams.set('limit', String(params?.limit && params.limit > 0 ? params.limit : 20))
   searchParams.set('offset', String(params?.offset && params.offset > 0 ? params.offset : 0))
@@ -284,6 +286,29 @@ export async function fetchGames(
     `/games?${searchParams.toString()}`,
   )
   return { games: (payload.games ?? []).map(mapGameSummary), total: payload.total ?? 0 }
+}
+
+// 运营维护入口：整体覆盖游戏标签（如标记/取消「联运」）。登录用户按现有写接口口径可调，
+// 角色/权限细化随运营后台（GP-103）落地。
+export async function updateGameTags(
+  id: string,
+  tags: string[],
+  token: string,
+): Promise<GameDetail> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  const payload = await request<{ game: GameDto }>(baseUrl, `/games/${encodeURIComponent(id)}/tags`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ tags }),
+  })
+  const raw = payload.game
+  return {
+    ...mapGameSummary(raw),
+    releaseDate: raw.release_date,
+    developer: raw.developer,
+    publisher: raw.publisher,
+    trendingScore: raw.trending_score,
+  }
 }
 
 // 游戏详情（game-catalog GET /games/:id，返回 { game } 包裹）

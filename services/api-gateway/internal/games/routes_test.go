@@ -77,6 +77,22 @@ func TestGameProxyRoutesPassthrough(t *testing.T) {
 	if resp.StatusCode != 404 {
 		t.Fatalf("missing detail status=%d, want 404", resp.StatusCode)
 	}
+
+	// 运营标签维护：PATCH 方法 + 路径 + Authorization 透传到上游
+	req, _ := http.NewRequest(http.MethodPatch, l+"/games/g-1/tags", nil)
+	req.Header.Set("Authorization", "Bearer tkn")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /games/g-1/tags: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("PATCH tags status=%d", resp.StatusCode)
+	}
+	last = hits[len(hits)-1]
+	if last.method != http.MethodPatch || last.path != "/games/g-1/tags" {
+		t.Fatalf("PATCH tags hit = %+v", last)
+	}
 }
 
 // TestRegisterGameProxyRoutesPanics 非法上游地址 → NewUpstream 失败 panic。

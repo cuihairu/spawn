@@ -156,7 +156,7 @@ function App() {
             <Route path="/" element={<HomePage auth={auth} onAuthChange={handleAuthChange} />} />
             <Route path="/discover" element={<DiscoverPage />} />
             <Route path="/games" element={<GamesPage />} />
-            <Route path="/games/:id" element={<GameDetailPage />} />
+            <Route path="/games/:id" element={<GameDetailPage token={auth?.token} />} />
             <Route
               path="/stats"
               element={
