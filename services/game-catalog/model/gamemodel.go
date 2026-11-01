@@ -18,6 +18,15 @@ import (
 
 var ErrGameNotFound = errors.New("game not found")
 
+// 游戏发布/审核状态（GP-103 提审流）。存量与旧调用方空值回 approved 保持可见。
+const (
+	GameStatusDraft    = "draft"
+	GameStatusPending  = "pending"
+	GameStatusApproved = "approved"
+	GameStatusRejected = "rejected"
+	GameStatusOffline  = "offline"
+)
+
 type Game struct {
 	Id               string   `json:"id"`
 	Title            string   `json:"title"`
@@ -38,6 +47,8 @@ type Game struct {
 	StoreLink        string   `json:"store_link"`
 	DownloadUrl      string   `json:"download_url"`
 	PlayUrl          string   `json:"play_url"`
+	Status           string   `json:"status"`
+	ReviewReason     string   `json:"review_reason"`
 }
 
 type GameFilter struct {
@@ -45,6 +56,7 @@ type GameFilter struct {
 	Genre    string
 	Platform string
 	Tag      string
+	Status   string
 	Limit    int
 	Offset   int
 	Sort     string
@@ -72,6 +84,7 @@ type GameStore interface {
 	Get(id string) (*Game, error)
 	Create(game *Game) (*Game, error)
 	SetTags(id string, tags []string) (*Game, error)
+	SetStatus(id, status, reason string) (*Game, error)
 	Featured(limit int) []*Game
 	Recommend(userId string, genres []string, limit int) []*Game
 }
@@ -86,7 +99,7 @@ func NewGameModel(db *sql.DB) *GameModel {
 	}
 }
 
-const gameColumns = "id, title, description, genres, platforms, tags, release_date, developer, publisher, score, trending_score, cover_image, screenshots, video_url, changelog, developer_website, store_link, download_url, play_url"
+const gameColumns = "id, title, description, genres, platforms, tags, release_date, developer, publisher, score, trending_score, cover_image, screenshots, video_url, changelog, developer_website, store_link, download_url, play_url, status, review_reason"
 
 // 迁移列（已有库 CREATE TABLE IF NOT EXISTS 不会补列）：SQLite/MySQL 同语法 ADD COLUMN。
 var gameColumnDDL = map[string]string{
@@ -97,6 +110,8 @@ var gameColumnDDL = map[string]string{
 	"store_link":        "store_link VARCHAR(512) NOT NULL DEFAULT ''",
 	"download_url":      "download_url VARCHAR(512) NOT NULL DEFAULT ''",
 	"play_url":          "play_url VARCHAR(512) NOT NULL DEFAULT ''",
+	"status":            "status VARCHAR(16) NOT NULL DEFAULT 'approved'",
+	"review_reason":     "review_reason VARCHAR(1024) NOT NULL DEFAULT ''",
 }
 
 // CreateGamesTable 创建游戏表（开发使用）。先尝试 SQLite 方言，失败回落
@@ -122,7 +137,9 @@ func (m *GameModel) CreateGamesTable() error {
 			developer_website VARCHAR(512) NOT NULL DEFAULT '',
 			store_link VARCHAR(512) NOT NULL DEFAULT '',
 			download_url VARCHAR(512) NOT NULL DEFAULT '',
-			play_url VARCHAR(512) NOT NULL DEFAULT ''
+			play_url VARCHAR(512) NOT NULL DEFAULT '',
+			status VARCHAR(16) NOT NULL DEFAULT 'approved',
+			review_reason VARCHAR(1024) NOT NULL DEFAULT ''
 		)
 	`
 
@@ -147,7 +164,9 @@ func (m *GameModel) CreateGamesTable() error {
 				developer_website VARCHAR(512) NOT NULL DEFAULT '',
 				store_link VARCHAR(512) NOT NULL DEFAULT '',
 				download_url VARCHAR(512) NOT NULL DEFAULT '',
-				play_url VARCHAR(512) NOT NULL DEFAULT ''
+				play_url VARCHAR(512) NOT NULL DEFAULT '',
+				status VARCHAR(16) NOT NULL DEFAULT 'approved',
+				review_reason VARCHAR(1024) NOT NULL DEFAULT ''
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 		`
 		if _, err := m.db.Exec(query); err != nil {
@@ -243,18 +262,30 @@ func (m *GameModel) SeedIfEmpty() error {
 
 func (m *GameModel) insertRow(game *Game) error {
 	_, err := m.db.Exec(
-		`INSERT INTO games (`+gameColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO games (`+gameColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		game.Id, game.Title, game.Description,
 		encodeList(game.Genres), encodeList(game.Platforms), encodeList(game.Tags),
 		game.ReleaseDate, game.Developer, game.Publisher,
 		game.Score, game.TrendingScore, game.CoverImage,
 		encodeList(game.Screenshots), game.VideoUrl, game.Changelog,
 		game.DeveloperWebsite, game.StoreLink, game.DownloadUrl, game.PlayUrl,
+		normalizeGameStatus(game.Status), game.ReviewReason,
 	)
 	if err != nil {
 		return fmt.Errorf("写入游戏失败: %w", err)
 	}
 	return nil
+
+}
+
+// normalizeGameStatus 归一游戏状态；空值（存量库 / 旧调用方）回 approved 保持可见。
+func normalizeGameStatus(status string) string {
+	switch status {
+	case GameStatusDraft, GameStatusPending, GameStatusApproved, GameStatusRejected, GameStatusOffline:
+		return status
+	default:
+		return GameStatusApproved
+	}
 }
 
 // encodeList 序列化字符串数组为 JSON 文本（nil 归一为空数组）。
@@ -305,7 +336,8 @@ func (m *GameModel) Get(id string) (*Game, error) {
 			&game.ReleaseDate, &game.Developer, &game.Publisher,
 			&game.Score, &game.TrendingScore, &game.CoverImage,
 			&screenshots, &game.VideoUrl, &game.Changelog,
-			&game.DeveloperWebsite, &game.StoreLink, &game.DownloadUrl, &game.PlayUrl)
+			&game.DeveloperWebsite, &game.StoreLink, &game.DownloadUrl, &game.PlayUrl,
+			&game.Status, &game.ReviewReason)
 
 	if err == sql.ErrNoRows {
 		return nil, ErrGameNotFound
@@ -366,6 +398,24 @@ func (m *GameModel) SetTags(id string, tags []string) (*Game, error) {
 	return m.Get(id)
 }
 
+// SetStatus 更新游戏发布/审核状态与原因（提审/审核/上下架共用）。
+// 状态归一化保证空值回落 approved；写后失效缓存再读回。
+func (m *GameModel) SetStatus(id, status, reason string) (*Game, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, ErrGameNotFound
+	}
+	if _, err := m.Get(id); err != nil {
+		return nil, err
+	}
+	status = normalizeGameStatus(status)
+	if _, err := m.db.Exec(`UPDATE games SET status = ?, review_reason = ? WHERE id = ?`,
+		status, reason, id); err != nil {
+		return nil, fmt.Errorf("更新游戏状态失败: %w", err)
+	}
+	m.cache.Delete(gameKeyID(id))
+	return m.Get(id)
+}
+
 // all 全量读取游戏目录，按 id 排序保证跨方言确定性
 // （原内存仓为插入序；并列趋势分的排序由此回退到 id 序）。
 func (m *GameModel) all() ([]*Game, error) {
@@ -383,7 +433,8 @@ func (m *GameModel) all() ([]*Game, error) {
 			&game.ReleaseDate, &game.Developer, &game.Publisher,
 			&game.Score, &game.TrendingScore, &game.CoverImage,
 			&screenshots, &game.VideoUrl, &game.Changelog,
-			&game.DeveloperWebsite, &game.StoreLink, &game.DownloadUrl, &game.PlayUrl); err != nil {
+			&game.DeveloperWebsite, &game.StoreLink, &game.DownloadUrl, &game.PlayUrl,
+			&game.Status, &game.ReviewReason); err != nil {
 			return nil, fmt.Errorf("读取游戏行失败: %w", err)
 		}
 		if game.Genres, err = decodeList(genres); err != nil {
@@ -436,13 +487,19 @@ func (m *GameModel) List(filter GameFilter) ([]*Game, int) {
 }
 
 // Featured 按趋势分降序列出热门游戏；limit<=0 或超界时返回全量。
+// 只露出已上架游戏（与公开目录口径一致）。
 func (m *GameModel) Featured(limit int) []*Game {
 	games, err := m.all()
 	if err != nil {
 		return nil
 	}
 
-	cloned := append([]*Game(nil), games...)
+	cloned := make([]*Game, 0, len(games))
+	for _, game := range games {
+		if game.Status == GameStatusApproved {
+			cloned = append(cloned, game)
+		}
+	}
 	sort.SliceStable(cloned, func(i, j int) bool {
 		return cloned[i].TrendingScore > cloned[j].TrendingScore
 	})
@@ -468,10 +525,14 @@ func (m *GameModel) Recommend(userId string, genres []string, limit int) []*Game
 
 	var pool []*Game
 	if len(genres) == 0 {
-		pool = append(pool, games...)
+		for _, game := range games {
+			if game.Status == GameStatusApproved {
+				pool = append(pool, game)
+			}
+		}
 	} else {
 		for _, game := range games {
-			if containsAny(game.Genres, genres) {
+			if game.Status == GameStatusApproved && containsAny(game.Genres, genres) {
 				pool = append(pool, game)
 			}
 		}
@@ -522,6 +583,10 @@ func matches(game *Game, filter GameFilter) bool {
 	}
 
 	if filter.Tag != "" && !contains(game.Tags, filter.Tag) {
+		return false
+	}
+
+	if filter.Status != "" && game.Status != filter.Status {
 		return false
 	}
 

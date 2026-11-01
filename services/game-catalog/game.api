@@ -25,6 +25,8 @@ type Game {
 	StoreLink string `json:"store_link"`
 	DownloadUrl string `json:"download_url"`
 	PlayUrl string `json:"play_url"`
+	Status string `json:"status"`
+	ReviewReason string `json:"review_reason"`
 }
 
 type ListGamesRequest {
@@ -91,6 +93,144 @@ type RecommendationsResponse {
 	Games []Game `json:"games"`
 }
 
+// ==================== GP-103 运营后台 ====================
+
+type Partner {
+	Id int64 `json:"id"`
+	Name string `json:"name"`
+	ContactEmail string `json:"contact_email"`
+	Status string `json:"status"`
+	CreatedAt string `json:"created_at"`
+}
+
+type GameOwnership {
+	GameId string `json:"game_id"`
+	PartnerId int64 `json:"partner_id"`
+	GrantedBy int64 `json:"granted_by"`
+	GrantedAt string `json:"granted_at"`
+	Status string `json:"status"`
+}
+
+type GameReview {
+	Id int64 `json:"id"`
+	GameId string `json:"game_id"`
+	VersionId string `json:"version_id"`
+	SubmittedBy int64 `json:"submitted_by"`
+	SubmittedAt string `json:"submitted_at"`
+	Status string `json:"status"`
+	ReviewerId int64 `json:"reviewer_id"`
+	ReviewReason string `json:"review_reason"`
+	ReviewedAt string `json:"reviewed_at"`
+}
+
+type GameVersion {
+	Id string `json:"id"`
+	GameId string `json:"game_id"`
+	Version string `json:"version"`
+	Changelog string `json:"changelog"`
+	Status string `json:"status"`
+	ReviewReason string `json:"review_reason"`
+	CreatedAt string `json:"created_at"`
+}
+
+type AuditLog {
+	Id int64 `json:"id"`
+	ActorId int64 `json:"actor_id"`
+	ActorRole string `json:"actor_role"`
+	Action string `json:"action"`
+	ResourceType string `json:"resource_type"`
+	ResourceId string `json:"resource_id"`
+	BeforeJson string `json:"before_json"`
+	AfterJson string `json:"after_json"`
+	Ip string `json:"ip"`
+	CreatedAt string `json:"created_at"`
+}
+
+type GrantRoleRequest {
+	UserId int64 `json:"user_id"`
+	Role string `json:"role"`
+	PartnerId int64 `json:"partner_id,optional"`
+}
+
+type GrantRoleResponse {
+	UserId int64 `json:"user_id"`
+	Role string `json:"role"`
+	PartnerId int64 `json:"partner_id"`
+}
+
+type CreatePartnerRequest {
+	Name string `json:"name"`
+	ContactEmail string `json:"contact_email,optional"`
+}
+
+type SetPartnerStatusRequest {
+	Id int64 `path:"id"`
+	Status string `json:"status"`
+}
+
+type PartnerListResponse {
+	Partners []Partner `json:"partners"`
+}
+
+type AssignOwnershipRequest {
+	Id string `path:"id"`
+	PartnerId int64 `json:"partner_id"`
+}
+
+type ListReviewsRequest {
+	Status string `form:"status,optional"`
+	Limit int64 `form:"limit,default=20"`
+	Offset int64 `form:"offset,default=0"`
+}
+
+type ReviewsListResponse {
+	Reviews []GameReview `json:"reviews"`
+	Total int `json:"total"`
+}
+
+type DecideReviewRequest {
+	Id int64 `path:"id"`
+	Decision string `json:"decision"`
+	Reason string `json:"reason,optional"`
+}
+
+type PartnerSubmitRequest {
+	Id string `path:"id"`
+	VersionId string `json:"version_id,optional"`
+}
+
+type CreateVersionRequest {
+	Id string `path:"id"`
+	Version string `json:"version"`
+	Changelog string `json:"changelog,optional"`
+}
+
+type VersionListResponse {
+	Versions []GameVersion `json:"versions"`
+}
+
+type ListAuditRequest {
+	ResourceType string `form:"resource_type,optional"`
+	Limit int64 `form:"limit,default=50"`
+	Offset int64 `form:"offset,default=0"`
+}
+
+type IdPathRequest {
+	Id string `path:"id"`
+}
+
+type AuditListResponse {
+	Logs []AuditLog `json:"logs"`
+	Total int `json:"total"`
+}
+
+type MeResponse {
+	UserId int64 `json:"user_id"`
+	Username string `json:"username"`
+	Role string `json:"role"`
+	PartnerId int64 `json:"partner_id"`
+}
+
 service game-catalog {
 	@handler ListGamesHandler
 	get /games (ListGamesRequest) returns (ListGamesResponse)
@@ -109,4 +249,56 @@ service game-catalog {
 
 	@handler GetRecommendationsHandler
 	get /games/recommendations (RecommendationsRequest) returns (RecommendationsResponse)
+
+	// ---- GP-103：当前账号平台角色（任意已登录用户）----
+	@handler MeHandler
+	get /me returns (MeResponse)
+
+	// ---- GP-103：运营后台（platform_admin / operator，角色守卫在服务端）----
+	@handler GrantRoleHandler
+	post /admin/roles (GrantRoleRequest) returns (GrantRoleResponse)
+
+	@handler CreatePartnerHandler
+	post /admin/partners (CreatePartnerRequest) returns (Partner)
+
+	@handler ListPartnersHandler
+	get /admin/partners returns (PartnerListResponse)
+
+	@handler SetPartnerStatusHandler
+	patch /admin/partners/:id (SetPartnerStatusRequest) returns (Partner)
+
+	@handler AssignOwnershipHandler
+	post /admin/games/:id/ownership (AssignOwnershipRequest) returns (GameOwnership)
+
+	@handler ListReviewsHandler
+	get /admin/reviews (ListReviewsRequest) returns (ReviewsListResponse)
+
+	@handler DecideReviewHandler
+	post /admin/reviews/:id/decision (DecideReviewRequest) returns (GameReview)
+
+	@handler PublishGameHandler
+	post /admin/games/:id/publish (IdPathRequest) returns (Game)
+
+	@handler UnpublishGameHandler
+	post /admin/games/:id/unpublish (IdPathRequest) returns (Game)
+
+	@handler AdminListVersionsHandler
+	get /admin/games/:id/versions (IdPathRequest) returns (VersionListResponse)
+
+	@handler ListAuditLogsHandler
+	get /admin/audit (ListAuditRequest) returns (AuditListResponse)
+
+	// ---- GP-103：合作方自助（partner 角色，按归属限制）----
+	@handler ListPartnerGamesHandler
+	get /partner/games returns (ListGamesResponse)
+
+	@handler PartnerSubmitHandler
+	post /partner/games/:id/submit (PartnerSubmitRequest) returns (GameReview)
+
+	@handler PartnerCreateVersionHandler
+	post /partner/games/:id/versions (CreateVersionRequest) returns (GameVersion)
+
+	@handler PartnerListVersionsHandler
+	get /partner/games/:id/versions (IdPathRequest) returns (VersionListResponse)
 }
+

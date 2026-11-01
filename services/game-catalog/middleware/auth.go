@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
+	"github.com/tappi/tappi/services/game-catalog/model"
+
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/rest"
 )
@@ -47,7 +49,35 @@ func AuthMiddleware(svcCtx *svc.ServiceContext) rest.Middleware {
 			ctx := context.WithValue(r.Context(), "user_id", claims.UserId)
 			ctx = context.WithValue(ctx, "username", claims.Username)
 
+			// 平台角色（GP-103）：绑定缺失按 player 处理；读失败不阻断（缺省 player）。
+			role := model.RolePlayer
+			if role, err = svcCtx.AdminRepository.GetRole(claims.UserId); err != nil {
+				logx.Errorw("读取平台角色失败，按 player 处理", logx.Field("error", err))
+				role = model.RolePlayer
+			}
+			ctx = context.WithValue(ctx, "role", role)
+
 			next(w, r.WithContext(ctx))
+		}
+	}
+}
+
+// RequireRole 角色守卫：要求上下文角色命中白名单，否则 403。
+// 须挂在 AuthMiddleware 之后；player 无管理权限。
+func RequireRole(allowed ...string) rest.Middleware {
+	allowedSet := make(map[string]bool, len(allowed))
+	for _, r := range allowed {
+		allowedSet[r] = true
+	}
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			role, _ := r.Context().Value("role").(string)
+			if role == "" || !allowedSet[role] {
+				w.WriteHeader(http.StatusForbidden)
+				w.Write([]byte(`{"code":403,"message":"无权限执行该操作"}`))
+				return
+			}
+			next(w, r)
 		}
 	}
 }

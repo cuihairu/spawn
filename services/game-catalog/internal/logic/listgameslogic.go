@@ -30,6 +30,7 @@ func (l *ListGamesLogic) ListGames(req *types.ListGamesRequest) (resp *types.Lis
 		Genre:    req.Genre,
 		Platform: req.Platform,
 		Tag:      req.Tag,
+		Status:   model.GameStatusApproved, // 公开目录只露出已上架（提审/下架游戏走后台入口）
 		Sort:     req.Sort,
 		Limit:    int(req.Limit),
 		Offset:   int(req.Offset),

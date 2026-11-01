@@ -347,7 +347,7 @@ func TestCorruptedArrayColumns(t *testing.T) {
 			m := newTestGameModel(t, false)
 			if _, err := m.db.Exec(
 				`INSERT INTO games (` + gameColumns + `)
-				 VALUES ('g-bad', 'Bad', 'd', '[]', '[]', '[]', '2024-01-01', 'dev', 'pub', 1.0, 1, 'c', '[]', '', '', '', '', '', '')`); err != nil {
+				 VALUES ('g-bad', 'Bad', 'd', '[]', '[]', '[]', '2024-01-01', 'dev', 'pub', 1.0, 1, 'c', '[]', '', '', '', '', '', '', 'approved', '')`); err != nil {
 				t.Fatalf("insert row: %v", err)
 			}
 			if _, err := m.db.Exec(`UPDATE games SET ` + col + ` = '{oops' WHERE id = 'g-bad'`); err != nil {
@@ -370,7 +370,7 @@ func TestEmptyArrayColumns(t *testing.T) {
 	m := newTestGameModel(t, false)
 	if _, err := m.db.Exec(
 		`INSERT INTO games (` + gameColumns + `)
-		 VALUES ('g-empty', 'Empty', 'd', '', '', '', '2024-01-01', 'dev', 'pub', 1.0, 1, 'c', '[]', '', '', '', '', '', '')`); err != nil {
+		 VALUES ('g-empty', 'Empty', 'd', '', '', '', '2024-01-01', 'dev', 'pub', 1.0, 1, 'c', '[]', '', '', '', '', '', '', 'approved', '')`); err != nil {
 		t.Fatalf("insert row: %v", err)
 	}
 
@@ -389,7 +389,7 @@ func TestScanError_TextInNumericColumn(t *testing.T) {
 	m := newTestGameModel(t, false)
 	if _, err := m.db.Exec(
 		`INSERT INTO games (` + gameColumns + `)
-		 VALUES ('g-badnum', 'BadNum', 'd', '[]', '[]', '[]', '2024-01-01', 'dev', 'pub', 1.0, 'oops', 'c', '[]', '', '', '', '', '', '')`); err != nil {
+		 VALUES ('g-badnum', 'BadNum', 'd', '[]', '[]', '[]', '2024-01-01', 'dev', 'pub', 1.0, 'oops', 'c', '[]', '', '', '', '', '', '', 'approved', '')`); err != nil {
 		t.Fatalf("insert row: %v", err)
 	}
 

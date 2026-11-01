@@ -17,5 +17,9 @@ type Config struct {
 	// Auth JWT 校验配置（与 user-service 共享密钥，令牌由 user-service 签发）
 	Auth struct {
 		JWTSecret string `json:",env=JWT_SECRET"`
+
+		// AdminUserIds 引导管理员账号（逗号分隔的 user-service 用户 id），
+		// 启动时写入 platform_roles 作为 platform_admin（幂等；首个管理员引导）。
+		AdminUserIds []string `json:",env=ADMIN_USER_IDS,optional"`
 	}
 }

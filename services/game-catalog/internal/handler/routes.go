@@ -9,6 +9,7 @@ import (
 
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 	"github.com/tappi/tappi/services/game-catalog/middleware"
+	"github.com/tappi/tappi/services/game-catalog/model"
 
 	"github.com/zeromicro/go-zero/rest"
 )
@@ -52,4 +53,41 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			},
 		),
 	)
+
+	auth := middleware.AuthMiddleware(serverCtx)
+
+	// 当前账号平台角色（导航/入口权限用）：任意已登录用户可查自身角色。
+	server.AddRoutes(rest.WithMiddleware(auth,
+		rest.Route{Method: http.MethodGet, Path: "/me", Handler: MeHandler(serverCtx)},
+	))
+
+	// 运营后台（GP-103）：platform_admin/operator 方可访问；
+	// 角色授予收紧为 platform_admin（最小权限）。
+	adminRoutes := rest.WithMiddleware(middleware.RequireRole(model.RolePlatformAdmin),
+		rest.Route{Method: http.MethodPost, Path: "/admin/roles", Handler: GrantRoleHandler(serverCtx)},
+	)
+	adminRoutes = append(adminRoutes, rest.WithMiddleware(
+		middleware.RequireRole(model.RolePlatformAdmin, model.RoleOperator),
+		rest.Route{Method: http.MethodPost, Path: "/admin/partners", Handler: CreatePartnerHandler(serverCtx)},
+		rest.Route{Method: http.MethodGet, Path: "/admin/partners", Handler: ListPartnersHandler(serverCtx)},
+		rest.Route{Method: http.MethodPatch, Path: "/admin/partners/:id", Handler: SetPartnerStatusHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/admin/games/:id/ownership", Handler: AssignOwnershipHandler(serverCtx)},
+		rest.Route{Method: http.MethodGet, Path: "/admin/reviews", Handler: ListReviewsHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/admin/reviews/:id/decision", Handler: DecideReviewHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/admin/games/:id/publish", Handler: PublishGameHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/admin/games/:id/unpublish", Handler: UnpublishGameHandler(serverCtx)},
+		rest.Route{Method: http.MethodGet, Path: "/admin/games/:id/versions", Handler: AdminListVersionsHandler(serverCtx)},
+		rest.Route{Method: http.MethodGet, Path: "/admin/audit", Handler: ListAuditLogsHandler(serverCtx)},
+	)...)
+	server.AddRoutes(rest.WithMiddleware(auth, adminRoutes...))
+
+	// 合作方自助（开发者后台）：partner 角色，按合作方归属限制游戏。
+	server.AddRoutes(rest.WithMiddleware(auth,
+		rest.WithMiddleware(middleware.RequireRole(model.RolePartner),
+			rest.Route{Method: http.MethodGet, Path: "/partner/games", Handler: ListPartnerGamesHandler(serverCtx)},
+			rest.Route{Method: http.MethodPost, Path: "/partner/games/:id/submit", Handler: PartnerSubmitHandler(serverCtx)},
+			rest.Route{Method: http.MethodPost, Path: "/partner/games/:id/versions", Handler: PartnerCreateVersionHandler(serverCtx)},
+			rest.Route{Method: http.MethodGet, Path: "/partner/games/:id/versions", Handler: PartnerListVersionsHandler(serverCtx)},
+		)...,
+	))
 }

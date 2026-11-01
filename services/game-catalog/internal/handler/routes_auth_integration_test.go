@@ -43,6 +43,8 @@ func newAuthedTestServer(t *testing.T) (string, func(claims utils.JWTClaims) str
 	c.Port = port
 	c.MySQL.DataSource = "file:" + t.TempDir() + "/games.db"
 	c.Auth.JWTSecret = testJWTSecret
+	// 引导 user 1 为 platform_admin，覆盖 GP-103 角色守卫与后台链路
+	c.Auth.AdminUserIds = []string{"1"}
 
 	svcCtx := svc.NewServiceContext(c)
 	server := rest.MustNewServer(c.RestConf)

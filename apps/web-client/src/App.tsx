@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
-import { fetchDMUnreadCount, fetchUnreadNotificationCount, type UserInfo } from './api/client'
+import { fetchDMUnreadCount, fetchMe, fetchUnreadNotificationCount, type MeInfo, type UserInfo } from './api/client'
 import { connectNotificationStream } from './lib/realtime'
 import HomePage from './pages/HomePage'
 import DiscoverPage from './pages/DiscoverPage'
@@ -16,6 +16,8 @@ import PostDetailPage from './pages/PostDetailPage'
 import ProfilePage from './pages/ProfilePage'
 import UserProfilePage from './pages/UserProfilePage'
 import StatsPage from './pages/StatsPage'
+import AdminPage from './pages/AdminPage'
+import PartnerPage from './pages/PartnerPage'
 import './App.css'
 
 const AUTH_STORAGE_KEY = 'tappi.auth'
@@ -41,8 +43,12 @@ function App() {
   // 站内私信未读数与帧计数：同款 30s 轮询 + WS 加速，驱动信封徽标与消息页重拉
   const [unreadDMs, setUnreadDMs] = useState(0)
   const [messageTick, setMessageTick] = useState(0)
+  // 平台角色（GP-103）：登录后拉取，驱动运营/合作方后台入口；
+  // 服务端为唯一裁决，前端仅做入口显隐（player 请求 /admin/* 仍 403）。
+  const [me, setMe] = useState<MeInfo | null>(null)
   const handleAuthChange = useCallback((next: { token: string; user: UserInfo } | null) => {
     setAuth(next)
+    setMe(null)
     if (!next) {
       localStorage.removeItem(AUTH_STORAGE_KEY)
       setUnreadNotifications(0)
@@ -51,6 +57,21 @@ function App() {
     }
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next))
   }, [])
+
+  useEffect(() => {
+    if (!auth) return
+    let cancelled = false
+    fetchMe(auth.token)
+      .then((info) => {
+        if (!cancelled) setMe(info)
+      })
+      .catch(() => {
+        // 角色拉取失败仅隐藏后台入口（服务端守卫仍生效）
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [auth])
 
   useEffect(() => {
     if (!auth) return
@@ -138,6 +159,16 @@ function App() {
                   <Link to="/stats" className="nav-link">
                     战绩
                   </Link>
+                  {me?.role === 'platform_admin' || me?.role === 'operator' ? (
+                    <Link to="/admin" className="nav-link">
+                      运营后台
+                    </Link>
+                  ) : null}
+                  {me?.role === 'partner' ? (
+                    <Link to="/partner" className="nav-link">
+                      合作方后台
+                    </Link>
+                  ) : null}
                   <Link to="/profile" className="nav-link">
                     个人中心
                   </Link>
@@ -195,6 +226,32 @@ function App() {
                 ) : (
                   <div className="error-page">
                     <p>请先登录</p>
+                    <Link to="/">返回首页</Link>
+                  </div>
+                )
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                auth && me && (me.role === 'platform_admin' || me.role === 'operator') ? (
+                  <AdminPage token={auth.token} isAdmin={me.role === 'platform_admin'} />
+                ) : (
+                  <div className="error-page">
+                    <p>{auth ? '无后台权限（需运营/管理员角色）' : '请先登录'}</p>
+                    <Link to="/">返回首页</Link>
+                  </div>
+                )
+              }
+            />
+            <Route
+              path="/partner"
+              element={
+                auth && me && me.role === 'partner' ? (
+                  <PartnerPage token={auth.token} partnerId={me.partnerId} />
+                ) : (
+                  <div className="error-page">
+                    <p>{auth ? '无合作方权限' : '请先登录'}</p>
                     <Link to="/">返回首页</Link>
                   </div>
                 )

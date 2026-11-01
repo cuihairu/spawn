@@ -36,6 +36,11 @@ func (l *GetGameDetailLogic) GetGameDetail(req *types.GetGameDetailRequest) (*ty
 		return nil, newAPIError(http.StatusInternalServerError, "查询失败")
 	}
 
+	// 公开详情只露出已上架游戏；提审中/驳回/下架由运营或合作方后台查看。
+	if game.Status != model.GameStatusApproved {
+		return nil, newAPIError(http.StatusNotFound, "游戏不存在")
+	}
+
 	return &types.GameDetailResponse{
 		Game: toTypesGame(game),
 	}, nil

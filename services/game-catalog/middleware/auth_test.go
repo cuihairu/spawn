@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,14 +11,26 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
+	"github.com/tappi/tappi/services/game-catalog/model"
 	"github.com/tappi/tappi/services/game-catalog/utils"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const testSecret = "unit-test-secret"
 
-// newTestSvcCtx 仅构造中间件用到的 Auth 字段，避免依赖数据文件加载。
+// newTestSvcCtx 构造中间件用到的 Auth 与角色存取（内存 SQLite），
+// 覆盖 AuthMiddleware 读取平台角色路径。
 func newTestSvcCtx() *svc.ServiceContext {
-	return &svc.ServiceContext{Auth: utils.NewAuth(testSecret)}
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil {
+		panic(err)
+	}
+	admin := model.NewAdminModel(db)
+	if err := admin.CreateAdminTables(); err != nil {
+		panic(err)
+	}
+	return &svc.ServiceContext{Auth: utils.NewAuth(testSecret), AdminRepository: admin}
 }
 
 func signToken(t *testing.T, secret string, claims utils.JWTClaims) string {
@@ -158,5 +172,30 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 	}
 	if *username != "alice" {
 		t.Fatalf("ctx username = %q, want alice", *username)
+	}
+}
+
+// TestRequireRole 角色守卫：命中白名单放行，否则 403；player 无管理权限。
+func TestRequireRole(t *testing.T) {
+	run := func(role string, allowed ...string) (int, bool) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		req = req.WithContext(context.WithValue(req.Context(), "role", role))
+		reached := false
+		RequireRole(allowed...)(func(w http.ResponseWriter, r *http.Request) {
+			reached = true
+			w.WriteHeader(http.StatusOK)
+		})(rec, req)
+		return rec.Code, reached
+	}
+
+	if code, reached := run("operator", "platform_admin", "operator"); code != http.StatusOK || !reached {
+		t.Fatalf("operator allowed: code=%d reached=%v", code, reached)
+	}
+	if code, reached := run("player", "platform_admin", "operator"); code != http.StatusForbidden || reached {
+		t.Fatalf("player blocked: code=%d reached=%v", code, reached)
+	}
+	if code, _ := run("", "operator"); code != http.StatusForbidden {
+		t.Fatalf("empty role: code=%d", code)
 	}
 }

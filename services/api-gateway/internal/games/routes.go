@@ -26,5 +26,22 @@ func RegisterGameProxyRoutes(server *rest.Server, serverCtx *svc.ServiceContext)
 		{Method: http.MethodGet, Path: "/games/:id", Handler: h},
 		// 运营标签维护（PATCH 标签）：Authorization 头透传，鉴权在 game-catalog 侧。
 		{Method: http.MethodPatch, Path: "/games/:id/tags", Handler: h},
+		{Method: http.MethodGet, Path: "/me", Handler: h},
+		// GP-103 运营后台与开发者自助入口：Authorization 头透传，角色鉴权在 game-catalog 侧。
+		{Method: http.MethodPost, Path: "/admin/roles", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/partners", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/partners", Handler: h},
+		{Method: http.MethodPatch, Path: "/admin/partners/:id", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/games/:id/ownership", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/reviews", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/reviews/:id/decision", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/games/:id/publish", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/games/:id/unpublish", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/games/:id/versions", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/audit", Handler: h},
+		{Method: http.MethodGet, Path: "/partner/games", Handler: h},
+		{Method: http.MethodPost, Path: "/partner/games/:id/submit", Handler: h},
+		{Method: http.MethodPost, Path: "/partner/games/:id/versions", Handler: h},
+		{Method: http.MethodGet, Path: "/partner/games/:id/versions", Handler: h},
 	})
 }
