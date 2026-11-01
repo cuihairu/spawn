@@ -1,4 +1,9 @@
-<div align="center"><a href="https://cuihairu.github.io/spawn/zh/"><img src="https://img.shields.io/badge/docs-文档-blue" alt="docs"></a></div>
+<div align="center">
+  <img src="docs/public/logo.svg" alt="spawn logo" width="64" />
+  <h1>spawn</h1>
+  <p>游戏社区平台：攻略、榜单与社区</p>
+  <p><a href="README.md">English</a> | <a href="README.zh.md">简体中文</a></p> <a href="https://cuihairu.github.io/spawn/zh//"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
+</div>
 
 ## 下载与安装
 
