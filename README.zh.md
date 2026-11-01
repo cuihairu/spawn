@@ -1,4 +1,4 @@
-<div align="center"><img src="docs/public/logo.svg" alt="spawn logo" width="64" /> <a href="https://cuihairu.github.io/spawn/zh/"><img src="https://img.shields.io/badge/docs-文档-blue" alt="docs"></a></div>
+<div align="center"><a href="https://cuihairu.github.io/spawn/zh/"><img src="https://img.shields.io/badge/docs-文档-blue" alt="docs"></a></div>
 
 ## 下载与安装
 
