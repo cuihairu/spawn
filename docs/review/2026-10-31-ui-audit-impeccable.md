@@ -107,7 +107,7 @@ This is a genuinely well-engineered native app on the data/state side: every scr
 
 ### [P2] No native headers; status bar cleared with hardcoded paddings
 
-- **Location:** `apps/mobile-app/src/app/_layout.tsx:18` (`<Stack screenOptions={{ headerShown: false }} />`); every pushed screen hand-rolls a back button and hardcodes `paddingTop: 64` (e.g. `rankings.tsx:100`, `guides.tsx:254`, `game/[id]`, `post/[id].tsx:498`, `notifications.tsx:196`, `topics.tsx:216`) or `72` (`login.tsx:158`)
+- **Location:** <code v-pre>&lt;Stack screenOptions={{ headerShown: false }} /&gt;</code> at `apps/mobile-app/src/app/_layout.tsx:18`; every pushed screen hand-rolls a back button and hardcodes `paddingTop: 64` (e.g. `rankings.tsx:100`, `guides.tsx:254`, `game/[id]`, `post/[id].tsx:498`, `notifications.tsx:196`, `topics.tsx:216`) or `72` (`login.tsx:158`)
 - **Why it matters:** `useSafeAreaInsets()` is never used (`SafeAreaView`/`useSafeAreaInsets` absent from the whole tree). The 64/72px guesses clear the status bar on the common notch devices but not reliably on Android status-bar variants, foldables, or when the OS inset differs — content can slide under the status bar or sit with excess space. There is also no native header/title, so detail screens depend on a hand-rolled text back link. iOS edge-swipe-back still works (native Stack), but the affordance and inset handling are guesswork.
 - **Fix (done):** Either enable native headers on the root `Stack` (per-screen `headerShown`) or wrap content in `SafeAreaView`/`useSafeAreaInsets()`; remove the hardcoded paddings. Commit: `6a5a771 fix(ui): use safe area insets for header padding`（10 屏改用 `useSafeAreaInsets()`，删 64/72 硬编码；expo-router ExpoRoot 已含 SafeAreaProvider）。
 
