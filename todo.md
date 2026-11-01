@@ -11,11 +11,11 @@
 
 ### M0：接入设计与基础治理
 
-- [ ] GP-001 确定 Spawn/Courier 权威账号源与存量账号绑定方案，画清登录、验票、退出、注销和游戏级会话流；不假设 JWT 互通。验收：跨游戏 token 被拒，账号迁移/解除绑定可追踪（F13/F27）。
-- [ ] GP-002 定义 Spawn game ID ↔ Courier game_id/env、合作方、区服/角色映射及能力配置；“联运”标签只作展示筛选。验收：标签变化不自动开通支付/下载，scope 不进入 Courier URL/payload（F01/F14）。
-- [ ] GP-003 明确交易事实源、管理 API/事件接口及跨仓版本兼容规则，验证 SKU/订单/回调密钥/存储的多游戏隔离；不复制 Courier 订单状态机（F15/F16）。
-- [ ] GP-004 为后台与生产接入补最小权限、游戏归属和操作审计，确认 Spawn 数据/包体持久化与 Courier OrderStore/StateFile 的部署和备份恢复方案；不把已有快照接缝列为未实现（F11/F26/F28）。
-- [ ] GP-005 提供 Spawn + Courier 联合沙箱配置、版本清单与一款示例游戏；记录真实渠道、游戏服、授权和设备依赖，串联跨仓回归而非重复生成六端 SDK（F28）。
+- [x] GP-001 确定 Spawn/Courier 权威账号源与存量账号绑定方案，画清登录、验票、退出、注销和游戏级会话流；不假设 JWT 互通。验收：跨游戏 token 被拒，账号迁移/解除绑定可追踪（F13/F27）。设计见 [接入设计](docs/zh/architecture/courier-integration-design.md) §1。
+- [x] GP-002 定义 Spawn game ID ↔ Courier game_id/env、合作方、区服/角色映射及能力配置；“联运”标签只作展示筛选。验收：标签变化不自动开通支付/下载，scope 不进入 Courier URL/payload（F01/F14）。设计见 [接入设计](docs/zh/architecture/courier-integration-design.md) §2。
+- [x] GP-003 明确交易事实源、管理 API/事件接口及跨仓版本兼容规则，验证 SKU/订单/回调密钥/存储的多游戏隔离；不复制 Courier 订单状态机（F15/F16）。设计见 [接入设计](docs/zh/architecture/courier-integration-design.md) §3。
+- [ ] GP-004 为后台与生产接入补最小权限、游戏归属和操作审计，确认 Spawn 数据/包体持久化与 Courier OrderStore/StateFile 的部署和备份恢复方案；不把已有快照接缝列为未实现（F11/F26/F28）。模型与方案见 [接入设计](docs/zh/architecture/courier-integration-design.md) §4；最小实现待 GP-103 后台与 GP-105 存储。
+- [ ] GP-005 提供 Spawn + Courier 联合沙箱配置、版本清单与一款示例游戏；记录真实渠道、游戏服、授权和设备依赖，串联跨仓回归而非重复生成六端 SDK（F28）。沙箱清单见 [接入设计](docs/zh/architecture/courier-integration-design.md) §4；实际搭建待 GP-105 / GP-206。
 
 ### M1：统一游戏库与发行下载
 
