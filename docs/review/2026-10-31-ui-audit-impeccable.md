@@ -12,6 +12,7 @@ Tappi's web client is a competent, coherent dark dashboard that gets the big thi
 
 ### [P1] Global nav breaks on narrow screens — horizontal overflow, off-screen item
 
+- **Screenshots:** before `shots-after/WEB-1-before.png` · after `shots-after/WEB-1-after.png`
 - **Screenshot (before):** `docs/review/2026-10-31-ui-audit-impeccable/web-nav-overflow-before-home-narrow.png`, `web-nav-overflow-before-discover-narrow.png`
 - **Location:** `apps/web-client/src/App.css:24` (`.nav-container`), `:45` (`.nav-links`) — no media query existed anywhere in App.css
 - **Why it matters:** At 390px, measured `document.documentElement.scrollWidth = 472` vs `clientWidth = 390` → the whole page scrolls horizontally on mobile. The 5 nav links (`首页/发现/游戏库/社区/攻略`) are `display:flex; flex-wrap:nowrap`, so they render as a single overflowing row (首页 x=104 … 攻略 x=424–472, fully outside the viewport). The 攻略 link is unreachable without sideways scrolling, and the nav occupies ~100px as a cramped vertical-looking column.
@@ -20,6 +21,7 @@ Tappi's web client is a competent, coherent dark dashboard that gets the big thi
 
 ### [P1] Primary-action button text fails WCAG AA contrast (white on saturated purple/green)
 
+- **Screenshots:** before `shots-after/WEB-2-before.png` · after `shots-after/WEB-2-after.png`
 - **Screenshot:** `docs/review/2026-10-31-ui-audit-impeccable/web-guides-desktop.png`, `web-games-desktop.png`
 - **Location:** `apps/web-client/src/App.css:208` (`.auth-card button` gradient), `pages/guides.css:74` (`.guide-search-submit`), `:108` (`.filter-tab.active`), `:115` (`.create-guide-btn`), `:377` (`.action-btn`), `:506` (`.publish-btn`), `:536` (`.error-page`), `:805` (`.guide-tag-chip.active`), `pages/games.css:70` (`.genre-chip--active`), `pages/community.css:198` (`.primary-btn`), `components/comments/comments.css:77` (`.comment-submit-btn`)
 - **Why it matters:** All primary CTAs use white text on a saturated fill. Measured (WCAG 2.1, vs the actual composite background): white on `#7083ff` = **3.29:1**, `#9f6bff` = **3.49:1**, `#7c6cf0` = **3.99:1**, green `#4caf50` = **2.78:1**. All fall below the 4.5:1 AA requirement for normal-size (16px / 400–600 weight) button labels. The green "创建攻略 / 保存并发布" buttons are the worst at ~2.8:1 — visibly low contrast, and a real readability problem on the editor's primary action.
@@ -28,6 +30,7 @@ Tappi's web client is a competent, coherent dark dashboard that gets the big thi
 
 ### [P2] Raw English "Failed to fetch" surfaced in error banners
 
+- **Screenshots:** before `shots-after/WEB-3-before.png` · after `shots-after/WEB-3-after.png`
 - **Screenshot (before):** `docs/review/2026-10-31-ui-audit-impeccable/web-error-before-games-desktop.png`, `web-error-before-community-desktop.png`
 - **Location:** `apps/web-client/src/pages/HomePage.tsx:36,61`, `GamesPage.tsx`, `GuidesPage.tsx`, `CommunityPage.tsx` — each catch handler does `setBanner((err as Error).message ?? '…')`, and a failed `fetch` throws `TypeError: Failed to fetch`
 - **Why it matters:** A Chinese-language app shows the browser's raw English string "Failed to fetch" as the headline error on home, games, guides and community. No explanation of what happened or what the user should do; on home there is no retry at all.
@@ -36,6 +39,7 @@ Tappi's web client is a competent, coherent dark dashboard that gets the big thi
 
 ### [P2] Game detail error state renders with no heading or context
 
+- **Screenshots:** before `shots-after/WEB-4-before.png` · after `shots-after/WEB-4-after.png`
 - **Screenshot:** `docs/review/2026-10-31-ui-audit-impeccable/web-games_1-desktop.png`
 - **Location:** `apps/web-client/src/pages/GameDetailPage.tsx` (error branch)
 - **Why it matters:** When the game fetch fails, the page shows only a floating error banner + a "返回游戏库" link — no page title, no explanation, no retry. The user is left with a mostly-empty screen and no way to know what page they were on.
@@ -50,12 +54,15 @@ Tappi's web client is a competent, coherent dark dashboard that gets the big thi
 
 ### [P3] No `prefers-reduced-motion` handling
 
+- **Screenshots:** before `shots-after/WEB-5-before.png` · after `shots-after/WEB-5-after.png`
+- **Screenshot honesty note:** the pair is captured on `/guides` at 1440x900 with the page forced into `prefers-reduced-motion: reduce` and the 搜索 submit button hovered. The two images are **visually identical** (measured: the button pixel is `#4f56d4` in both). That is expected, not a failure — the fix removes a 0.2 s hover *animation*, and the post-animation hover color is the same with or without it. Static screenshots cannot capture the animation window, so the verifiable evidence for this fix is the source diff (`@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }`), not the pixel pair.
 - **Location:** `apps/web-client/src/App.css` — `transition: transform 0.2s` (nav-brand hover), `transition: all 0.2s` (buttons/links), no `@media (prefers-reduced-motion: reduce)` anywhere
 - **Why it matters:** Users who disable motion still get the hover scale/color transitions. Minor (transitions are subtle), but the audit dimension requires it.
 - **Fix (done):** Add a global `@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }`. Commit: `f52ca04 fix(ui): honor prefers-reduced-motion on web client`.
 
 ### [P3] External cover images fail to load → dark placeholder blocks
 
+- **Screenshots:** before `shots-after/WEB-6-before.png` · after `shots-after/WEB-6-after.png`
 - **Screenshot:** `docs/review/2026-10-31-ui-audit-impeccable/web-discover-desktop.png`
 - **Location:** `apps/web-client/src/pages/DiscoverPage.tsx:92` (`.feed-game-cover` uses `images.tappi.dev` URLs); same pattern in `GameCard.tsx`
 - **Why it matters:** The cover host is not reachable in this environment, so every game cover renders as an empty dark rectangle — the discover feed looks broken. If the host is genuinely used in prod this needs an `onError` fallback.
@@ -63,6 +70,7 @@ Tappi's web client is a competent, coherent dark dashboard that gets the big thi
 
 ## Notes
 
+- **Before/after pairs:** every fixed issue now carries a before/after artifact in `shots-after/`. WEB-1…WEB-6 are rendered `shots-after/<ID>-{before,after}.png` pairs (captured 2026-11-01, Playwright/Chromium 1243, same viewport/URL/scroll for each pair). WEB-5 is the exception: it is captured under `prefers-reduced-motion: reduce` with the 搜索 button hovered, and the two frames are visually identical because the fix only removes a 0.2 s hover animation (see the honesty note in the WEB-5 entry). MOB-1…MOB-4 are native, non-renderable in this environment (no emulator/simulator, no react-native-web), so each carries a `MOB-*-SOURCE-DIFF.md` source-level pair marked `待用户/不可渲染 — source-verified only`; no pixel pair is claimed for them.
 - **DESIGN.md absence:** No `DESIGN.md` (and no `PRODUCT.md`) exists anywhere in the repo. The design system is implicit in `src/App.css` + per-page CSS and the `colors` tokens in the mobile app; there is no written record of intent, tokens, or rationale. Documented here as a gap (the `impeccable context` run reported `EXISTING_VISUAL_SYSTEM` / missing design doc).
 - **Unreachable / unverified states (no backends, no auth):**
   - Auth-gated routes `/stats`, `/profile`, `/notifications`, `/messages`, `/guides/new`, `/guides/:id/edit` were audited by injecting a real JWT (registered a fresh account through the gateway). They render correct empty/error states (stats shows zeroed tiles; profile shows 4 empty sections with a "部分内容加载失败" banner; notifications/messages show empty + "…加载失败" banners).
@@ -101,18 +109,21 @@ This is a genuinely well-engineered native app on the data/state side: every scr
 
 ### [P2] Touch targets pervasively below 44pt
 
+- **Source diff (不可渲染):** `shots-after/MOB-1-SOURCE-DIFF.md` — 待用户/不可渲染，source-verified only（无模拟器/仿真器，无 react-native-web；无像素对）。
 - **Location:** shared style objects across `apps/mobile-app/src/app/` — chips/tabs at 28–32px (`guides.tsx:155,168` `chip`; `guide-compose.tsx:182,199,228,233` `chip`; `(tabs)/community.tsx:287,295` `topicChip`, `:338,343,348` `modeBtn`), `retryBtn` ~36px (in ~10 screens), `back` ~32px, `rankEntry` ~40px (`(tabs)/index.tsx:105,110`), `followBtn` 34–36px (`post/[id].tsx:306`, `topics.tsx:187`), `switchMode` ~36px (`login.tsx:135`), `readAllBtn` ~32px (`notifications.tsx:104`)
 - **Why it matters:** The Apple HIG minimum is 44pt (Material 48dp). ~45 Pressable instances render below that, and most have no `hitSlop` to compensate (only the back buttons do). Small targets cause mis-taps and are especially hard for motor-impaired and large-finger users.
 - **Fix (done):** Raise the shared `chip`/`retryBtn`/`back`/`followBtn`/`modeBtn` styles to `minHeight: 44` (or add `paddingVertical`), rather than editing each instance. Commit: `664a3b2 fix(ui): raise mobile touch targets to 44pt`（39 个样式对象 minHeight/minWidth 44，17 文件）。
 
 ### [P2] No native headers; status bar cleared with hardcoded paddings
 
+- **Source diff (不可渲染):** `shots-after/MOB-2-SOURCE-DIFF.md` — 待用户/不可渲染，source-verified only（无模拟器/仿真器，无 react-native-web；无像素对）。
 - **Location:** <code v-pre>&lt;Stack screenOptions={{ headerShown: false }} /&gt;</code> at `apps/mobile-app/src/app/_layout.tsx:18`; every pushed screen hand-rolls a back button and hardcodes `paddingTop: 64` (e.g. `rankings.tsx:100`, `guides.tsx:254`, `game/[id]`, `post/[id].tsx:498`, `notifications.tsx:196`, `topics.tsx:216`) or `72` (`login.tsx:158`)
 - **Why it matters:** `useSafeAreaInsets()` is never used (`SafeAreaView`/`useSafeAreaInsets` absent from the whole tree). The 64/72px guesses clear the status bar on the common notch devices but not reliably on Android status-bar variants, foldables, or when the OS inset differs — content can slide under the status bar or sit with excess space. There is also no native header/title, so detail screens depend on a hand-rolled text back link. iOS edge-swipe-back still works (native Stack), but the affordance and inset handling are guesswork.
 - **Fix (done):** Either enable native headers on the root `Stack` (per-screen `headerShown`) or wrap content in `SafeAreaView`/`useSafeAreaInsets()`; remove the hardcoded paddings. Commit: `6a5a771 fix(ui): use safe area insets for header padding`（10 屏改用 `useSafeAreaInsets()`，删 64/72 硬编码；expo-router ExpoRoot 已含 SafeAreaProvider）。
 
 ### [P2] Hard-coded hex colors scattered outside the token palette
 
+- **Source diff (不可渲染):** `shots-after/MOB-3-SOURCE-DIFF.md` — 待用户/不可渲染，source-verified only（无模拟器/仿真器，无 react-native-web；无像素对；同色值仅集中化，渲染结果不变）。
 - **Location:** `apps/mobile-app/src/app/**` — `#1a1105` (button text, 6 screens), `#ff6b6b` (error/destructive), `#dc2626` (`messages.tsx:355`), `#fff`, `RANK_COLORS` (`rankings.tsx:9`: `#ffd700/#c0c0c0/#cd7f32`), plus `#c9c4ff`/`#a99cf5`-style accents in web-only CSS
 - **Why it matters:** ~30 values bypass `constants/colors.ts`, so theming is inconsistent and a dark/light scheme can't be introduced without a hunt. Contrast is fine (checked: `#1a1105` on orange 6.03:1, `#ff6b6b` on bg 6.53:1, `#dc2626` white 4.83:1, rank colors 5.1–11.5:1), so this is a maintainability issue, not a readability one.
 - **Fix (done):** Fold these into `constants/colors.ts` as semantic tokens (danger, onPrimary, rankGold/Silver/Bronze, …) and reference them. Commit: `e15bb7d fix(ui): fold hardcoded colors into semantic tokens`（`onPrimary/white/danger/dangerStrong/rankGold/Silver/Bronze` 8 个 token，18 文件，tsx 内硬编码 hex 归零）。
@@ -126,6 +137,7 @@ This is a genuinely well-engineered native app on the data/state side: every scr
 
 ### [P3] "‹" text back button has a poor accessible name
 
+- **Source diff (不可渲染):** `shots-after/MOB-4-SOURCE-DIFF.md` — 待用户/不可渲染，source-verified only（无模拟器/仿真器，无 react-native-web；无像素对；`‹` 换 chevron-back，渲染字形近乎一致）。
 - **Location:** `apps/mobile-app/src/app/stats/[gameId].tsx:41` (back is a `<Text>‹</Text>` inside a Pressable)
 - **Why it matters:** A screen reader announces a lone "‹" character instead of "返回". (The other back buttons are "← 返回" text, which is acceptable.)
 - **Fix (done):** Use an Ionicons chevron-back with `accessibilityLabel="返回"`, matching the other screens. Commit: `400d211 fix(ui): label stats back button for screen readers`（`‹` Text 换 chevron-back + label，删 backText 死样式）。
@@ -157,3 +169,4 @@ This is a genuinely well-engineered native app on the data/state side: every scr
 - **Fixed:** 11 — 首次 4（`ed79698` nav 溢出、`05cfe57` 对比度、`49e6518` 网络错误文案、`a759ffa` mobile 图标标签）+ 整改跟进 7（web `30c181c` 游戏详情错误态、`f52ca04` reduced-motion、`fb28fc9`+`2b00365` 封面回退；mobile `664a3b2` 44pt 触控、`6a5a771` 安全区 insets、`e15bb7d` 语义色 token、`400d211` ‹ 返回标签）。
 - **Deferred (未修原因见各条目):** 2 — web 字体/侧边条强调（视觉方向，留 design pass）、mobile 横屏/宽屏适配（响应式设计，需设备渲染验证）。
 - **整改验证（跟进 pass，2026-11-01）:** web `tsc`/`eslint`/`vite build` 全绿；mobile `tsc`/`eslint`/`expo export --platform android` 全绿（3.1MB hbc）；版本号未动、未打 tag。
+- **Before/after 对（补齐 pass，2026-11-01）:** 10 个 issue 全部有 before/after 工件 —— web 6 组渲染像素对（WEB-1 nav 溢出、WEB-2 对比度、WEB-3 错误文案、WEB-4 游戏详情错误态、WEB-5 reduced-motion、WEB-6 封面回退）+ mobile 4 份 source 级 diff（MOB-1 触控、MOB-2 insets、MOB-3 token、MOB-4 ‹ 返回）。renderable=6，non-render=4（原生不可渲染）。
