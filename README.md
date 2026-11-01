@@ -1,9 +1,4 @@
-<div align="center">
-  <img src="docs/public/logo.svg" alt="spawn logo" width="64" />
-  <h1>spawn</h1>
-  <p>Game community platform: guides, leaderboards, and community</p>
-  <p><a href="README.md">English</a> | <a href="README.zh.md">简体中文</a></p>
-</div>
+<div align="center"><img src="docs/public/logo.svg" alt="spawn logo" width="64" /> <a href="https://cuihairu.github.io/spawn/"><img src="https://img.shields.io/badge/docs-docs-blue" alt="docs"></a></div>
 
 ## Download & Install
 
