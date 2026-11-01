@@ -70,7 +70,7 @@ Tappi's web client is a competent, coherent dark dashboard that gets the big thi
 
 ## Notes
 
-- **Before/after pairs:** every fixed issue now carries a before/after artifact in `shots-after/`. WEB-1…WEB-6 are rendered `shots-after/<ID>-{before,after}.png` pairs (captured 2026-11-01, Playwright/Chromium 1243, same viewport/URL/scroll for each pair). WEB-5 is the exception: it is captured under `prefers-reduced-motion: reduce` with the 搜索 button hovered, and the two frames are visually identical because the fix only removes a 0.2 s hover animation (see the honesty note in the WEB-5 entry). MOB-1…MOB-4 are native, non-renderable in this environment (no emulator/simulator, no react-native-web), so each carries a `MOB-*-SOURCE-DIFF.md` source-level pair marked `待用户/不可渲染 — source-verified only`; no pixel pair is claimed for them.
+- **Before/after pairs:** every fixed issue now carries a before/after artifact in `shots-after/`. WEB-1…WEB-6 are rendered `shots-after/<ID>-{before,after}.png` pairs (captured 2026-11-01, Playwright/Chromium 1243, same viewport/URL/scroll for each pair). WEB-5 is the exception: it is captured under `prefers-reduced-motion: reduce` with the 搜索 button hovered, and the two frames are visually identical because the fix only removes a 0.2 s hover animation (see the honesty note in the WEB-5 entry). MOB-0…MOB-4 are native, non-renderable in this environment (no emulator/simulator, no react-native-web), so each carries a `MOB-*-SOURCE-DIFF.md` source-level pair marked `待用户/不可渲染 — source-verified only`; no pixel pair is claimed for them.
 - **DESIGN.md absence:** No `DESIGN.md` (and no `PRODUCT.md`) exists anywhere in the repo. The design system is implicit in `src/App.css` + per-page CSS and the `colors` tokens in the mobile app; there is no written record of intent, tokens, or rationale. Documented here as a gap (the `impeccable context` run reported `EXISTING_VISUAL_SYSTEM` / missing design doc).
 - **Unreachable / unverified states (no backends, no auth):**
   - Auth-gated routes `/stats`, `/profile`, `/notifications`, `/messages`, `/guides/new`, `/guides/:id/edit` were audited by injecting a real JWT (registered a fresh account through the gateway). They render correct empty/error states (stats shows zeroed tiles; profile shows 4 empty sections with a "部分内容加载失败" banner; notifications/messages show empty + "…加载失败" banners).
@@ -106,6 +106,7 @@ This is a genuinely well-engineered native app on the data/state side: every scr
 - **Why it matters:** These are `Pressable` elements whose only child is an `<Ionicons>` (chevron-back back buttons, close buttons, create-outline). With no `accessibilityLabel`, VoiceOver/TalkBack announces nothing or a bare "button" — a screen-reader user cannot identify or use the back/close/create controls on any detail screen. Of ~218 `Pressable` instances in the app, only 3 carried a label (`community.tsx:267`, `profile.tsx:363`, `guide/[id].tsx:260`).
 - **Fix (done):** Added `accessibilityLabel` to each (返回 / 关闭 / 清空搜索 / 创建攻略), chosen from the control's actual action. Re-scan confirms 0 remaining unlabeled icon-only `Pressable`s.
 - **Commit:** `a759ffa fix(ui): label icon-only controls for screen readers`
+- **Source diff (不可渲染):** `shots-after/MOB-0-SOURCE-DIFF.md` — 待用户/不可渲染，source-verified only（无模拟器/仿真器，无 react-native-web；无像素对）。
 
 ### [P2] Touch targets pervasively below 44pt
 
@@ -169,4 +170,4 @@ This is a genuinely well-engineered native app on the data/state side: every scr
 - **Fixed:** 11 — 首次 4（`ed79698` nav 溢出、`05cfe57` 对比度、`49e6518` 网络错误文案、`a759ffa` mobile 图标标签）+ 整改跟进 7（web `30c181c` 游戏详情错误态、`f52ca04` reduced-motion、`fb28fc9`+`2b00365` 封面回退；mobile `664a3b2` 44pt 触控、`6a5a771` 安全区 insets、`e15bb7d` 语义色 token、`400d211` ‹ 返回标签）。
 - **Deferred (未修原因见各条目):** 2 — web 字体/侧边条强调（视觉方向，留 design pass）、mobile 横屏/宽屏适配（响应式设计，需设备渲染验证）。
 - **整改验证（跟进 pass，2026-11-01）:** web `tsc`/`eslint`/`vite build` 全绿；mobile `tsc`/`eslint`/`expo export --platform android` 全绿（3.1MB hbc）；版本号未动、未打 tag。
-- **Before/after 对（补齐 pass，2026-11-01）:** 10 个 issue 全部有 before/after 工件 —— web 6 组渲染像素对（WEB-1 nav 溢出、WEB-2 对比度、WEB-3 错误文案、WEB-4 游戏详情错误态、WEB-5 reduced-motion、WEB-6 封面回退）+ mobile 4 份 source 级 diff（MOB-1 触控、MOB-2 insets、MOB-3 token、MOB-4 ‹ 返回）。renderable=6，non-render=4（原生不可渲染）。
+- **Before/after 对（补齐 pass，2026-11-01）:** 11 个 issue 全部有 before/after 工件 —— web 6 组渲染像素对（WEB-1 nav 溢出、WEB-2 对比度、WEB-3 错误文案、WEB-4 游戏详情错误态、WEB-5 reduced-motion、WEB-6 封面回退）+ mobile 5 份 source 级 diff（MOB-0 图标标签、MOB-1 触控、MOB-2 insets、MOB-3 token、MOB-4 ‹ 返回）。renderable=6，non-render=5（原生不可渲染）。
