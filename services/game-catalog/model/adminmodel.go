@@ -31,11 +31,12 @@ const (
 	ReviewApprove = "approve"
 	ReviewReject  = "reject"
 
-	VersionStatusDraft    = "draft"
-	VersionStatusPending  = "pending"
-	VersionStatusApproved = "approved"
-	VersionStatusRejected = "rejected"
-	VersionStatusRevoked  = "revoked"
+	VersionStatusDraft     = "draft"
+	VersionStatusPending   = "pending"
+	VersionStatusApproved  = "approved"
+	VersionStatusRejected  = "rejected"
+	VersionStatusPublished = "published"
+	VersionStatusRevoked   = "revoked"
 )
 
 var (
@@ -85,15 +86,22 @@ type GameReview struct {
 	ReviewedAt   string `json:"reviewed_at"`
 }
 
-// GameVersion 游戏版本（最小实体：提审流载体；包名/签名/哈希等随 GP-104 扩列）。
+// GameVersion 游戏版本/渠道包记录（GP-104）：包名、versionCode、签名指纹、
+// 大小、哈希、存储地址；version 字段兼任 versionName 展示名。
 type GameVersion struct {
-	Id           string `json:"id"`
-	GameId       string `json:"game_id"`
-	Version      string `json:"version"`
-	Changelog    string `json:"changelog"`
-	Status       string `json:"status"`
-	ReviewReason string `json:"review_reason"`
-	CreatedAt    string `json:"created_at"`
+	Id              string `json:"id"`
+	GameId          string `json:"game_id"`
+	Version         string `json:"version"`
+	Changelog       string `json:"changelog"`
+	PackageName     string `json:"package_name"`
+	VersionCode     int64  `json:"version_code"`
+	SignFingerprint string `json:"sign_fingerprint"`
+	SizeBytes       int64  `json:"size_bytes"`
+	Hash            string `json:"hash"`
+	StorageUrl      string `json:"storage_url"`
+	Status          string `json:"status"`
+	ReviewReason    string `json:"review_reason"`
+	CreatedAt       string `json:"created_at"`
 }
 
 // AuditLog 操作审计（设计 §4：绑定/映射/能力变更均写审计）。
@@ -132,10 +140,13 @@ type AdminStore interface {
 	DecideReview(id, reviewerId int64, decision, reason string) (*GameReview, error)
 	ListReviews(status string, limit, offset int) ([]*GameReview, int, error)
 
-	CreateVersion(gameId, version, changelog string) (*GameVersion, error)
+	CreateVersion(v *GameVersion) (*GameVersion, error)
 	GetVersion(id string) (*GameVersion, error)
 	ListVersionsByGame(gameId string) ([]*GameVersion, error)
 	SetVersionStatus(id, status, reason string) (*GameVersion, error)
+	// GP-104 发布/撤回：发布校验不覆盖低版本渠道包（version_code 低于已发布版本）。
+	PublishVersion(id string) (*GameVersion, error)
+	RevokeVersion(id string) (*GameVersion, error)
 
 	WriteAudit(entry *AuditLog) error
 	ListAuditLogs(resourceType string, limit, offset int) ([]*AuditLog, int, error)
@@ -238,6 +249,12 @@ func (m *AdminModel) CreateAdminTables() error {
 				game_id VARCHAR(64) NOT NULL,
 				version VARCHAR(64) NOT NULL,
 				changelog VARCHAR(2048) NOT NULL DEFAULT '',
+				package_name VARCHAR(128) NOT NULL DEFAULT '',
+				version_code INTEGER NOT NULL DEFAULT 0,
+				sign_fingerprint VARCHAR(256) NOT NULL DEFAULT '',
+				size_bytes INTEGER NOT NULL DEFAULT 0,
+				hash VARCHAR(128) NOT NULL DEFAULT '',
+				storage_url VARCHAR(512) NOT NULL DEFAULT '',
 				status VARCHAR(16) NOT NULL DEFAULT 'draft',
 				review_reason VARCHAR(1024) NOT NULL DEFAULT '',
 				created_at VARCHAR(32) NOT NULL
@@ -247,6 +264,12 @@ func (m *AdminModel) CreateAdminTables() error {
 				game_id VARCHAR(64) NOT NULL,
 				version VARCHAR(64) NOT NULL,
 				changelog VARCHAR(2048) NOT NULL DEFAULT '',
+				package_name VARCHAR(128) NOT NULL DEFAULT '',
+				version_code BIGINT NOT NULL DEFAULT 0,
+				sign_fingerprint VARCHAR(256) NOT NULL DEFAULT '',
+				size_bytes BIGINT NOT NULL DEFAULT 0,
+				hash VARCHAR(128) NOT NULL DEFAULT '',
+				storage_url VARCHAR(512) NOT NULL DEFAULT '',
 				status VARCHAR(16) NOT NULL DEFAULT 'draft',
 				review_reason VARCHAR(1024) NOT NULL DEFAULT '',
 				created_at VARCHAR(32) NOT NULL,
@@ -285,6 +308,63 @@ func (m *AdminModel) CreateAdminTables() error {
 			if _, err2 := m.db.Exec(t.mysql); err2 != nil {
 				return fmt.Errorf("创建运营后台表失败（尝试了 SQLite 和 MySQL 格式）: %w", err2)
 			}
+		}
+	}
+	// 既有库的 game_versions 无 GP-104 渠道包列：幂等补齐（SQLite PRAGMA → MySQL SHOW COLUMNS）。
+	return m.migrateVersionColumns()
+}
+
+// versionColumns 渠道包列（迁移与扫描共用定义，顺序即 SELECT 尾列）。
+var versionColumns = []struct{ name, ddl string }{
+	{"package_name", "VARCHAR(128) NOT NULL DEFAULT ''"},
+	{"version_code", "INTEGER NOT NULL DEFAULT 0"},
+	{"sign_fingerprint", "VARCHAR(256) NOT NULL DEFAULT ''"},
+	{"size_bytes", "INTEGER NOT NULL DEFAULT 0"},
+	{"hash", "VARCHAR(128) NOT NULL DEFAULT ''"},
+	{"storage_url", "VARCHAR(512) NOT NULL DEFAULT ''"},
+}
+
+// migrateVersionColumns 为存量 game_versions 表补齐 GP-104 列（幂等，缺列才 ALTER）。
+func (m *AdminModel) migrateVersionColumns() error {
+	existing := map[string]bool{}
+	if rows, err := m.db.Query(`PRAGMA table_info(game_versions)`); err == nil {
+		for rows.Next() {
+			var cid int
+			var name, ctype string
+			var notnull, pk int
+			var dflt sql.NullString
+			if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err == nil {
+				existing[name] = true
+			}
+		}
+		rows.Close()
+	} else {
+		// MySQL：SHOW COLUMNS
+		rows, err2 := m.db.Query(`SHOW COLUMNS FROM game_versions`)
+		if err2 != nil {
+			return nil // 无法枚举列信息时跳过迁移（不阻断启动）
+		}
+		for rows.Next() {
+			var field, ctype, nullb, key, extra string
+			var dflt sql.NullString
+			if err := rows.Scan(&field, &ctype, &nullb, &key, &dflt, &extra); err == nil {
+				existing[field] = true
+			}
+		}
+		rows.Close()
+	}
+	for _, c := range versionColumns {
+		if existing[c.name] {
+			continue
+		}
+		ddl := c.ddl
+		if strings.HasPrefix(ddl, "INTEGER") {
+			ddl = "BIGINT" + strings.TrimPrefix(ddl, "INTEGER")
+		}
+		if _, err := m.db.Exec(
+			`ALTER TABLE game_versions ADD COLUMN ` + c.name + ` ` + ddl); err != nil {
+			// 列已存在（并发建表）或方言差异：忽略该列，不阻断
+			continue
 		}
 	}
 	return nil
@@ -553,22 +633,23 @@ func (m *AdminModel) ListReviews(status string, limit, offset int) ([]*GameRevie
 
 // ---- 版本 ----
 
-func (m *AdminModel) CreateVersion(gameId, version, changelog string) (*GameVersion, error) {
-	if strings.TrimSpace(gameId) == "" || strings.TrimSpace(version) == "" {
+const versionSelectColumns = `id, game_id, version, changelog, package_name, version_code, sign_fingerprint, size_bytes, hash, storage_url, status, review_reason, created_at`
+
+// CreateVersion 新建版本（draft）；渠道包字段随 GP-104 一并记录。
+func (m *AdminModel) CreateVersion(v *GameVersion) (*GameVersion, error) {
+	if v == nil || strings.TrimSpace(v.GameId) == "" || strings.TrimSpace(v.Version) == "" {
 		return nil, errors.New("游戏 id 与版本号不能为空")
 	}
-	v := &GameVersion{
-		Id:        fmt.Sprintf("ver-%s", uuid.NewString()),
-		GameId:    gameId,
-		Version:   strings.TrimSpace(version),
-		Changelog: changelog,
-		Status:    VersionStatusDraft,
-		CreatedAt: nowUTC(),
-	}
+	v.Id = fmt.Sprintf("ver-%s", uuid.NewString())
+	v.Version = strings.TrimSpace(v.Version)
+	v.Status = VersionStatusDraft
+	v.CreatedAt = nowUTC()
 	if _, err := m.db.Exec(
-		`INSERT INTO game_versions (id, game_id, version, changelog, status, review_reason, created_at)
-		 VALUES (?, ?, ?, ?, ?, '', ?)`,
-		v.Id, v.GameId, v.Version, v.Changelog, v.Status, v.CreatedAt); err != nil {
+		`INSERT INTO game_versions (id, game_id, version, changelog, package_name, version_code,
+			sign_fingerprint, size_bytes, hash, storage_url, status, review_reason, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)`,
+		v.Id, v.GameId, v.Version, v.Changelog, v.PackageName, v.VersionCode,
+		v.SignFingerprint, v.SizeBytes, v.Hash, v.StorageUrl, v.Status, v.CreatedAt); err != nil {
 		return nil, fmt.Errorf("创建版本失败: %w", err)
 	}
 	return v, nil
@@ -577,9 +658,9 @@ func (m *AdminModel) CreateVersion(gameId, version, changelog string) (*GameVers
 func (m *AdminModel) GetVersion(id string) (*GameVersion, error) {
 	v := &GameVersion{}
 	err := m.db.QueryRow(
-		`SELECT id, game_id, version, changelog, status, review_reason, created_at
-		 FROM game_versions WHERE id = ?`, id).
-		Scan(&v.Id, &v.GameId, &v.Version, &v.Changelog, &v.Status, &v.ReviewReason, &v.CreatedAt)
+		`SELECT `+versionSelectColumns+` FROM game_versions WHERE id = ?`, id).
+		Scan(&v.Id, &v.GameId, &v.Version, &v.Changelog, &v.PackageName, &v.VersionCode,
+			&v.SignFingerprint, &v.SizeBytes, &v.Hash, &v.StorageUrl, &v.Status, &v.ReviewReason, &v.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrVersionNotFound
 	}
@@ -591,8 +672,7 @@ func (m *AdminModel) GetVersion(id string) (*GameVersion, error) {
 
 func (m *AdminModel) ListVersionsByGame(gameId string) ([]*GameVersion, error) {
 	rows, err := m.db.Query(
-		`SELECT id, game_id, version, changelog, status, review_reason, created_at
-		 FROM game_versions WHERE game_id = ? ORDER BY id`, gameId)
+		`SELECT `+versionSelectColumns+` FROM game_versions WHERE game_id = ? ORDER BY id`, gameId)
 	if err != nil {
 		return nil, fmt.Errorf("查询版本列表失败: %w", err)
 	}
@@ -600,7 +680,8 @@ func (m *AdminModel) ListVersionsByGame(gameId string) ([]*GameVersion, error) {
 	versions := []*GameVersion{}
 	for rows.Next() {
 		v := &GameVersion{}
-		if err := rows.Scan(&v.Id, &v.GameId, &v.Version, &v.Changelog, &v.Status, &v.ReviewReason, &v.CreatedAt); err != nil {
+		if err := rows.Scan(&v.Id, &v.GameId, &v.Version, &v.Changelog, &v.PackageName, &v.VersionCode,
+			&v.SignFingerprint, &v.SizeBytes, &v.Hash, &v.StorageUrl, &v.Status, &v.ReviewReason, &v.CreatedAt); err != nil {
 			return nil, fmt.Errorf("读取版本行失败: %w", err)
 		}
 		versions = append(versions, v)
@@ -610,7 +691,7 @@ func (m *AdminModel) ListVersionsByGame(gameId string) ([]*GameVersion, error) {
 
 func (m *AdminModel) SetVersionStatus(id, status, reason string) (*GameVersion, error) {
 	switch status {
-	case VersionStatusDraft, VersionStatusPending, VersionStatusApproved, VersionStatusRejected, VersionStatusRevoked:
+	case VersionStatusDraft, VersionStatusPending, VersionStatusApproved, VersionStatusRejected, VersionStatusPublished, VersionStatusRevoked:
 	default:
 		return nil, errors.New("非法版本状态")
 	}
@@ -619,6 +700,43 @@ func (m *AdminModel) SetVersionStatus(id, status, reason string) (*GameVersion, 
 		return nil, fmt.Errorf("更新版本状态失败: %w", err)
 	}
 	return m.GetVersion(id)
+}
+
+// PublishVersion 发布渠道包：仅已过审版本可发布；version_code 低于当前已发布
+// 版本时拒绝（避免低版本包覆盖已发布更新，F07）。version_code 为 0 时跳过比较。
+func (m *AdminModel) PublishVersion(id string) (*GameVersion, error) {
+	v, err := m.GetVersion(id)
+	if err != nil {
+		return nil, err
+	}
+	if v.Status != VersionStatusApproved {
+		return nil, errors.New("仅已过审版本可发布")
+	}
+	if v.VersionCode > 0 {
+		var latestCode int64
+		err := m.db.QueryRow(
+			`SELECT COALESCE(MAX(version_code), 0) FROM game_versions WHERE game_id = ? AND status = ?`,
+			v.GameId, VersionStatusPublished).Scan(&latestCode)
+		if err == nil && latestCode > v.VersionCode {
+			return nil, errors.New("不能发布低于当前已发布版本的渠道包")
+		}
+		if err != nil && err != sql.ErrNoRows {
+			return nil, fmt.Errorf("查询已发布版本失败: %w", err)
+		}
+	}
+	return m.SetVersionStatus(id, VersionStatusPublished, "")
+}
+
+// RevokeVersion 撤回渠道包：仅已发布版本可撤回。
+func (m *AdminModel) RevokeVersion(id string) (*GameVersion, error) {
+	v, err := m.GetVersion(id)
+	if err != nil {
+		return nil, err
+	}
+	if v.Status != VersionStatusPublished {
+		return nil, errors.New("仅已发布版本可撤回")
+	}
+	return m.SetVersionStatus(id, VersionStatusRevoked, "")
 }
 
 // ---- 审计 ----

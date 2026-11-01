@@ -177,10 +177,13 @@ func TestRoutes_PartnerVersionFlow(t *testing.T) {
 	doAuthed(t, http.MethodPost, base+"/admin/roles", admin, `{"user_id":2,"role":"partner","partner_id":`+jsonNumber(partnerResp.Id)+`}`)
 	doAuthed(t, http.MethodPost, base+"/admin/games/game-elden-ring/ownership", admin, `{"partner_id":`+jsonNumber(partnerResp.Id)+`}`)
 
-	// 建版本（draft）
+	// 建版本（draft，带 GP-104 渠道包字段）
 	if code, body = doAuthed(t, http.MethodPost, base+"/partner/games/game-elden-ring/versions", user2,
-		`{"version":"1.0.0","changelog":"首个版本"}`); code != http.StatusOK || !strings.Contains(body, `"status":"draft"`) {
+		`{"version":"1.0.0","changelog":"首个版本","package_name":"com.ring.elden","version_code":10,"sign_fingerprint":"AA:BB","size_bytes":1024,"hash":"sha256:deadbeef","storage_url":"s3://pkgs/elden.apk"}`); code != http.StatusOK || !strings.Contains(body, `"status":"draft"`) {
 		t.Fatalf("create version = %d body=%s", code, body)
+	}
+	if !strings.Contains(body, `"version_code":10`) || !strings.Contains(body, `"package_name":"com.ring.elden"`) {
+		t.Fatalf("create version missing package fields: %s", body)
 	}
 	var verResp struct {
 		Id string `json:"id"`
@@ -205,6 +208,47 @@ func TestRoutes_PartnerVersionFlow(t *testing.T) {
 	// 版本列表状态 approved
 	if code, body = doAuthed(t, http.MethodGet, base+"/partner/games/game-elden-ring/versions", user2, ""); code != http.StatusOK || !strings.Contains(body, `"status":"approved"`) {
 		t.Fatalf("versions after approve = %d body=%s", code, body)
+	}
+
+	// GP-104：发布（仅过审）→ published；重复发布 → 400
+	if code, body = doAuthed(t, http.MethodPost, base+"/admin/games/game-elden-ring/versions/"+verResp.Id+"/publish", admin, ""); code != http.StatusOK || !strings.Contains(body, `"status":"published"`) {
+		t.Fatalf("publish version = %d body=%s", code, body)
+	}
+	if code, _ = doAuthed(t, http.MethodPost, base+"/admin/games/game-elden-ring/versions/"+verResp.Id+"/publish", admin, ""); code != http.StatusBadRequest {
+		t.Fatalf("re-publish published = %d, want 400", code)
+	}
+
+	// 低 version_code 已过审版本不可覆盖已发布版本 → 409
+	if code, body = doAuthed(t, http.MethodPost, base+"/partner/games/game-elden-ring/versions", user2,
+		`{"version":"0.9.0","version_code":5}`); code != http.StatusOK {
+		t.Fatalf("create lower version = %d body=%s", code, body)
+	}
+	var lowerResp struct {
+		Id string `json:"id"`
+	}
+	_ = json.Unmarshal([]byte(body), &lowerResp)
+	if code, body = doAuthed(t, http.MethodPost, base+"/partner/games/game-elden-ring/submit", user2,
+		`{"version_id":"`+lowerResp.Id+`"}`); code != http.StatusOK {
+		t.Fatalf("submit lower = %d body=%s", code, body)
+	}
+	var lowerSubmit struct {
+		Id int64 `json:"id"`
+	}
+	_ = json.Unmarshal([]byte(body), &lowerSubmit)
+	if code, body = doAuthed(t, http.MethodPost, base+"/admin/reviews/"+jsonNumber(lowerSubmit.Id)+"/decision", admin,
+		`{"decision":"approve"}`); code != http.StatusOK {
+		t.Fatalf("approve lower = %d body=%s", code, body)
+	}
+	if code, body = doAuthed(t, http.MethodPost, base+"/admin/games/game-elden-ring/versions/"+lowerResp.Id+"/publish", admin, ""); code != http.StatusConflict {
+		t.Fatalf("publish lower = %d, want 409 body=%s", code, body)
+	}
+
+	// 撤回 → revoked；非已发布撤回 → 400
+	if code, body = doAuthed(t, http.MethodPost, base+"/admin/games/game-elden-ring/versions/"+verResp.Id+"/revoke", admin, ""); code != http.StatusOK || !strings.Contains(body, `"status":"revoked"`) {
+		t.Fatalf("revoke version = %d body=%s", code, body)
+	}
+	if code, _ = doAuthed(t, http.MethodPost, base+"/admin/games/game-elden-ring/versions/"+verResp.Id+"/revoke", admin, ""); code != http.StatusBadRequest {
+		t.Fatalf("re-revoke = %d, want 400", code)
 	}
 }
 

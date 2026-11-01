@@ -245,6 +245,60 @@ func (l *AdminLogic) ListVersions(gameID string) (*types.VersionListResponse, er
 	return &types.VersionListResponse{Versions: out}, nil
 }
 
+// versionOfGame 校验版本存在且属于指定游戏，返回版本。
+func (l *AdminLogic) versionOfGame(gameID, versionID string) (*model.GameVersion, error) {
+	v, err := l.svcCtx.AdminRepository.GetVersion(versionID)
+	if err != nil {
+		if errors.Is(err, model.ErrVersionNotFound) {
+			return nil, newAPIError(http.StatusNotFound, "版本不存在")
+		}
+		return nil, newAPIError(http.StatusInternalServerError, "查询版本失败")
+	}
+	if v.GameId != gameID {
+		return nil, newAPIError(http.StatusBadRequest, "版本不属于该游戏")
+	}
+	return v, nil
+}
+
+// PublishVersion 发布渠道包（GP-104）：模型层校验已过审与版本号不回退。
+func (l *AdminLogic) PublishVersion(gameID, versionID string) (*types.GameVersion, error) {
+	before, err := l.versionOfGame(gameID, versionID)
+	if err != nil {
+		return nil, err
+	}
+	v, err := l.svcCtx.AdminRepository.PublishVersion(versionID)
+	if err != nil {
+		if strings.Contains(err.Error(), "仅已过审版本可发布") {
+			return nil, newAPIError(http.StatusBadRequest, err.Error())
+		}
+		if strings.Contains(err.Error(), "低于当前已发布版本") {
+			return nil, newAPIError(http.StatusConflict, err.Error())
+		}
+		l.Errorf("publish version failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "发布版本失败")
+	}
+	l.audit("version_publish", "version", versionID, toJSON(toVersion(before)), toJSON(toVersion(v)))
+	return toVersion(v), nil
+}
+
+// RevokeVersion 撤回渠道包（GP-104）。
+func (l *AdminLogic) RevokeVersion(gameID, versionID string) (*types.GameVersion, error) {
+	before, err := l.versionOfGame(gameID, versionID)
+	if err != nil {
+		return nil, err
+	}
+	v, err := l.svcCtx.AdminRepository.RevokeVersion(versionID)
+	if err != nil {
+		if strings.Contains(err.Error(), "仅已发布版本可撤回") {
+			return nil, newAPIError(http.StatusBadRequest, err.Error())
+		}
+		l.Errorf("revoke version failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "撤回版本失败")
+	}
+	l.audit("version_revoke", "version", versionID, toJSON(toVersion(before)), toJSON(toVersion(v)))
+	return toVersion(v), nil
+}
+
 func (l *AdminLogic) ListAuditLogs(req *types.ListAuditRequest) (*types.AuditListResponse, error) {
 	limit, offset := clampPage(req.Limit, req.Offset, 200)
 	logs, total, err := l.svcCtx.AdminRepository.ListAuditLogs(strings.TrimSpace(req.ResourceType), limit, offset)

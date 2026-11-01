@@ -193,6 +193,38 @@ func AdminListVersionsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	}
 }
 
+func PublishVersionHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.VersionPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewAdminLogic(withClientIP(r), svcCtx).PublishVersion(req.Id, req.VersionId)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func RevokeVersionHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.VersionPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewAdminLogic(withClientIP(r), svcCtx).RevokeVersion(req.Id, req.VersionId)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
 func MeHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		resp, err := logic.NewAdminLogic(withClientIP(r), svcCtx).Me()

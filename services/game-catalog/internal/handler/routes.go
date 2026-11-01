@@ -77,6 +77,8 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		rest.Route{Method: http.MethodPost, Path: "/admin/games/:id/publish", Handler: PublishGameHandler(serverCtx)},
 		rest.Route{Method: http.MethodPost, Path: "/admin/games/:id/unpublish", Handler: UnpublishGameHandler(serverCtx)},
 		rest.Route{Method: http.MethodGet, Path: "/admin/games/:id/versions", Handler: AdminListVersionsHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/admin/games/:id/versions/:versionId/publish", Handler: PublishVersionHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/admin/games/:id/versions/:versionId/revoke", Handler: RevokeVersionHandler(serverCtx)},
 		rest.Route{Method: http.MethodGet, Path: "/admin/audit", Handler: ListAuditLogsHandler(serverCtx)},
 	)...)
 	server.AddRoutes(rest.WithMiddleware(auth, adminRoutes...))

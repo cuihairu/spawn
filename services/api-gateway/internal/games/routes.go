@@ -38,6 +38,8 @@ func RegisterGameProxyRoutes(server *rest.Server, serverCtx *svc.ServiceContext)
 		{Method: http.MethodPost, Path: "/admin/games/:id/publish", Handler: h},
 		{Method: http.MethodPost, Path: "/admin/games/:id/unpublish", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/games/:id/versions", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/games/:id/versions/:versionId/publish", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/games/:id/versions/:versionId/revoke", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/audit", Handler: h},
 		{Method: http.MethodGet, Path: "/partner/games", Handler: h},
 		{Method: http.MethodPost, Path: "/partner/games/:id/submit", Handler: h},

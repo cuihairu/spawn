@@ -78,6 +78,8 @@ func toVersion(v *model.GameVersion) *types.GameVersion {
 	}
 	return &types.GameVersion{
 		Id: v.Id, GameId: v.GameId, Version: v.Version, Changelog: v.Changelog,
+		PackageName: v.PackageName, VersionCode: v.VersionCode, SignFingerprint: v.SignFingerprint,
+		SizeBytes: v.SizeBytes, Hash: v.Hash, StorageUrl: v.StorageUrl,
 		Status: v.Status, ReviewReason: v.ReviewReason, CreatedAt: v.CreatedAt,
 	}
 }

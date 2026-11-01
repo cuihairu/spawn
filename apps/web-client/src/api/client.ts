@@ -1480,6 +1480,12 @@ export interface GameVersionInfo {
   gameId: string
   version: string
   changelog: string
+  packageName: string
+  versionCode: number
+  signFingerprint: string
+  sizeBytes: number
+  hash: string
+  storageUrl: string
   status: string
   reviewReason: string
   createdAt: string
@@ -1523,6 +1529,12 @@ type VersionDto = {
   game_id: string
   version: string
   changelog?: string
+  package_name?: string
+  version_code?: number
+  sign_fingerprint?: string
+  size_bytes?: number
+  hash?: string
+  storage_url?: string
   status: string
   review_reason?: string
   created_at: string
@@ -1674,12 +1686,21 @@ export async function partnerSubmitReview(gameId: string, versionId: string | un
   return mapReview(payload)
 }
 
-export async function partnerCreateVersion(gameId: string, params: { version: string; changelog?: string }, token: string): Promise<GameVersionInfo> {
+export async function partnerCreateVersion(gameId: string, params: { version: string; changelog?: string; packageName?: string; versionCode?: number; signFingerprint?: string; sizeBytes?: number; hash?: string; storageUrl?: string }, token: string): Promise<GameVersionInfo> {
   const baseUrl = apiGatewayUrl ?? gameServiceUrl
   const payload = await request<VersionDto>(baseUrl, `/partner/games/${encodeURIComponent(gameId)}/versions`, {
     method: 'POST',
     headers: adminHeaders(token),
-    body: JSON.stringify({ version: params.version, changelog: params.changelog ?? '' }),
+    body: JSON.stringify({
+      version: params.version,
+      changelog: params.changelog ?? '',
+      package_name: params.packageName ?? '',
+      version_code: params.versionCode ?? 0,
+      sign_fingerprint: params.signFingerprint ?? '',
+      size_bytes: params.sizeBytes ?? 0,
+      hash: params.hash ?? '',
+      storage_url: params.storageUrl ?? '',
+    }),
   })
   return mapVersion(payload)
 }
@@ -1688,6 +1709,25 @@ export async function fetchPartnerVersions(gameId: string, token: string): Promi
   const baseUrl = apiGatewayUrl ?? gameServiceUrl
   const payload = await request<{ versions: VersionDto[] }>(baseUrl, `/partner/games/${encodeURIComponent(gameId)}/versions`, { headers: adminHeaders(token) })
   return (payload.versions ?? []).map(mapVersion)
+}
+
+// GP-104：发布/撤回渠道包（运营，admin 路由）
+export async function publishVersion(gameId: string, versionId: string, token: string): Promise<GameVersionInfo> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  const payload = await request<VersionDto>(baseUrl, `/admin/games/${encodeURIComponent(gameId)}/versions/${encodeURIComponent(versionId)}/publish`, {
+    method: 'POST',
+    headers: adminHeaders(token),
+  })
+  return mapVersion(payload)
+}
+
+export async function revokeVersion(gameId: string, versionId: string, token: string): Promise<GameVersionInfo> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  const payload = await request<VersionDto>(baseUrl, `/admin/games/${encodeURIComponent(gameId)}/versions/${encodeURIComponent(versionId)}/revoke`, {
+    method: 'POST',
+    headers: adminHeaders(token),
+  })
+  return mapVersion(payload)
 }
 
 function mapPartner(dto: PartnerDto): PartnerInfo {
@@ -1724,6 +1764,12 @@ function mapVersion(dto: VersionDto): GameVersionInfo {
     gameId: dto.game_id,
     version: dto.version,
     changelog: dto.changelog ?? '',
+    packageName: dto.package_name ?? '',
+    versionCode: dto.version_code ?? 0,
+    signFingerprint: dto.sign_fingerprint ?? '',
+    sizeBytes: dto.size_bytes ?? 0,
+    hash: dto.hash ?? '',
+    storageUrl: dto.storage_url ?? '',
     status: dto.status,
     reviewReason: dto.review_reason ?? '',
     createdAt: dto.created_at,

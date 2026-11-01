@@ -127,15 +127,21 @@ type GameReview struct {
 	ReviewedAt   string `json:"reviewed_at"`
 }
 
-// GameVersion 游戏版本（响应视图）。
+// GameVersion 游戏版本/渠道包（响应视图）。
 type GameVersion struct {
-	Id           string `json:"id"`
-	GameId       string `json:"game_id"`
-	Version      string `json:"version"`
-	Changelog    string `json:"changelog"`
-	Status       string `json:"status"`
-	ReviewReason string `json:"review_reason"`
-	CreatedAt    string `json:"created_at"`
+	Id              string `json:"id"`
+	GameId          string `json:"game_id"`
+	Version         string `json:"version"`
+	Changelog       string `json:"changelog"`
+	PackageName     string `json:"package_name"`
+	VersionCode     int64  `json:"version_code"`
+	SignFingerprint string `json:"sign_fingerprint"`
+	SizeBytes       int64  `json:"size_bytes"`
+	Hash            string `json:"hash"`
+	StorageUrl      string `json:"storage_url"`
+	Status          string `json:"status"`
+	ReviewReason    string `json:"review_reason"`
+	CreatedAt       string `json:"created_at"`
 }
 
 // AuditLog 审计记录（响应视图）。
@@ -212,11 +218,23 @@ type PartnerSubmitRequest struct {
 	VersionId string `json:"version_id,optional"`
 }
 
-// CreateVersionRequest 新建游戏版本（path id = game id）。
+// CreateVersionRequest 新建游戏版本/渠道包（path id = game id）。
 type CreateVersionRequest struct {
+	Id              string `path:"id"`
+	Version         string `json:"version"`
+	Changelog       string `json:"changelog,optional"`
+	PackageName     string `json:"package_name,optional"`
+	VersionCode     int64  `json:"version_code,optional"`
+	SignFingerprint string `json:"sign_fingerprint,optional"`
+	SizeBytes       int64  `json:"size_bytes,optional"`
+	Hash            string `json:"hash,optional"`
+	StorageUrl      string `json:"storage_url,optional"`
+}
+
+// VersionPathRequest 版本操作（发布/撤回）：path id = game id，path versionId = 版本 id。
+type VersionPathRequest struct {
 	Id        string `path:"id"`
-	Version   string `json:"version"`
-	Changelog string `json:"changelog,optional"`
+	VersionId string `path:"versionId"`
 }
 
 type VersionListResponse struct {

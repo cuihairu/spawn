@@ -163,7 +163,17 @@ func (l *PartnerLogic) CreateVersion(req *types.CreateVersionRequest) (*types.Ga
 	if err := l.ownGame(partnerID, req.Id); err != nil {
 		return nil, err
 	}
-	v, err := l.svcCtx.AdminRepository.CreateVersion(req.Id, req.Version, req.Changelog)
+	v, err := l.svcCtx.AdminRepository.CreateVersion(&model.GameVersion{
+		GameId:          req.Id,
+		Version:         req.Version,
+		Changelog:       req.Changelog,
+		PackageName:     req.PackageName,
+		VersionCode:     req.VersionCode,
+		SignFingerprint: req.SignFingerprint,
+		SizeBytes:       req.SizeBytes,
+		Hash:            req.Hash,
+		StorageUrl:      req.StorageUrl,
+	})
 	if err != nil {
 		l.Errorf("create version failed: %v", err)
 		return nil, newAPIError(http.StatusInternalServerError, "创建版本失败")

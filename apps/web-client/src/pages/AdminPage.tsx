@@ -5,16 +5,20 @@ import {
   createPartner,
   decideReview,
   fetchAuditLogs,
+  fetchGameVersions,
   fetchGames,
   fetchPartners,
   fetchReviews,
   grantRole,
   publishGame,
+  publishVersion,
+  revokeVersion,
   setPartnerStatus,
   unpublishGame,
   type AdminGame,
   type AuditLogInfo,
   type GameReviewInfo,
+  type GameVersionInfo,
   type PartnerInfo,
 } from '../api/client'
 import './admin.css'
@@ -30,6 +34,8 @@ const STATUS_LABELS: Record<string, string> = {
   draft: '草稿',
   pending: '待审核',
   approved: '已过审',
+  published: '已发布',
+  revoked: '已撤回',
   rejected: '已驳回',
   offline: '已下架',
   active: '正常',
@@ -80,6 +86,10 @@ const AdminPage = ({ token, isAdmin }: Props) => {
   const [games, setGames] = useState<AdminGame[]>([])
   const [gameKeyword, setGameKeyword] = useState('')
   const [actionGameId, setActionGameId] = useState('')
+
+  // 版本管理（GP-104）：按游戏查版本，发布/撤回
+  const [versionGameId, setVersionGameId] = useState('')
+  const [adminVersions, setAdminVersions] = useState<GameVersionInfo[]>([])
 
   // 审计
   const [logs, setLogs] = useState<AuditLogInfo[]>([])
@@ -138,6 +148,19 @@ const AdminPage = ({ token, isAdmin }: Props) => {
       setLogTotal(res.total)
     })
   }, [run, token])
+
+  const loadAdminVersions = useCallback(
+    (gameId: string) => {
+      if (!gameId.trim()) {
+        setAdminVersions([])
+        return
+      }
+      run(async () => {
+        setAdminVersions(await fetchGameVersions(gameId.trim(), token))
+      })
+    },
+    [run, token],
+  )
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -433,6 +456,80 @@ const AdminPage = ({ token, isAdmin }: Props) => {
 
       {tab === 'games' ? (
         <>
+          <section className="community-card">
+            <h2>版本发布/撤回（GP-104）</h2>
+            <div className="admin-form">
+              <input placeholder="游戏 ID" value={versionGameId} onChange={(e) => setVersionGameId(e.target.value)} />
+              <button type="button" className="secondary-btn" onClick={() => loadAdminVersions(versionGameId)} disabled={loading}>
+                查询版本
+              </button>
+            </div>
+            {adminVersions.length > 0 ? (
+              <div className="admin-table-wrap" style={{ marginTop: '0.75rem' }}>
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>版本</th>
+                      <th>包名 / code</th>
+                      <th>大小</th>
+                      <th>哈希</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminVersions.map((v) => (
+                      <tr key={v.id}>
+                        <td>{v.version}</td>
+                        <td>
+                          {v.packageName || '—'}
+                          {v.versionCode ? <div className="admin-meta">code {v.versionCode}</div> : null}
+                        </td>
+                        <td>{v.sizeBytes > 0 ? `${(v.sizeBytes / 1024 / 1024).toFixed(1)} MB` : '—'}</td>
+                        <td>{v.hash || '—'}</td>
+                        <td>
+                          <StatusBadge status={v.status} />
+                        </td>
+                        <td>
+                          <div className="inline-actions">
+                            <button
+                              type="button"
+                              className="secondary-btn"
+                              disabled={loading || v.status !== 'approved'}
+                              onClick={() =>
+                                run(async () => {
+                                  await publishVersion(versionGameId.trim(), v.id, token)
+                                  setNotice(`版本 ${v.version} 已发布`)
+                                  loadAdminVersions(versionGameId)
+                                })
+                              }
+                            >
+                              发布
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-btn danger-btn"
+                              disabled={loading || v.status !== 'published'}
+                              onClick={() =>
+                                run(async () => {
+                                  await revokeVersion(versionGameId.trim(), v.id, token)
+                                  setNotice(`版本 ${v.version} 已撤回`)
+                                  loadAdminVersions(versionGameId)
+                                })
+                              }
+                            >
+                              撤回
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </section>
+
           <section className="community-card">
             <h2>按游戏 ID 操作</h2>
             <div className="admin-form">

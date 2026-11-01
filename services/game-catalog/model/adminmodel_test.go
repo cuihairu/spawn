@@ -130,12 +130,21 @@ func TestAdminModel_OwnershipAndReviewFlow(t *testing.T) {
 func TestAdminModel_VersionsAndAudit(t *testing.T) {
 	m := newTestAdminModel(t)
 
-	v, err := m.CreateVersion("game-2", "1.0.0", "首个版本")
+	v, err := m.CreateVersion(&GameVersion{
+		GameId: "game-2", Version: "1.0.0", Changelog: "首个版本",
+		PackageName: "com.demo.game", VersionCode: 10,
+		SignFingerprint: "AA:BB", SizeBytes: 1024, Hash: "sha256:deadbeef",
+		StorageUrl: "s3://packages/game-2-1.0.0.apk",
+	})
 	if err != nil || v.Status != VersionStatusDraft {
 		t.Fatalf("create version = %+v/%v", v, err)
 	}
-	if got, _ := m.GetVersion(v.Id); got.Version != "1.0.0" {
+	if got, _ := m.GetVersion(v.Id); got.VersionCode != 10 || got.PackageName != "com.demo.game" || got.Hash != "sha256:deadbeef" {
 		t.Fatalf("get version = %+v", got)
+	}
+	// 草稿不可直接发布
+	if _, err := m.PublishVersion(v.Id); err == nil {
+		t.Fatal("publish draft must error")
 	}
 	if vv, _ := m.SetVersionStatus(v.Id, VersionStatusApproved, ""); vv.Status != VersionStatusApproved {
 		t.Fatalf("set version status = %+v", vv)
@@ -143,6 +152,46 @@ func TestAdminModel_VersionsAndAudit(t *testing.T) {
 	versions, err := m.ListVersionsByGame("game-2")
 	if err != nil || len(versions) != 1 {
 		t.Fatalf("list versions = %d/%v", len(versions), err)
+	}
+	// 已过审 → 发布成功
+	if pv, err := m.PublishVersion(v.Id); err != nil || pv.Status != VersionStatusPublished {
+		t.Fatalf("publish version = %+v/%v", pv, err)
+	}
+
+	// GP-104 守卫：低 version_code 的已过审版本不可覆盖已发布版本
+	lower := mustCreateVersion(t, m, "game-2", "0.9.0", 5)
+	if _, err := m.SetVersionStatus(lower.Id, VersionStatusApproved, ""); err != nil {
+		t.Fatalf("approve lower: %v", err)
+	}
+	if _, err := m.PublishVersion(lower.Id); err == nil {
+		t.Fatal("publish lower version_code must error")
+	}
+	// 等高 version_code 允许（重打包/修复发布）
+	equal := mustCreateVersion(t, m, "game-2", "1.0.1", 10)
+	if _, err := m.SetVersionStatus(equal.Id, VersionStatusApproved, ""); err != nil {
+		t.Fatalf("approve equal: %v", err)
+	}
+	if _, err := m.PublishVersion(equal.Id); err != nil {
+		t.Fatalf("publish equal version_code should pass: %v", err)
+	}
+
+	// 撤回：非已发布不可撤回；已发布可撤回
+	if _, err := m.RevokeVersion(lower.Id); err == nil {
+		t.Fatal("revoke non-published must error")
+	}
+	if rv, err := m.RevokeVersion(equal.Id); err != nil || rv.Status != VersionStatusRevoked {
+		t.Fatalf("revoke version = %+v/%v", rv, err)
+	}
+	// 基线 v（code 10）仍在发布 → 低版本仍被挡
+	if _, err := m.PublishVersion(lower.Id); err == nil {
+		t.Fatal("lower still blocked while baseline published")
+	}
+	// 撤回基线后，低版本可发布（无更高已发布版本阻挡；lower 已过审）
+	if _, err := m.RevokeVersion(v.Id); err != nil {
+		t.Fatalf("revoke baseline: %v", err)
+	}
+	if pv, err := m.PublishVersion(lower.Id); err != nil || pv.Status != VersionStatusPublished {
+		t.Fatalf("publish after revoke should pass: %+v/%v", pv, err)
 	}
 
 	if err := m.WriteAudit(&AuditLog{ActorId: 9, ActorRole: RoleOperator, Action: "game_publish", ResourceType: "game", ResourceId: "game-2"}); err != nil {
@@ -155,4 +204,13 @@ func TestAdminModel_VersionsAndAudit(t *testing.T) {
 	if logs, _, _ := m.ListAuditLogs("partner", 20, 0); len(logs) != 0 {
 		t.Fatalf("filtered audit should be empty, got %d", len(logs))
 	}
+}
+
+func mustCreateVersion(t *testing.T, m *AdminModel, gameId, version string, code int64) *GameVersion {
+	t.Helper()
+	v, err := m.CreateVersion(&GameVersion{GameId: gameId, Version: version, VersionCode: code})
+	if err != nil {
+		t.Fatalf("create version %s: %v", version, err)
+	}
+	return v
 }

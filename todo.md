@@ -22,7 +22,7 @@
 - [x] GP-101 复用现有 Tags/Tag 后端筛选与详情展示，补 Web/mobile 游戏列表“联运”标签筛选、清除、分页和 URL/导航状态；补运营标签维护入口。验收：联运与普通游戏同库且原浏览正常（F01）。Web/mobile 列表「联运」筛选 + game-catalog PATCH /games/:id/tags 运营入口 + 网关反代。
 - [x] GP-102 扩展截图/视频、更新日志、厂商资料和商店链接；按配置展示下载/进入游戏等入口，整理推荐位和榜单现有口径，不将现 score 当真实玩家评价（F02/F03）。落地：games 表新增 screenshots/video_url/changelog/developer_website/store_link/download_url/play_url（幂等列迁移），Web/mobile 详情新增截图/宣传视频/更新日志/厂商资料与「入口」区块，评分标签改「资料评分」。
 - [x] GP-103 新增最小运营后台及合作方/游戏归属管理，支持资料与版本提审、审核原因、授权记录和上/下架；开发者自助入口按权限接同一流程（F11/F12/F26）。落地：game-catalog platform_roles/partners/game_ownership/game_reviews/game_versions/audit_logs 六表 + /admin/*、/partner/*、/me 路由（角色守卫、审计、审核原因、上下架、归属、合作方、版本草稿/提审），网关反代透传，web 运营后台/合作方后台两页 + 角色门禁导航；go test -race 全绿，web tsc/eslint/build 绿。
-- [ ] GP-104 建立游戏版本/渠道包记录：包名、versionCode/versionName、签名指纹、大小、哈希、存储地址、更新说明、审核/发布/撤回；避免低版本包覆盖已发布更新（F07）。
+- [x] GP-104 建立游戏版本/渠道包记录：包名、versionCode/versionName、签名指纹、大小、哈希、存储地址、更新说明、审核/发布/撤回；避免低版本包覆盖已发布更新（F07）。落地：game_versions 扩 6 列（package_name/version_code/sign_fingerprint/size_bytes/hash/storage_url，幂等列迁移）+ 发布/撤回路由（仅过审可发布、仅发布可撤回、version_code 低于已发布版本拒绝 409）+ 网关反代 + web 合作方版本表单/版本表与运营发布撤回；go test -race 全绿，web tsc/eslint/build 绿。
 - [ ] GP-105 接入包体存储与受控下载，移动端补 Android 下载队列、进度、暂停续传、校验、安装/更新和失败重试；完成真机验收，非 Android 暂以适用商店链接承接（F08/F28）。
 
 ### M2：复用 Courier 完成交易与发货

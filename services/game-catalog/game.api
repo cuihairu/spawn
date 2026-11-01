@@ -128,6 +128,12 @@ type GameVersion {
 	GameId string `json:"game_id"`
 	Version string `json:"version"`
 	Changelog string `json:"changelog"`
+	PackageName string `json:"package_name"`
+	VersionCode int64 `json:"version_code"`
+	SignFingerprint string `json:"sign_fingerprint"`
+	SizeBytes int64 `json:"size_bytes"`
+	Hash string `json:"hash"`
+	StorageUrl string `json:"storage_url"`
 	Status string `json:"status"`
 	ReviewReason string `json:"review_reason"`
 	CreatedAt string `json:"created_at"`
@@ -203,6 +209,17 @@ type CreateVersionRequest {
 	Id string `path:"id"`
 	Version string `json:"version"`
 	Changelog string `json:"changelog,optional"`
+	PackageName string `json:"package_name,optional"`
+	VersionCode int64 `json:"version_code,optional"`
+	SignFingerprint string `json:"sign_fingerprint,optional"`
+	SizeBytes int64 `json:"size_bytes,optional"`
+	Hash string `json:"hash,optional"`
+	StorageUrl string `json:"storage_url,optional"`
+}
+
+type VersionPathRequest {
+	Id string `path:"id"`
+	VersionId string `path:"versionId"`
 }
 
 type VersionListResponse {
@@ -300,5 +317,12 @@ service game-catalog {
 
 	@handler PartnerListVersionsHandler
 	get /partner/games/:id/versions (IdPathRequest) returns (VersionListResponse)
+
+	@handler PublishVersionHandler
+	post /admin/games/:id/versions/:versionId/publish (VersionPathRequest) returns (GameVersion)
+
+	@handler RevokeVersionHandler
+	post /admin/games/:id/versions/:versionId/revoke (VersionPathRequest) returns (GameVersion)
 }
+
 

@@ -36,6 +36,13 @@ const PartnerPage = ({ token, partnerId }: Props) => {
   const [selectedGame, setSelectedGame] = useState('')
   const [versionName, setVersionName] = useState('')
   const [versionChangelog, setVersionChangelog] = useState('')
+  // GP-104 渠道包字段
+  const [packageName, setPackageName] = useState('')
+  const [versionCode, setVersionCode] = useState('')
+  const [signFingerprint, setSignFingerprint] = useState('')
+  const [sizeBytes, setSizeBytes] = useState('')
+  const [hash, setHash] = useState('')
+  const [storageUrl, setStorageUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -168,16 +175,45 @@ const PartnerPage = ({ token, partnerId }: Props) => {
             <div className="admin-form">
               <input placeholder="版本号（如 1.2.0）" value={versionName} onChange={(e) => setVersionName(e.target.value)} />
               <input className="reason-input" placeholder="更新说明（可选）" value={versionChangelog} onChange={(e) => setVersionChangelog(e.target.value)} />
+            </div>
+            <div className="admin-form" style={{ marginTop: '0.5rem' }}>
+              <input placeholder="包名（如 com.demo.game）" value={packageName} onChange={(e) => setPackageName(e.target.value)} />
+              <input type="number" placeholder="versionCode" value={versionCode} onChange={(e) => setVersionCode(e.target.value)} />
+              <input placeholder="签名指纹" value={signFingerprint} onChange={(e) => setSignFingerprint(e.target.value)} />
+              <input type="number" placeholder="大小(字节)" value={sizeBytes} onChange={(e) => setSizeBytes(e.target.value)} />
+            </div>
+            <div className="admin-form" style={{ marginTop: '0.5rem' }}>
+              <input placeholder="哈希（如 sha256:...）" value={hash} onChange={(e) => setHash(e.target.value)} />
+              <input className="reason-input" placeholder="存储地址（如 s3://...）" value={storageUrl} onChange={(e) => setStorageUrl(e.target.value)} />
               <button
                 type="button"
                 className="secondary-btn"
                 disabled={loading || !versionName.trim()}
                 onClick={() =>
                   run(async () => {
-                    const v = await partnerCreateVersion(selectedGame, { version: versionName.trim(), changelog: versionChangelog.trim() || undefined }, token)
+                    const v = await partnerCreateVersion(
+                      selectedGame,
+                      {
+                        version: versionName.trim(),
+                        changelog: versionChangelog.trim() || undefined,
+                        packageName: packageName.trim() || undefined,
+                        versionCode: versionCode ? Number(versionCode) : undefined,
+                        signFingerprint: signFingerprint.trim() || undefined,
+                        sizeBytes: sizeBytes ? Number(sizeBytes) : undefined,
+                        hash: hash.trim() || undefined,
+                        storageUrl: storageUrl.trim() || undefined,
+                      },
+                      token,
+                    )
                     setNotice(`版本 ${v.version} 已创建（草稿）`)
                     setVersionName('')
                     setVersionChangelog('')
+                    setPackageName('')
+                    setVersionCode('')
+                    setSignFingerprint('')
+                    setSizeBytes('')
+                    setHash('')
+                    setStorageUrl('')
                     loadVersions(selectedGame)
                   })
                 }
@@ -197,6 +233,9 @@ const PartnerPage = ({ token, partnerId }: Props) => {
                   <thead>
                     <tr>
                       <th>版本</th>
+                      <th>包名 / code</th>
+                      <th>大小</th>
+                      <th>哈希</th>
                       <th>更新说明</th>
                       <th>状态</th>
                       <th>创建时间</th>
@@ -207,6 +246,12 @@ const PartnerPage = ({ token, partnerId }: Props) => {
                     {versions.map((v) => (
                       <tr key={v.id}>
                         <td>{v.version}</td>
+                        <td>
+                          {v.packageName || '—'}
+                          {v.versionCode ? <div className="admin-meta">code {v.versionCode}</div> : null}
+                        </td>
+                        <td>{v.sizeBytes > 0 ? `${(v.sizeBytes / 1024 / 1024).toFixed(1)} MB` : '—'}</td>
+                        <td>{v.hash || '—'}</td>
                         <td>{v.changelog || '—'}</td>
                         <td>
                           <StatusBadge status={v.status} />
