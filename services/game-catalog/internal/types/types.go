@@ -2,18 +2,25 @@ package types
 
 // Game 定义客户端可见的游戏结构
 type Game struct {
-	Id            string   `json:"id"`
-	Title         string   `json:"title"`
-	Description   string   `json:"description"`
-	Genres        []string `json:"genres"`
-	Platforms     []string `json:"platforms"`
-	ReleaseDate   string   `json:"release_date"`
-	Developer     string   `json:"developer"`
-	Publisher     string   `json:"publisher"`
-	Tags          []string `json:"tags"`
-	Score         float64  `json:"score"`
-	TrendingScore int      `json:"trending_score"`
-	CoverImage    string   `json:"cover_image"`
+	Id               string   `json:"id"`
+	Title            string   `json:"title"`
+	Description      string   `json:"description"`
+	Genres           []string `json:"genres"`
+	Platforms        []string `json:"platforms"`
+	ReleaseDate      string   `json:"release_date"`
+	Developer        string   `json:"developer"`
+	Publisher        string   `json:"publisher"`
+	Tags             []string `json:"tags"`
+	Score            float64  `json:"score"`
+	TrendingScore    int      `json:"trending_score"`
+	CoverImage       string   `json:"cover_image"`
+	Screenshots      []string `json:"screenshots"`
+	VideoUrl         string   `json:"video_url"`
+	Changelog        string   `json:"changelog"`
+	DeveloperWebsite string   `json:"developer_website"`
+	StoreLink        string   `json:"store_link"`
+	DownloadUrl      string   `json:"download_url"`
+	PlayUrl          string   `json:"play_url"`
 }
 
 type ListGamesRequest struct {
@@ -52,16 +59,23 @@ type RecommendationsResponse struct {
 }
 
 type CreateGameRequest struct {
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Genres      []string `json:"genres"`
-	Platforms   []string `json:"platforms"`
-	ReleaseDate string   `json:"release_date"`
-	Developer   string   `json:"developer"`
-	Publisher   string   `json:"publisher"`
-	Tags        []string `json:"tags"`
-	Score       float64  `json:"score"`
-	CoverImage  string   `json:"cover_image"`
+	Title            string   `json:"title"`
+	Description      string   `json:"description"`
+	Genres           []string `json:"genres"`
+	Platforms        []string `json:"platforms"`
+	ReleaseDate      string   `json:"release_date"`
+	Developer        string   `json:"developer"`
+	Publisher        string   `json:"publisher"`
+	Tags             []string `json:"tags"`
+	Score            float64  `json:"score"`
+	CoverImage       string   `json:"cover_image"`
+	Screenshots      []string `json:"screenshots,optional"`
+	VideoUrl         string   `json:"video_url,optional"`
+	Changelog        string   `json:"changelog,optional"`
+	DeveloperWebsite string   `json:"developer_website,optional"`
+	StoreLink        string   `json:"store_link,optional"`
+	DownloadUrl      string   `json:"download_url,optional"`
+	PlayUrl          string   `json:"play_url,optional"`
 }
 
 // UpdateGameTagsRequest 整体覆盖游戏标签（运营维护入口，如标记「联运」）。

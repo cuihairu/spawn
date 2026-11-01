@@ -347,7 +347,7 @@ func TestCorruptedArrayColumns(t *testing.T) {
 			m := newTestGameModel(t, false)
 			if _, err := m.db.Exec(
 				`INSERT INTO games (` + gameColumns + `)
-				 VALUES ('g-bad', 'Bad', 'd', '[]', '[]', '[]', '2024-01-01', 'dev', 'pub', 1.0, 1, 'c')`); err != nil {
+				 VALUES ('g-bad', 'Bad', 'd', '[]', '[]', '[]', '2024-01-01', 'dev', 'pub', 1.0, 1, 'c', '[]', '', '', '', '', '', '')`); err != nil {
 				t.Fatalf("insert row: %v", err)
 			}
 			if _, err := m.db.Exec(`UPDATE games SET ` + col + ` = '{oops' WHERE id = 'g-bad'`); err != nil {
@@ -370,7 +370,7 @@ func TestEmptyArrayColumns(t *testing.T) {
 	m := newTestGameModel(t, false)
 	if _, err := m.db.Exec(
 		`INSERT INTO games (` + gameColumns + `)
-		 VALUES ('g-empty', 'Empty', 'd', '', '', '', '2024-01-01', 'dev', 'pub', 1.0, 1, 'c')`); err != nil {
+		 VALUES ('g-empty', 'Empty', 'd', '', '', '', '2024-01-01', 'dev', 'pub', 1.0, 1, 'c', '[]', '', '', '', '', '', '')`); err != nil {
 		t.Fatalf("insert row: %v", err)
 	}
 
@@ -389,7 +389,7 @@ func TestScanError_TextInNumericColumn(t *testing.T) {
 	m := newTestGameModel(t, false)
 	if _, err := m.db.Exec(
 		`INSERT INTO games (` + gameColumns + `)
-		 VALUES ('g-badnum', 'BadNum', 'd', '[]', '[]', '[]', '2024-01-01', 'dev', 'pub', 1.0, 'oops', 'c')`); err != nil {
+		 VALUES ('g-badnum', 'BadNum', 'd', '[]', '[]', '[]', '2024-01-01', 'dev', 'pub', 1.0, 'oops', 'c', '[]', '', '', '', '', '', '')`); err != nil {
 		t.Fatalf("insert row: %v", err)
 	}
 
@@ -484,5 +484,80 @@ func TestSetTags_ReplacesAndFilters(t *testing.T) {
 
 	if _, err := m.SetTags("missing", []string{"x"}); !errors.Is(err, ErrGameNotFound) {
 		t.Fatalf("missing game err = %v, want ErrGameNotFound", err)
+	}
+}
+
+// 新增资料字段（截图/视频/更新日志/厂商/商店/下载/进入）写入后可读回，
+// 且 Create → Get 全字段一致（双格式建表 + 新列迁移路径）。
+func TestGameProfileFields_RoundTrip(t *testing.T) {
+	m := newTestGameModel(t, false)
+	mustSeedGames(t, m, &Game{
+		Id: "g-pro", Title: "Pro Game", Description: "desc", Genres: []string{"RPG"},
+		Platforms: []string{"Android"}, Tags: []string{"联运"},
+		Screenshots:      []string{"https://img/s1.png", "https://img/s2.png"},
+		VideoUrl:         "https://v.example.com/clip.mp4",
+		Changelog:        "v1.2 新增副本\nv1.1 平衡调整",
+		DeveloperWebsite: "https://dev.example.com",
+		StoreLink:        "https://play.google.com/store/apps/details?id=com.pro",
+		DownloadUrl:      "https://cdn.example.com/pro.apk",
+		PlayUrl:          "spawn://games/g-pro/play",
+	})
+
+	got, err := m.Get("g-pro")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(got.Screenshots) != 2 || got.Screenshots[0] != "https://img/s1.png" {
+		t.Fatalf("screenshots = %v", got.Screenshots)
+	}
+	if got.VideoUrl != "https://v.example.com/clip.mp4" || got.Changelog == "" ||
+		got.DeveloperWebsite != "https://dev.example.com" || got.StoreLink == "" ||
+		got.DownloadUrl == "" || got.PlayUrl == "" {
+		t.Fatalf("profile fields mismatch: %+v", got)
+	}
+
+	// 列表同样带出新字段（all() 扫描路径）
+	games, _ := m.List(GameFilter{Tag: "联运", Limit: 20})
+	if len(games) != 1 || len(games[0].Screenshots) != 2 {
+		t.Fatalf("list screenshots = %v", games[0].Screenshots)
+	}
+}
+
+// 迁移：模拟存量表仅含旧列，ensureGameColumns 补出新列后写入读取成功。
+func TestEnsureGameColumns_MigratesLegacyTable(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	if _, err := db.Exec(`CREATE TABLE games (
+		id VARCHAR(64) PRIMARY KEY, title VARCHAR(256) NOT NULL,
+		description VARCHAR(2048) NOT NULL, genres VARCHAR(1024) NOT NULL,
+		platforms VARCHAR(1024) NOT NULL, tags VARCHAR(1024) NOT NULL,
+		release_date VARCHAR(32) NOT NULL, developer VARCHAR(256) NOT NULL,
+		publisher VARCHAR(256) NOT NULL, score DOUBLE NOT NULL DEFAULT 0,
+		trending_score INTEGER NOT NULL DEFAULT 0, cover_image VARCHAR(512) NOT NULL
+	)`); err != nil {
+		t.Fatalf("legacy table: %v", err)
+	}
+
+	m := NewGameModel(db)
+	if err := m.ensureGameColumns(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	// 补列后完整写入读取（insertRow 含新列）
+	game := &Game{Id: "g-mig", Title: "Mig", Description: "d", Genres: []string{"RPG"},
+		Platforms: []string{"PC"}, Screenshots: []string{"https://img/x.png"},
+		VideoUrl: "https://v/x.mp4", Changelog: "notes", DeveloperWebsite: "https://d",
+		StoreLink: "https://s", DownloadUrl: "https://dl", PlayUrl: "spawn://p"}
+	created, err := m.Create(game)
+	if err != nil {
+		t.Fatalf("create after migrate: %v", err)
+	}
+	got, err := m.Get(created.Id)
+	if err != nil || len(got.Screenshots) != 1 || got.DownloadUrl != "https://dl" {
+		t.Fatalf("get after migrate: %v %v", got, err)
 	}
 }

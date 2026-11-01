@@ -83,14 +83,28 @@ type GameDto = {
   developer?: string
   publisher?: string
   trending_score?: number
+  screenshots?: string[]
+  video_url?: string
+  changelog?: string
+  developer_website?: string
+  store_link?: string
+  download_url?: string
+  play_url?: string
 }
 
-// 游戏详情在列表字段之外补充发行信息与热度（game-catalog GET /games/:id）
+// 游戏详情在列表字段之外补充发行信息、资料与入口（game-catalog GET /games/:id）
 export interface GameDetail extends GameSummary {
   releaseDate?: string
   developer?: string
   publisher?: string
   trendingScore?: number
+  screenshots?: string[]
+  videoUrl?: string
+  changelog?: string
+  developerWebsite?: string
+  storeLink?: string
+  downloadUrl?: string
+  playUrl?: string
 }
 
 interface ApiResponse<T> {
@@ -301,27 +315,31 @@ export async function updateGameTags(
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({ tags }),
   })
-  const raw = payload.game
-  return {
-    ...mapGameSummary(raw),
-    releaseDate: raw.release_date,
-    developer: raw.developer,
-    publisher: raw.publisher,
-    trendingScore: raw.trending_score,
-  }
+  return mapGameDetail(payload.game)
 }
 
 // 游戏详情（game-catalog GET /games/:id，返回 { game } 包裹）
 export async function fetchGameById(id: string): Promise<GameDetail> {
   const baseUrl = apiGatewayUrl ?? gameServiceUrl
   const payload = await request<{ game: GameDto }>(baseUrl, `/games/${encodeURIComponent(id)}`)
-  const raw = payload.game
+  return mapGameDetail(payload.game)
+}
+
+// 详情字段映射（fetchGameById / updateGameTags 共用）
+function mapGameDetail(raw: GameDto): GameDetail {
   return {
     ...mapGameSummary(raw),
     releaseDate: raw.release_date,
     developer: raw.developer,
     publisher: raw.publisher,
     trendingScore: raw.trending_score,
+    screenshots: raw.screenshots ?? [],
+    videoUrl: raw.video_url,
+    changelog: raw.changelog,
+    developerWebsite: raw.developer_website,
+    storeLink: raw.store_link,
+    downloadUrl: raw.download_url,
+    playUrl: raw.play_url,
   }
 }
 

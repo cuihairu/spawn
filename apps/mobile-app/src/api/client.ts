@@ -33,6 +33,13 @@ export interface Game {
   score?: number;
   trending_score?: number;
   cover_image?: string;
+  screenshots?: string[];
+  video_url?: string;
+  changelog?: string;
+  developer_website?: string;
+  store_link?: string;
+  download_url?: string;
+  play_url?: string;
 }
 
 export interface GameListResult {

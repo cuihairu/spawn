@@ -40,17 +40,24 @@ func (l *CreateGameLogic) CreateGame(req *types.CreateGameRequest) (*types.GameD
 	}
 
 	game := &model.Game{
-		Title:         strings.TrimSpace(req.Title),
-		Description:   strings.TrimSpace(req.Description),
-		Genres:        req.Genres,
-		Platforms:     req.Platforms,
-		ReleaseDate:   req.ReleaseDate,
-		Developer:     req.Developer,
-		Publisher:     req.Publisher,
-		Tags:          req.Tags,
-		Score:         req.Score,
-		CoverImage:    req.CoverImage,
-		TrendingScore: 60,
+		Title:            strings.TrimSpace(req.Title),
+		Description:      strings.TrimSpace(req.Description),
+		Genres:           req.Genres,
+		Platforms:        req.Platforms,
+		ReleaseDate:      req.ReleaseDate,
+		Developer:        req.Developer,
+		Publisher:        req.Publisher,
+		Tags:             req.Tags,
+		Score:            req.Score,
+		CoverImage:       req.CoverImage,
+		Screenshots:      req.Screenshots,
+		VideoUrl:         req.VideoUrl,
+		Changelog:        req.Changelog,
+		DeveloperWebsite: req.DeveloperWebsite,
+		StoreLink:        req.StoreLink,
+		DownloadUrl:      req.DownloadUrl,
+		PlayUrl:          req.PlayUrl,
+		TrendingScore:    60,
 	}
 
 	entity, err := l.svcCtx.GameRepository.Create(game)

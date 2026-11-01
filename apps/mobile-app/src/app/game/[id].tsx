@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -78,7 +78,7 @@ export default function GameDetailScreen() {
           <View style={styles.hero}>
             <View style={styles.scoreBadge}>
               <Text style={styles.scoreValue}>{game.score?.toFixed(1) ?? '—'}</Text>
-              <Text style={styles.scoreLabel}>评分</Text>
+              <Text style={styles.scoreLabel}>资料评分</Text>
             </View>
             <View style={styles.heroMain}>
               <Text style={styles.title}>{game.title}</Text>
@@ -135,6 +135,65 @@ export default function GameDetailScreen() {
                   </Text>
                 ))}
               </View>
+            </View>
+          ) : null}
+
+          {game.play_url || game.download_url || game.store_link ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>入口</Text>
+              <View style={styles.entryRow}>
+                {game.play_url ? (
+                  <Pressable style={styles.entryBtn} onPress={() => Linking.openURL(game.play_url!)}>
+                    <Text style={styles.entryBtnText}>进入游戏</Text>
+                  </Pressable>
+                ) : null}
+                {game.download_url ? (
+                  <Pressable style={styles.entryBtn} onPress={() => Linking.openURL(game.download_url!)}>
+                    <Text style={styles.entryBtnText}>下载 Android 包</Text>
+                  </Pressable>
+                ) : null}
+                {game.store_link ? (
+                  <Pressable style={styles.entryBtn} onPress={() => Linking.openURL(game.store_link!)}>
+                    <Text style={styles.entryBtnText}>应用商店</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+
+          {game.screenshots?.length ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>截图</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {game.screenshots.map((src) => (
+                  <Image key={src} source={{ uri: src }} style={styles.shot} resizeMode="cover" />
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          {game.video_url ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>宣传视频</Text>
+              <Pressable style={styles.entryBtn} onPress={() => Linking.openURL(game.video_url!)}>
+                <Text style={styles.entryBtnText}>播放视频</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {game.changelog ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>更新日志</Text>
+              <Text style={styles.desc}>{game.changelog}</Text>
+            </View>
+          ) : null}
+
+          {game.developer_website ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>厂商资料</Text>
+              <Pressable onPress={() => Linking.openURL(game.developer_website!)}>
+                <Text style={styles.moreLink}>{game.developer ?? '厂商主页'} ›</Text>
+              </Pressable>
             </View>
           ) : null}
 
@@ -339,6 +398,32 @@ const styles = StyleSheet.create({
   },
   chipPlatform: {
     color: colors.textMuted,
+  },
+  entryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  entryBtn: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  entryBtnText: {
+    color: colors.primary,
+    fontSize: 13,
+  },
+  shot: {
+    width: 200,
+    height: 112,
+    borderRadius: 8,
+    marginRight: 8,
+    backgroundColor: colors.background,
   },
   chipTag: {
     borderColor: colors.primary,

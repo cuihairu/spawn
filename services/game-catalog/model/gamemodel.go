@@ -19,18 +19,25 @@ import (
 var ErrGameNotFound = errors.New("game not found")
 
 type Game struct {
-	Id            string   `json:"id"`
-	Title         string   `json:"title"`
-	Description   string   `json:"description"`
-	Genres        []string `json:"genres"`
-	Platforms     []string `json:"platforms"`
-	ReleaseDate   string   `json:"release_date"`
-	Developer     string   `json:"developer"`
-	Publisher     string   `json:"publisher"`
-	Tags          []string `json:"tags"`
-	Score         float64  `json:"score"`
-	TrendingScore int      `json:"trending_score"`
-	CoverImage    string   `json:"cover_image"`
+	Id               string   `json:"id"`
+	Title            string   `json:"title"`
+	Description      string   `json:"description"`
+	Genres           []string `json:"genres"`
+	Platforms        []string `json:"platforms"`
+	ReleaseDate      string   `json:"release_date"`
+	Developer        string   `json:"developer"`
+	Publisher        string   `json:"publisher"`
+	Tags             []string `json:"tags"`
+	Score            float64  `json:"score"`
+	TrendingScore    int      `json:"trending_score"`
+	CoverImage       string   `json:"cover_image"`
+	Screenshots      []string `json:"screenshots"`
+	VideoUrl         string   `json:"video_url"`
+	Changelog        string   `json:"changelog"`
+	DeveloperWebsite string   `json:"developer_website"`
+	StoreLink        string   `json:"store_link"`
+	DownloadUrl      string   `json:"download_url"`
+	PlayUrl          string   `json:"play_url"`
 }
 
 type GameFilter struct {
@@ -79,7 +86,18 @@ func NewGameModel(db *sql.DB) *GameModel {
 	}
 }
 
-const gameColumns = "id, title, description, genres, platforms, tags, release_date, developer, publisher, score, trending_score, cover_image"
+const gameColumns = "id, title, description, genres, platforms, tags, release_date, developer, publisher, score, trending_score, cover_image, screenshots, video_url, changelog, developer_website, store_link, download_url, play_url"
+
+// 迁移列（已有库 CREATE TABLE IF NOT EXISTS 不会补列）：SQLite/MySQL 同语法 ADD COLUMN。
+var gameColumnDDL = map[string]string{
+	"screenshots":       "screenshots VARCHAR(2048) NOT NULL DEFAULT ''",
+	"video_url":         "video_url VARCHAR(512) NOT NULL DEFAULT ''",
+	"changelog":         "changelog VARCHAR(4096) NOT NULL DEFAULT ''",
+	"developer_website": "developer_website VARCHAR(512) NOT NULL DEFAULT ''",
+	"store_link":        "store_link VARCHAR(512) NOT NULL DEFAULT ''",
+	"download_url":      "download_url VARCHAR(512) NOT NULL DEFAULT ''",
+	"play_url":          "play_url VARCHAR(512) NOT NULL DEFAULT ''",
+}
 
 // CreateGamesTable 创建游戏表（开发使用）。先尝试 SQLite 方言，失败回落
 // MySQL（与 user-service.CreateUsersTable 同款双格式策略）。
@@ -97,7 +115,14 @@ func (m *GameModel) CreateGamesTable() error {
 			publisher VARCHAR(256) NOT NULL,
 			score DOUBLE NOT NULL DEFAULT 0,
 			trending_score INTEGER NOT NULL DEFAULT 0,
-			cover_image VARCHAR(512) NOT NULL
+			cover_image VARCHAR(512) NOT NULL,
+			screenshots VARCHAR(2048) NOT NULL DEFAULT '',
+			video_url VARCHAR(512) NOT NULL DEFAULT '',
+			changelog VARCHAR(4096) NOT NULL DEFAULT '',
+			developer_website VARCHAR(512) NOT NULL DEFAULT '',
+			store_link VARCHAR(512) NOT NULL DEFAULT '',
+			download_url VARCHAR(512) NOT NULL DEFAULT '',
+			play_url VARCHAR(512) NOT NULL DEFAULT ''
 		)
 	`
 
@@ -115,7 +140,14 @@ func (m *GameModel) CreateGamesTable() error {
 				publisher VARCHAR(256) NOT NULL,
 				score DOUBLE NOT NULL DEFAULT 0,
 				trending_score INT NOT NULL DEFAULT 0,
-				cover_image VARCHAR(512) NOT NULL
+				cover_image VARCHAR(512) NOT NULL,
+				screenshots VARCHAR(2048) NOT NULL DEFAULT '',
+				video_url VARCHAR(512) NOT NULL DEFAULT '',
+				changelog VARCHAR(4096) NOT NULL DEFAULT '',
+				developer_website VARCHAR(512) NOT NULL DEFAULT '',
+				store_link VARCHAR(512) NOT NULL DEFAULT '',
+				download_url VARCHAR(512) NOT NULL DEFAULT '',
+				play_url VARCHAR(512) NOT NULL DEFAULT ''
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 		`
 		if _, err := m.db.Exec(query); err != nil {
@@ -123,7 +155,64 @@ func (m *GameModel) CreateGamesTable() error {
 		}
 	}
 
+	// 存量库不因 CREATE TABLE IF NOT EXISTS 自动补列，显式迁移缺失列（幂等）。
+	if err := m.ensureGameColumns(); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// ensureGameColumns 幂等补列：已存在库缺列时 ALTER TABLE ADD COLUMN（SQLite/MySQL 同语法）。
+func (m *GameModel) ensureGameColumns() error {
+	existing, err := m.tableColumns()
+	if err != nil {
+		return err
+	}
+	for col, ddl := range gameColumnDDL {
+		if existing[col] {
+			continue
+		}
+		if _, err := m.db.Exec("ALTER TABLE games ADD COLUMN " + ddl); err != nil {
+			return fmt.Errorf("添加游戏表列 %s 失败: %w", col, err)
+		}
+	}
+	return nil
+}
+
+// tableColumns 读取 games 表列名集合：先试 SQLite PRAGMA，失败回落 MySQL SHOW COLUMNS。
+func (m *GameModel) tableColumns() (map[string]bool, error) {
+	rows, err := m.db.Query("PRAGMA table_info(games)")
+	if err == nil {
+		defer rows.Close()
+		cols := map[string]bool{}
+		for rows.Next() {
+			var cid, notnull, pk int
+			var name, ctype string
+			var dflt sql.NullString
+			if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+				return nil, fmt.Errorf("读取 SQLite 表结构失败: %w", err)
+			}
+			cols[name] = true
+		}
+		return cols, rows.Err()
+	}
+
+	rows, err = m.db.Query("SHOW COLUMNS FROM games")
+	if err != nil {
+		return nil, fmt.Errorf("读取表结构失败: %w", err)
+	}
+	defer rows.Close()
+	cols := map[string]bool{}
+	for rows.Next() {
+		var field, typ, null, key, extra string
+		var dflt sql.NullString
+		if err := rows.Scan(&field, &typ, &null, &key, &dflt, &extra); err != nil {
+			return nil, fmt.Errorf("读取 MySQL 表结构失败: %w", err)
+		}
+		cols[field] = true
+	}
+	return cols, rows.Err()
 }
 
 // Seed 按给定条目写入游戏（显式保留 id，跳过 nil 与空 id），
@@ -154,11 +243,13 @@ func (m *GameModel) SeedIfEmpty() error {
 
 func (m *GameModel) insertRow(game *Game) error {
 	_, err := m.db.Exec(
-		`INSERT INTO games (`+gameColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO games (`+gameColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		game.Id, game.Title, game.Description,
 		encodeList(game.Genres), encodeList(game.Platforms), encodeList(game.Tags),
 		game.ReleaseDate, game.Developer, game.Publisher,
 		game.Score, game.TrendingScore, game.CoverImage,
+		encodeList(game.Screenshots), game.VideoUrl, game.Changelog,
+		game.DeveloperWebsite, game.StoreLink, game.DownloadUrl, game.PlayUrl,
 	)
 	if err != nil {
 		return fmt.Errorf("写入游戏失败: %w", err)
@@ -192,6 +283,7 @@ func cloneGame(g Game) Game {
 	g.Genres = append([]string(nil), g.Genres...)
 	g.Platforms = append([]string(nil), g.Platforms...)
 	g.Tags = append([]string(nil), g.Tags...)
+	g.Screenshots = append([]string(nil), g.Screenshots...)
 	return g
 }
 
@@ -207,10 +299,13 @@ func (m *GameModel) Get(id string) (*Game, error) {
 
 	game := &Game{}
 	var genres, platforms, tags string
+	var screenshots string
 	err := m.db.QueryRow(`SELECT `+gameColumns+` FROM games WHERE id = ?`, id).
 		Scan(&game.Id, &game.Title, &game.Description, &genres, &platforms, &tags,
 			&game.ReleaseDate, &game.Developer, &game.Publisher,
-			&game.Score, &game.TrendingScore, &game.CoverImage)
+			&game.Score, &game.TrendingScore, &game.CoverImage,
+			&screenshots, &game.VideoUrl, &game.Changelog,
+			&game.DeveloperWebsite, &game.StoreLink, &game.DownloadUrl, &game.PlayUrl)
 
 	if err == sql.ErrNoRows {
 		return nil, ErrGameNotFound
@@ -226,6 +321,9 @@ func (m *GameModel) Get(id string) (*Game, error) {
 		return nil, err
 	}
 	if game.Tags, err = decodeList(tags); err != nil {
+		return nil, err
+	}
+	if game.Screenshots, err = decodeList(screenshots); err != nil {
 		return nil, err
 	}
 
@@ -280,10 +378,12 @@ func (m *GameModel) all() ([]*Game, error) {
 	var games []*Game
 	for rows.Next() {
 		game := &Game{}
-		var genres, platforms, tags string
+		var genres, platforms, tags, screenshots string
 		if err := rows.Scan(&game.Id, &game.Title, &game.Description, &genres, &platforms, &tags,
 			&game.ReleaseDate, &game.Developer, &game.Publisher,
-			&game.Score, &game.TrendingScore, &game.CoverImage); err != nil {
+			&game.Score, &game.TrendingScore, &game.CoverImage,
+			&screenshots, &game.VideoUrl, &game.Changelog,
+			&game.DeveloperWebsite, &game.StoreLink, &game.DownloadUrl, &game.PlayUrl); err != nil {
 			return nil, fmt.Errorf("读取游戏行失败: %w", err)
 		}
 		if game.Genres, err = decodeList(genres); err != nil {
@@ -293,6 +393,9 @@ func (m *GameModel) all() ([]*Game, error) {
 			return nil, err
 		}
 		if game.Tags, err = decodeList(tags); err != nil {
+			return nil, err
+		}
+		if game.Screenshots, err = decodeList(screenshots); err != nil {
 			return nil, err
 		}
 		games = append(games, game)

@@ -101,7 +101,7 @@ const GameDetailPage = ({ token }: { token?: string }) => {
       <section className="game-detail-hero">
         <div className="game-detail-score">
           <span className="game-detail-score-value">{game.score ? game.score.toFixed(1) : '—'}</span>
-          <span className="game-detail-score-label">评分</span>
+          <span className="game-detail-score-label">资料评分</span>
         </div>
         {game.coverImage ? (
           <div
@@ -172,6 +172,69 @@ const GameDetailPage = ({ token }: { token?: string }) => {
               ) : null}
             </div>
           ) : null}
+        </section>
+      ) : null}
+
+      {game.playUrl || game.downloadUrl || game.storeLink ? (
+        <section className="game-detail-section">
+          <h2>入口</h2>
+          <div className="game-detail-actions">
+            {game.playUrl ? (
+              <a className="primary-btn" href={game.playUrl} target="_blank" rel="noopener noreferrer">
+                进入游戏
+              </a>
+            ) : null}
+            {game.downloadUrl ? (
+              <a className="primary-btn" href={game.downloadUrl} target="_blank" rel="noopener noreferrer">
+                下载 Android 包
+              </a>
+            ) : null}
+            {game.storeLink ? (
+              <a className="secondary-btn" href={game.storeLink} target="_blank" rel="noopener noreferrer">
+                应用商店
+              </a>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {game.screenshots?.length ? (
+        <section className="game-detail-section">
+          <h2>截图</h2>
+          <div className="game-detail-screenshots">
+            {game.screenshots.map((src) => (
+              <a key={src} href={src} target="_blank" rel="noopener noreferrer" className="game-detail-shot">
+                <img src={src} alt="" loading="lazy" />
+              </a>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {game.videoUrl ? (
+        <section className="game-detail-section">
+          <h2>宣传视频</h2>
+          <a className="secondary-btn" href={game.videoUrl} target="_blank" rel="noopener noreferrer">
+            播放视频
+          </a>
+        </section>
+      ) : null}
+
+      {game.changelog ? (
+        <section className="game-detail-section">
+          <h2>更新日志</h2>
+          <p style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7, margin: 0 }}>{game.changelog}</p>
+        </section>
+      ) : null}
+
+      {game.developerWebsite ? (
+        <section className="game-detail-section">
+          <h2>厂商资料</h2>
+          <p className="secondary-text">
+            <a href={game.developerWebsite} target="_blank" rel="noopener noreferrer">
+              {game.developer || '厂商主页'} →
+            </a>
+          </p>
         </section>
       ) : null}
 
