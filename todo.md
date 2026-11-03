@@ -6,16 +6,16 @@
 
 约定：在 Spawn 扩展统一游戏库；联运只打“联运”标签，不拆目录/运行模式；倍率充值属于活动。游戏内 SDK 与公共能力优先复用独立项目 [Courier](https://github.com/cuihairu/courier)，不另建 Spawn SDK。
 
-- [x] GP-R01 调研 TapTap、好游快爆、小米、九游、B 站、3733、米洛和鸿茁的公开功能与接入流程；记录来源、证据限制及 F01–F28 差距（见调研文档第 2–3 节）。
-- [x] GP-R02 静态核查 Courier 六端 SDK、身份/scope、角色、teller 支付/快照存储/发货钩子及管理面边界；将从零开发 SDK 改为跨仓接入任务（见调研文档第 4 节；本次未重新运行 SDK 测试）。
+- [x] GP-R01 调研 TapTap、好游快爆、小米、九游、B 站、3733、米洛、鸿茁公开功能与接入流程，记录来源与 F01–F28 差距（6da1a43；调研文档第 2–3 节）
+- [x] GP-R02 静态核查 Courier 六端 SDK、身份/scope、角色、teller 支付/快照存储/发货钩子与管理面边界，SDK 由自研改为跨仓接入（6da1a43；调研文档第 4 节）
 
 ### M0：接入设计与基础治理
 
-- [x] GP-001 确定 Spawn/Courier 权威账号源与存量账号绑定方案，画清登录、验票、退出、注销和游戏级会话流；不假设 JWT 互通。验收：跨游戏 token 被拒，账号迁移/解除绑定可追踪（F13/F27）。设计见 [接入设计](docs/zh/architecture/courier-integration-design.md) §1。
-- [x] GP-002 定义 Spawn game ID ↔ Courier game_id/env、合作方、区服/角色映射及能力配置；“联运”标签只作展示筛选。验收：标签变化不自动开通支付/下载，scope 不进入 Courier URL/payload（F01/F14）。设计见 [接入设计](docs/zh/architecture/courier-integration-design.md) §2。
-- [x] GP-003 明确交易事实源、管理 API/事件接口及跨仓版本兼容规则，验证 SKU/订单/回调密钥/存储的多游戏隔离；不复制 Courier 订单状态机（F15/F16）。设计见 [接入设计](docs/zh/architecture/courier-integration-design.md) §3。
-- [ ] GP-004 为后台与生产接入补最小权限、游戏归属和操作审计，确认 Spawn 数据/包体持久化与 Courier OrderStore/StateFile 的部署和备份恢复方案；不把已有快照接缝列为未实现（F11/F26/F28）。模型与方案见 [接入设计](docs/zh/architecture/courier-integration-design.md) §4；最小实现待 GP-103 后台与 GP-105 存储。
-- [ ] GP-005 提供 Spawn + Courier 联合沙箱配置、版本清单与一款示例游戏；记录真实渠道、游戏服、授权和设备依赖，串联跨仓回归而非重复生成六端 SDK（F28）。沙箱清单见 [接入设计](docs/zh/architecture/courier-integration-design.md) §4；实际搭建待 GP-105 / GP-206。
+- [x] GP-001 确定 Spawn/Courier 权威账号源与存量绑定方案，画清登录/验票/退出/注销/游戏级会话流；验收：跨游戏 token 被拒、迁移解绑可追踪（ecba93a；接入设计 §1，F13/F27）
+- [x] GP-002 定义 game ID ↔ Courier game_id/env、合作方、区服/角色映射与能力配置；验收：联运标签只作展示，scope 不入 URL/payload（ecba93a；接入设计 §2，F01/F14）
+- [x] GP-003 明确交易事实源、管理 API/事件接口与跨仓兼容规则，验证 SKU/订单/密钥/存储多游戏隔离（ecba93a；接入设计 §3，F15/F16）
+- [ ] GP-004 为后台与生产接入补最小权限、游戏归属、操作审计与持久化/备份恢复方案（F11/F26/F28；最小实现待 GP-105）
+- [ ] GP-005 提供 Spawn + Courier 联合沙箱配置、版本清单与一款示例游戏，记录真实渠道/游戏服/授权/设备依赖（F28；待 GP-105/GP-206）
 
 ### M1：统一游戏库与发行下载
 
@@ -108,3 +108,7 @@
   - 文档:docs「配置效果」页(双语)逐开关嵌入:说明+off 图+on 图+GIF。
   - 验收:清单内每个开关都有 off/on+GIF;流水线可重跑(配置变更随时再生成);兼作配置效果回归测试。
   - 参考:kode todo C-24 同款流水线模式(2026-11-01 用户令全舰队推广)。
+
+## 漏洞扫描遗留（2026-11-03 全舰队扫描，源 scratch/vuln-scan-*.md）
+
+- [ ] VULN-SPAWN-001 [高危·GHSA-mrhx-c7xc-m3w5] zod 3.25.76（另有 4.4.3 实例）→≥4.6.6【跨大版本需改代码】：@expo/cli 依赖 zod3（终扫残留 1）；验收：pnpm audit --audit-level=high 中 zod 不再命中；该仓无 test 脚本，audit-only
