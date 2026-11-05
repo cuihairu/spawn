@@ -2,7 +2,8 @@
   <img src="docs/public/logo.svg" alt="spawn logo" width="64" />
   <h1>spawn</h1>
   <p>游戏社区平台：攻略、榜单与社区</p>
-  <p><a href="README.md">English</a> | <a href="README.zh.md">简体中文</a></p> <a href="https://cuihairu.github.io/spawn/zh//"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
+  <p><a href="README.md">English</a> | <a href="README.zh.md">简体中文</a></p>
+  <p align="center"><a href="https://cuihairu.github.io/spawn/zh/"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs" /></a> <a href="https://github.com/cuihairu/spawn/releases"><img src="https://img.shields.io/badge/status-in%20development-orange" alt="状态：开发中" /></a></p>
 </div>
 
 ## 下载与安装
@@ -11,11 +12,11 @@
 
 | 产物 | 内容 |
 | --- | --- |
-| `spawn-<服务名>-linux-amd64` ×7 | 七个服务二进制（CGO 构建，内嵌 SQLite 驱动），下载后 `chmod +x` 直接运行，配置在仓库各服务 `etc/` 目录，`DATASOURCE` 注入 MySQL 连接串可切换存储 |
+| `spawn-<服务名>-linux-amd64` ×7 | 七个服务二进制——api-gateway、community、content-service、data-panel、game-catalog、user-service、user-service-rpc（CGO 构建，内嵌 SQLite 驱动），下载后 `chmod +x` 直接运行，配置在仓库各服务 `etc/` 目录，`DATASOURCE` 注入 MySQL 连接串可切换存储。realtime-hub 不随 nightly 出二进制，经源码或 `docker compose` 运行 |
 | `spawn-web-client-linux-amd64.tar.gz` | Web 主站静态产物，解压后任意静态服务器可托管 |
 | `SHA256SUMS.txt` | 全部资产校验和，同目录 `sha256sum -c SHA256SUMS.txt` 核对 |
 
-移动端 APK 与服务容器镜像不在 nightly 交付面（Android 出包依赖本地 gradle 流程；镜像按 `services/*/Dockerfile` 自行构建）。正式版本尚未发布；文档站见 <https://cuihairu.github.io/spawn/>。
+移动端 APK 与服务容器镜像不在 nightly 交付面（Android 出包依赖本地 gradle 流程；镜像按 `services/*/Dockerfile` 自行构建）。正式版本尚未发布；文档站见 <https://cuihairu.github.io/spawn/zh/>。
 
 ## Monorepo 目录规划
 
@@ -51,13 +52,15 @@
 ```
 
 > 上树是规划图。落地状态以 `services/README.md`、`apps/README.md` 为准：八服务与 web-client、
-> mobile-app 有代码，matchmaking/crawler-jobs、mini-program、admin-console 尚未创建。
+> mobile-app 有代码，matchmaking/crawler-jobs、mini-program、admin-console 尚未创建；
+> `platform/`（infra/devops/observability）与 `packages/`（ui-kit/data-models/shared-utils）为
+> README 占位——仅 `packages/config` 已落地（见 `packages/README.md`、`platform/README.md`）。
 
 ## 可观测性
 
 各 go-zero 服务通过配置中的 `Prometheus` 段暴露 `/metrics` 指标端点（go-zero agent，独立监听端口），
 内置请求量/耗时/状态码指标；content-service 另有跨服务调用自定义指标。
-各服务指标端口与指标说明见 `docs/development-guide.zh.md` 的「监控与指标（Prometheus）」章节：
+各服务指标端口与指标说明见 `docs/zh/development-guide.md` 的「监控与指标（Prometheus）」章节：
 
 | 服务 | 业务端口 | /metrics 端口 |
 | --- | --- | --- |
@@ -81,7 +84,7 @@
 
 ### 下一步建议
 
-1. 移动端 M0–M3 代码切片与 M4 第一里程碑已落地（2026-10-09，详见 `docs/mobile_plan.zh.md`）：Android release 本地 gradle 出包已落地（2026-10-04：`android.package` 配置 + `build:android:release` 脚本，aapt/apksigner 静态走查通过）；战绩 Tab 消费网关 `/api/v1/stats/*`。剩真机安装与功能回归，本地推送、深链分享卡、通知中心都还没在真机上验过（本环境无模拟器/真机；CI 只跑 lint+typecheck，另有记录的 expo export 打包走查作为替代）。
+1. 移动端 M0–M3 代码切片与 M4 第一里程碑已落地（2026-10-09，详见 `docs/zh/mobile_plan.md`）：Android release 本地 gradle 出包已落地（2026-10-04：`android.package` 配置 + `build:android:release` 脚本，aapt/apksigner 静态走查通过）；战绩 Tab 消费网关 `/api/v1/stats/*`。剩真机安装与功能回归，本地推送、深链分享卡、通知中心都还没在真机上验过（本环境无模拟器/真机；CI 只跑 lint+typecheck，另有记录的 expo export 打包走查作为替代）。
 2. api-gateway BFF 第二阶段已落地（2026-10-04）：`GET /home/feed` 列表聚合端点（精选游戏/热帖/话题/攻略一次拉齐，逐组字段裁剪 + 单上游故障降级）+ mobile `fetchHomeFeed` 消费点预留；web-client 保持直连各服务不受影响。后续按需扩更多聚合口径。
 3. `docs/architecture/` 总体架构与数据流文档已补齐（2026-10-04）：`topology.md` 记录现状（服务边界/端口/网关反代路由面/认证数据流/演进路线），`overview.md` 保持愿景层；后续架构变更随切片同步更新现状文档。
 
@@ -100,6 +103,11 @@
 - `GET /games/:id` - 游戏详情
 - `GET /games/featured` - 精选游戏
 - `GET /games/recommendations` - 推荐游戏
+- `POST /games` - 创建游戏（JWT 保护）
+- `PATCH /games/:id/tags` - 更新游戏标签（JWT 保护）
+- `GET /me` - 当前所有者/合作方资料（JWT 保护）
+- `admin/**` - 管理端路由族（角色、合作方、审核、归属、上下架、版本、审计）
+- `partner/**` - 合作方路由族（自有游戏、提交、版本）
 - 端口：8890
 
 #### 2. User Service（`services/user-service`）
@@ -107,6 +115,7 @@
 - `POST /auth/login` - 用户登录
 - `POST /auth/register` - 用户注册
 - `GET /users/:id` - 获取用户信息
+- `PUT /users/:id` - 更新用户资料
 - `GET /users/:id/recommendations` - 用户游戏推荐（跨服务调用 game-catalog）
 - 全局 JWT 校验中间件（白名单注册/登录等公开路径）
 - 端口：8888
@@ -120,6 +129,10 @@
   - `GET /api/v1/guides` - 攻略列表（支持筛选）
   - `POST /api/v1/guides/:id/publish` - 发布攻略
   - `POST /api/v1/guides/:id/like` - 点赞攻略
+  - `GET /api/v1/guides/favorites` - 我收藏的攻略
+  - `POST /api/v1/guides/:id/favorite` - 收藏攻略
+  - `DELETE /api/v1/guides/:id/favorite` - 取消收藏攻略
+  - `GET /api/v1/guides/:id/favorite` - 查询收藏状态
 - **评论系统**：
   - `POST /api/v1/comments` - 发表评论
   - `GET /api/v1/comments` - 评论列表
@@ -186,7 +199,6 @@ game-catalog、content-service、community、data-panel）数据面均跑 SQLite
 # 启动全部服务（需 Docker）
 
 <p align="center">
-<a href="https://github.com/cuihairu/spawn/releases"><img alt="Status" src="https://img.shields.io/badge/status-in%20development-orange"></a>
 </p>
 docker compose up --build
 
@@ -215,4 +227,4 @@ cd apps/web-client && npm install && npm run dev
 | data-panel | 8896 | 战绩数据面板服务（摄入 + 查询） | 已完成 |
 | user-service-rpc | 8080 (gRPC) | 用户服务 RPC（集群内部） | 已完成 |
 | web-client | 5173 | Web前端 | 已完成 |
-| mobile-app | — | React Native（Expo）客户端 | 实施中（见 `docs/mobile_plan.zh.md`） |
+| mobile-app | — | React Native（Expo）客户端 | 实施中（见 `docs/zh/mobile_plan.md`） |

@@ -2,7 +2,8 @@
   <img src="docs/public/logo.svg" alt="spawn logo" width="64" />
   <h1>spawn</h1>
   <p>Game community platform: guides, leaderboards, and community</p>
-  <p><a href="README.md">English</a> | <a href="README.zh.md">简体中文</a></p> <a href="https://cuihairu.github.io/spawn//"><img src="https://img.shields.io/badge/docs-blue" alt="docs"></a>
+  <p><a href="README.md">English</a> | <a href="README.zh.md">简体中文</a></p>
+  <p align="center"><a href="https://cuihairu.github.io/spawn/"><img src="https://img.shields.io/badge/docs-blue" alt="docs" /></a> <a href="https://github.com/cuihairu/spawn/releases"><img src="https://img.shields.io/badge/status-in%20development-orange" alt="status: in development" /></a></p>
 </div>
 
 ## Download & Install
@@ -11,7 +12,7 @@ The [nightly rolling Release](https://github.com/cuihairu/spawn/releases/tag/nig
 
 | Artifact | Contents |
 | --- | --- |
-| `spawn-<service>-linux-amd64` ×7 | Binaries for the seven services (CGO build with embedded SQLite driver); run directly after `chmod +x`. Config lives in each service's `etc/` directory in the repo; inject a MySQL connection string via `DATASOURCE` to switch storage |
+| `spawn-<service>-linux-amd64` ×7 | Binaries for seven services — api-gateway, community, content-service, data-panel, game-catalog, user-service, user-service-rpc (CGO build with embedded SQLite driver); run directly after `chmod +x`. Config lives in each service's `etc/` directory in the repo; inject a MySQL connection string via `DATASOURCE` to switch storage. realtime-hub is not shipped as a nightly binary — run it from source or via `docker compose` |
 | `spawn-web-client-linux-amd64.tar.gz` | Static build of the web site; serve it from any static server after extracting |
 | `SHA256SUMS.txt` | Checksums for all assets; verify with `sha256sum -c SHA256SUMS.txt` in the same directory |
 
@@ -52,7 +53,9 @@ Mobile APKs and service container images are not part of the nightly delivery (A
 
 > The tree above is a roadmap. For actual status see `services/README.md` and `apps/README.md`:
 > the eight services plus web-client and mobile-app have code; matchmaking/crawler-jobs,
-> mini-program, and admin-console have not been created yet.
+> mini-program, and admin-console have not been created yet; `platform/` (infra/devops/observability)
+> and `packages/` (ui-kit/data-models/shared-utils) are README-only placeholders — only `packages/config`
+> has landed (see `packages/README.md` and `platform/README.md`).
 
 ## Observability
 
@@ -60,7 +63,7 @@ Each go-zero service exposes a `/metrics` endpoint via the `Prometheus` section 
 (go-zero agent, listening on a separate port), with built-in request count/latency/status-code
 metrics; content-service additionally has custom metrics for cross-service calls.
 Ports and metric details are documented in the "Monitoring & Metrics (Prometheus)" section of
-`docs/development-guide.md`:
+`docs/zh/development-guide.md` (the English `docs/development-guide.md` is a stub pointing at the Chinese original):
 
 | Service | Business port | /metrics port |
 | --- | --- | --- |
@@ -115,6 +118,11 @@ Built with go-zero; SQLite/MySQL dual-driver storage (default local SQLite with 
 - `GET /games/:id` - Game details
 - `GET /games/featured` - Featured games
 - `GET /games/recommendations` - Recommended games
+- `POST /games` - Create a game (JWT-protected)
+- `PATCH /games/:id/tags` - Update game tags (JWT-protected)
+- `GET /me` - Current owner/partner profile (JWT-protected)
+- `admin/**` - Admin route family (roles, partners, reviews, ownership, publish/unpublish, versions, audit)
+- `partner/**` - Partner route family (owned games, submit, versions)
 - Port: 8890
 
 #### 2. User Service (`services/user-service`)
@@ -122,6 +130,7 @@ Account, permission, friends, and progression management; the JWT issuer.
 - `POST /auth/login` - User login
 - `POST /auth/register` - User registration
 - `GET /users/:id` - Get user info
+- `PUT /users/:id` - Update user profile
 - `GET /users/:id/recommendations` - User game recommendations (cross-service call to game-catalog)
 - Global JWT middleware (whitelist for public paths like register/login)
 - Port: 8888
@@ -135,6 +144,10 @@ Guides, news, and comments service; go-zero implementation with SQLite/MySQL dua
   - `GET /api/v1/guides` - Guide list (filterable)
   - `POST /api/v1/guides/:id/publish` - Publish a guide
   - `POST /api/v1/guides/:id/like` - Like a guide
+  - `GET /api/v1/guides/favorites` - My favorited guides
+  - `POST /api/v1/guides/:id/favorite` - Favorite a guide
+  - `DELETE /api/v1/guides/:id/favorite` - Unfavorite a guide
+  - `GET /api/v1/guides/:id/favorite` - Check favorite status
 - **Comment system**:
   - `POST /api/v1/comments` - Post a comment
   - `GET /api/v1/comments` - Comment list
@@ -200,7 +213,6 @@ is a gRPC service without a storage layer, and realtime-hub is stateless (in-mem
 # Start all services (Docker required)
 
 <p align="center">
-<a href="https://github.com/cuihairu/spawn/releases"><img alt="Status" src="https://img.shields.io/badge/status-in%20development-orange"></a>
 </p>
 docker compose up --build
 
