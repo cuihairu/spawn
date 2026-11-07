@@ -117,3 +117,7 @@ Cross-service:   user-service → game-catalog (recommendations);
    matchmaking is still a planning placeholder.
 5. Productionisation: TLS termination in front of the gateway (the current
    compose has no certificate), converging on HTTPS, tightening CORS.
+
+## 7. Source layer analysis
+
+The 2026-11-07 inventory of layers, modules, state, call channels, configuration, and lifecycle lives in [layer-analysis.md](layer-analysis.md); term definitions live in [glossary.md](glossary.md).

@@ -112,3 +112,31 @@
 ## 漏洞扫描遗留（2026-11-03 全舰队扫描，源 scratch/vuln-scan-*.md）
 
 - [ ] VULN-SPAWN-001 [高危·GHSA-mrhx-c7xc-m3w5] zod 3.25.76（另有 4.4.3 实例）→≥4.6.6【跨大版本需改代码】：@expo/cli 依赖 zod3（终扫残留 1）；验收：pnpm audit --audit-level=high 中 zod 不再命中；该仓无 test 脚本，audit-only
+
+## 源码分层分析 2026-11-07
+
+HEAD：`bc9866d596d7c2e16fe65b08dda2a4af0a6e7596`。完整清单见 `docs/architecture/layer-analysis.md` 和 `docs/zh/architecture/layer-analysis.md`。
+
+### 抽象层清单
+
+- 客户端体验层：渲染领域界面并维护客户端会话、轮询与实时连接；代表 `apps/web-client/src/App.tsx:23`。
+- 访问网关层：路由/缓冲/上传/实时隧道与聚合编排，不拥有业务表；代表 `services/api-gateway/gateway.go:44`。
+- 领域服务层：按用户、游戏、社区、内容、战绩边界提供 REST 用例；代表 `services/community/community.go:45`。
+- 实时传输层：维护在线注册表、JSON 帧分发、可选 Redis 中继与内部事件入口；代表 `services/realtime-hub/realtime-hub.go:40`。
+- 跨服务传输层：承载网关聚合、用户到游戏、内容到游戏等通道及其差异化韧性策略；代表 `services/content-service/client/gamecatalog.go:18`。
+- 持久层：按 DSN 选择 SQLite/MySQL，执行建表、种子、查询与写入；代表 `services/community/internal/model/postmodel.go:29`。
+- 共享工具层：提供运行环境模板、Make 目标和规划中的共享契约；代表 `packages/config/README.md:1`。
+- 平台观测层：装配部署拓扑、指标端口与日志/指标采集；代表 `platform/README.md:1`。
+
+### 超大文件候选
+
+- [ ] LAY-001 [P1] 拆分 `apps/web-client/src/api/client.ts`（1792 行）——同一文件同时承载多域类型、请求封装、页面 API 和实时/统计聚合，接口边界已不可扫读（`apps/web-client/src/api/client.ts:1`）。
+- [ ] LAY-002 [P1] 拆分 `apps/mobile-app/src/api/client.ts`（1001 行）——多业务 API、统一信封处理和领域类型集中在一个客户端文件，应按服务域分文件（`apps/mobile-app/src/api/client.ts:1`）。
+- [ ] LAY-003 [P1] 拆分 `services/api-gateway/internal/handler/routes_integration_test.go`（1153 行）——测试覆盖多代理族和网关自有行为，场景类型应拆成独立测试文件（`services/api-gateway/internal/handler/routes_integration_test.go:1`）。
+
+### 目录/分类不合理处
+
+- [ ] CLN-001 [P2] 移除 `services/user-service/user`（118081 字节的编译二进制不应入库）；补 `.gitignore`/构建输出边界（`services/user-service/user:1`）。
+- [ ] CLN-002 [P2] 为 `services/user-service`、`services/game-catalog`、`services/data-panel` 补服务 README；现有 `community`、`content-service`、`api-gateway`、`realtime-hub` 已有入口说明（`services/community/README.md:1`）。
+- [ ] CLN-003 [P2] 网关 1153 行集成测试按代理族拆分，避免单个文件成为全路由变更的耦合点（`services/api-gateway/internal/handler/routes_integration_test.go:1`）。
+- [ ] CLN-004 [P2] 统一跨服务客户端韧性抽象；目前仅 content→game-catalog 具备重试/熔断/指标，user→game-catalog 与网关聚合策略未共享（`services/content-service/client/breaker.go:22`）。
