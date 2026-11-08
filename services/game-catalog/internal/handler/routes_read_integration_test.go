@@ -181,7 +181,8 @@ func TestRoutes_PostGamesParseError(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodPost, base+"/games", strings.NewReader(`{bad json`))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+sign(validRouteClaims()))
+	// GP-004 起创建游戏收窄为 platform_admin/operator；用 admin 令牌到 Parse 分支。
+	req.Header.Set("Authorization", "Bearer "+sign(claimsFor(1, "admin")))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("bad json POST: %v", err)
@@ -195,7 +196,7 @@ func TestRoutes_PostGamesParseError(t *testing.T) {
 	req2, _ := http.NewRequest(http.MethodPost, base+"/games", strings.NewReader(
 		`{"title":"","description":"","genres":[],"platforms":[],"release_date":"2001-01-01","developer":"d","publisher":"p","tags":[],"score":0,"cover_image":"c.png"}`))
 	req2.Header.Set("Content-Type", "application/json")
-	req2.Header.Set("Authorization", "Bearer "+sign(validRouteClaims()))
+	req2.Header.Set("Authorization", "Bearer "+sign(claimsFor(1, "admin")))
 	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {
 		t.Fatalf("empty POST: %v", err)

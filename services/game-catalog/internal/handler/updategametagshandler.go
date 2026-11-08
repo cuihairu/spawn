@@ -18,7 +18,8 @@ func UpdateGameTagsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 
-		l := logic.NewUpdateGameTagsLogic(r.Context(), svcCtx)
+		// GP-004：注入客户端 IP 供审计记录（动作 game_tag_update）。
+		l := logic.NewUpdateGameTagsLogic(withClientIP(r), svcCtx)
 		resp, err := l.UpdateGameTags(&req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)

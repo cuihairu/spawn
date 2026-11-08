@@ -114,3 +114,23 @@ func TestGetUserIdFromToken(t *testing.T) {
 		t.Fatal("invalid token must fail")
 	}
 }
+
+// TestValidateJWTSecret GP-004 生产接入：空密钥（未配置）必须拒绝；
+// 显式密钥（含内置演示值）放行，演示值由启动告警而非硬拒（与 user-service 同款）。
+func TestValidateJWTSecret(t *testing.T) {
+	if err := ValidateJWTSecret(""); err == nil {
+		t.Fatal("ValidateJWTSecret(\"\") must error")
+	}
+	if err := ValidateJWTSecret("   "); err == nil {
+		t.Fatal("ValidateJWTSecret(blank) must error")
+	}
+	if WellKnownDevJWTSecret == "" {
+		t.Fatal("WellKnownDevJWTSecret must be non-empty")
+	}
+	if err := ValidateJWTSecret(WellKnownDevJWTSecret); err != nil {
+		t.Fatalf("ValidateJWTSecret(dev) = %v, want nil (startup warns, not hard-rejects)", err)
+	}
+	if err := ValidateJWTSecret("a-real-secret"); err != nil {
+		t.Fatalf("ValidateJWTSecret(real) = %v, want nil", err)
+	}
+}

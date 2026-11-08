@@ -18,7 +18,8 @@ func CreateGameHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 
-		l := logic.NewCreateGameLogic(r.Context(), svcCtx)
+		// GP-004：注入客户端 IP 供审计记录（动作 game_create）。
+		l := logic.NewCreateGameLogic(withClientIP(r), svcCtx)
 		resp, err := l.CreateGame(&req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)

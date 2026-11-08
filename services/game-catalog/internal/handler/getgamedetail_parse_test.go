@@ -19,6 +19,8 @@ func TestGetGameDetailHandler_ParseFailure(t *testing.T) {
 
 	var c config.Config
 	c.MySQL.DataSource = "file:" + filepath.Join(t.TempDir(), "games.db")
+	// GP-004 起空密钥拒绝启动；解析失败测试仅需一个可用的上下文。
+	c.Auth.JWTSecret = "parse-test-secret"
 	svcCtx := svc.NewServiceContext(c)
 
 	req := httptest.NewRequest(http.MethodGet, "/games/anything", nil) // 未注入 pathvar

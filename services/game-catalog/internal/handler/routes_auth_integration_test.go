@@ -132,10 +132,11 @@ func TestRoutes_PostGamesRequiresAuth(t *testing.T) {
 		t.Fatalf("anonymous GET /games status = %d, want 200 (body %s)", resp.StatusCode, body)
 	}
 
-	// 4) 有效令牌 POST → 进入业务处理器（200，返回创建的游戏）
+	// 4) 平台管理员令牌 POST → 进入业务处理器（200，返回创建的游戏）
+	//    （GP-004 起创建游戏收窄为 platform_admin/operator，player 由独立用例断言 403）
 	req, _ = http.NewRequest(http.MethodPost, base+"/games", bytes.NewReader(postBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+sign(validRouteClaims()))
+	req.Header.Set("Authorization", "Bearer "+sign(claimsFor(1, "admin")))
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("authed POST: %v", err)
@@ -176,10 +177,11 @@ func TestRoutes_PatchGameTagsRequiresAuth(t *testing.T) {
 		t.Fatalf("anonymous PATCH status = %d, want 401 (body %s)", resp.StatusCode, body)
 	}
 
-	// 2) 有效令牌 PATCH 已存在游戏 → 200，返回带「联运」标签的游戏
+	// 2) 平台管理员令牌 PATCH 已存在游戏 → 200，返回带「联运」标签的游戏
+	//    （GP-004 起标签维护收窄为 platform_admin/operator）
 	req, _ = http.NewRequest(http.MethodPatch, base+"/games/game-elden-ring/tags", bytes.NewReader([]byte(`{"tags":["soulslike","联运"]}`)))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+sign(validRouteClaims()))
+	req.Header.Set("Authorization", "Bearer "+sign(claimsFor(1, "admin")))
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("authed PATCH: %v", err)
@@ -192,10 +194,10 @@ func TestRoutes_PatchGameTagsRequiresAuth(t *testing.T) {
 		t.Fatalf("authed PATCH body = %s, want updated tags containing 联运", body)
 	}
 
-	// 3) 有效令牌 PATCH 不存在的游戏 → 404
+	// 3) 平台管理员令牌 PATCH 不存在的游戏 → 404
 	req, _ = http.NewRequest(http.MethodPatch, base+"/games/game-missing/tags", bytes.NewReader([]byte(`{"tags":["联运"]}`)))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+sign(validRouteClaims()))
+	req.Header.Set("Authorization", "Bearer "+sign(claimsFor(1, "admin")))
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("authed PATCH missing: %v", err)

@@ -17,6 +17,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 type ServiceContext struct {
@@ -27,6 +28,15 @@ type ServiceContext struct {
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
+	// GP-004 生产接入：JWT 密钥启动期守卫。空密钥拒绝启动；内置演示密钥
+	// （源码可见，可伪造任意用户令牌）大声告警，除本地开发外须以 JWT_SECRET 覆盖。
+	if err := utils.ValidateJWTSecret(c.Auth.JWTSecret); err != nil {
+		panic(err.Error())
+	}
+	if c.Auth.JWTSecret == utils.WellKnownDevJWTSecret {
+		logx.Errorf("正在使用内置演示 JWT 密钥：除本地开发外必须以 JWT_SECRET 环境变量覆盖，否则任何人可伪造登录令牌")
+	}
+
 	// DSN 含 file: 或 .db → SQLite（开发/测试），否则 MySQL（与
 	// user-service.NewServiceContext 同款探测）。
 	var db *sql.DB

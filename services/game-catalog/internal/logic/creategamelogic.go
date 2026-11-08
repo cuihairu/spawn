@@ -65,8 +65,28 @@ func (l *CreateGameLogic) CreateGame(req *types.CreateGameRequest) (*types.GameD
 		l.Errorf("create game failed: %v", err)
 		return nil, newAPIError(http.StatusInternalServerError, "创建失败")
 	}
+	// GP-004：创建为运营动作，写审计（失败仅记日志，不阻断返回）。
+	l.audit("game_create", "game", entity.Id, "", toJSON(toTypesGame(entity)))
 
 	return &types.GameDetailResponse{
 		Game: toTypesGame(entity),
 	}, nil
+}
+
+// audit 记录操作审计；失败仅记日志（写审计不得拖垮主操作）。
+// AdminRepository 为 nil（单元测试未装配）时跳过。
+func (l *CreateGameLogic) audit(action, resourceType, resourceID, before, after string) {
+	if l.svcCtx.AdminRepository == nil {
+		return
+	}
+	actorID, _ := l.ctx.Value("user_id").(int64)
+	role, _ := l.ctx.Value("role").(string)
+	ip, _ := l.ctx.Value("client_ip").(string)
+	if err := l.svcCtx.AdminRepository.WriteAudit(&model.AuditLog{
+		ActorId: actorID, ActorRole: role, Action: action,
+		ResourceType: resourceType, ResourceId: resourceID,
+		BeforeJson: before, AfterJson: after, Ip: ip,
+	}); err != nil {
+		l.Errorf("write audit failed: %v", err)
+	}
 }

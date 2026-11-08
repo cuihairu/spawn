@@ -38,21 +38,22 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		},
 	})
 
-	// 受保护路由：写接口需要 Bearer 令牌（由 user-service 签发）
-	server.AddRoutes(
-		rest.WithMiddleware(middleware.AuthMiddleware(serverCtx),
-			rest.Route{
-				Method:  http.MethodPost,
-				Path:    "/games",
-				Handler: CreateGameHandler(serverCtx),
-			},
-			rest.Route{
-				Method:  http.MethodPatch,
-				Path:    "/games/:id/tags",
-				Handler: UpdateGameTagsHandler(serverCtx),
-			},
-		),
+	// 受保护路由：写接口需要 Bearer 令牌（由 user-service 签发）。
+	// GP-004 最小权限：创建游戏与运营标签维护收窄为 platform_admin/operator
+	// （此前任何登录用户可直写，player 亦可建游戏/改标签）。
+	gameWriteRoutes := rest.WithMiddleware(middleware.RequireRole(model.RolePlatformAdmin, model.RoleOperator),
+		rest.Route{
+			Method:  http.MethodPost,
+			Path:    "/games",
+			Handler: CreateGameHandler(serverCtx),
+		},
+		rest.Route{
+			Method:  http.MethodPatch,
+			Path:    "/games/:id/tags",
+			Handler: UpdateGameTagsHandler(serverCtx),
+		},
 	)
+	server.AddRoutes(rest.WithMiddleware(middleware.AuthMiddleware(serverCtx), gameWriteRoutes...))
 
 	auth := middleware.AuthMiddleware(serverCtx)
 
