@@ -2,7 +2,7 @@
 
 
 > 本文记录当前实际落地的服务边界、端口、调用拓扑与数据流；
-> 愿景层面的架构方向见同目录 `overview.zh.md`。两者冲突时以本文为准。
+> 愿景层面的架构方向见同目录 `overview.md`。两者冲突时以本文为准。
 
 ## 1. 服务清单与边界
 
@@ -51,14 +51,16 @@ web-client 直连拓扑保持不变，网关路由扩容不要求 web 迁移。
 | POST /upload | 统一图片上传入口（2026-10-08 方案 A 落地）：Bearer JWT 本地校验（HS256 与 user-service 同密钥）、512 字节魔数嗅探白名单 png/jpeg/webp/gif、10MB 上限、随机文件名 `O_EXCL` 落 uploads 卷，返回 `/uploads/<hash>.<ext>`；业务服务只存 URL 不碰文件 | 本地盘（uploads 卷） |
 | GET /uploads/:file | 已上传图片静态托管：文件名正则白名单（`^[0-9a-f]{32}\.(png\|jpg\|webp\|gif)$`）防路径遍历后 `ServeContent` 回读 | 本地盘（uploads 卷） |
 
-### 3.2 反代路由（internal/{users,games,community,content}，proxy.NewUpstream passthrough）
+### 3.2 反代路由（internal/{users,games,community,content,datapanel,realtime}；users/games/community/content/data-panel 为 proxy.NewUpstream passthrough，realtime 为 /ws 隧道）
 
 | 前缀 | 路由 | 上游 |
 |------|------|------|
 | users | POST /auth/register、POST /auth/login、GET /users/:id（2026-10-11 起 login 亦走反代，信封原样透传） | user-service |
-| games | GET /games、GET /games/:id | game-catalog |
-| community | `/api/v1/topics**`、`/api/v1/posts**`（含 /posts/search 与 :id/comments）、`/api/v1/users/{following,likes}`、`/api/v1/notifications**`、`/api/v1/messages**`、`/api/v1/moderation**` 等 M1–M3 全量调用面 | community |
+| games | GET /games、GET /games/:id（公开）、PATCH /games/:id/tags、GET /me、`admin/**`（角色/合作方/审核/归属/上下架/版本/审计）、`partner/**`（games/submit/versions） | game-catalog |
+| community | `/api/v1/topics**`、`/api/v1/posts**`（含 /posts/search 与 :id/comments）、`/api/v1/users/{following,likes}`、`/api/v1/users/:user_id/follow`、`/api/v1/notifications**`、`/api/v1/messages**`、`/api/v1/moderation**` 等 M1–M3 全量调用面 | community |
 | content | `/api/v1/guides**`、`/api/v1/comments**` | content-service |
+| data-panel | `/api/v1/stats/users/:user_id/summary`、`/api/v1/stats/users/:user_id/games`、`/api/v1/stats/users/:user_id/games/:game_id`、POST `/api/v1/stats/records` | data-panel |
+| realtime | GET /ws（WebSocket 隧道：Hijack + 双向 splice，Hijack 前 502；RealtimeHub.BaseURL 为空时不注册） | realtime-hub |
 
 反代语义：path+query 透传、hop-by-hop 头剥离、请求体缓冲定长转发（1 MiB 上限，超限 413。缓冲是为绕开 go-zero 上游不解析 chunked 请求体的缺陷）、状态码/响应体原样回传（匿名 401 等语义保持）。
 
@@ -79,13 +81,18 @@ web-client 直连拓扑保持不变，网关路由扩容不要求 web 迁移。
   api-gateway 日志 JSON 输出 stdout，由 Promtail 收集进 Loki（deploy/docker-compose.monitoring.yaml）。
 - `docker compose up --build` 一键拉起全部服务；各业务服务目录有独立 Dockerfile
   （user-service-rpc 无镜像，按设计独立内网部署；api-gateway/realtime-hub 为
-  CGO_ENABLED=0 构建 + distroless 运行时，其余 CGO + debian:bookworm-slim）。
+  CGO_ENABLED=0 构建——api-gateway 用 distroless、realtime-hub 用
+  debian:bookworm-slim——其余 CGO + debian:bookworm-slim）。
 - 配置：`etc/*.yaml`，上游地址支持环境变量覆盖（`USER_SERVICE_URL` 等）。
 
 ## 6. 演进路线（与 README「下一步建议」对齐）
 
 1. BFF 第三阶段（按需）：更多聚合口径（列表聚合已落地 `/home/feed`，字段裁剪模式可复制）；必要时给聚合端点加缓存。
 2. 真机回归：Android release 包已可本地 gradle 出包（`pnpm --dir apps/mobile-app build:android:release`），本地推送/深链分享卡等待真机验证。
-3. data-panel 已落地（2026-10-09，M4 第一里程碑）：mobile 战绩 Tab + 单游戏详情（经网关 `/api/v1/stats/*` 五路反代）、web `/stats` 面板、compose/nightly/Prometheus 接线均同步落地；真机验证顺延。
+3. data-panel 已落地（2026-10-09，M4 第一里程碑）：mobile 战绩 Tab + 单游戏详情（经网关 `/api/v1/stats/*` 四路反代）、web `/stats` 面板、compose/nightly/Prometheus 接线均同步落地；真机验证顺延。
 4. realtime-hub：实时通道已经网关 `/ws` 隧道透传（客户端默认走网关，直连变量保留）；matchmaking 仍为规划占位。
 5. 生产化：网关前置 TLS 终结（当前 compose 无证书）、明文 HTTP 收敛、CORS 收紧。
+
+## 7. 源码分层分析
+
+2026-11-07 的层、模块、状态存储、调用面、配置输入和生命周期清单见 [layer-analysis.md](layer-analysis.md)；术语定义见 [glossary.md](glossary.md)。

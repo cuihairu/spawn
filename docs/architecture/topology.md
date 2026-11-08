@@ -56,16 +56,18 @@ force web to migrate.
 | POST /upload | Unified image upload entry (option A landed 2026-10-08): Bearer JWT verified locally (HS256, same secret as user-service), 512-byte magic-number sniffing whitelisting png/jpeg/webp/gif, 10 MB cap, random filename written with `O_EXCL` to the uploads volume, returns `/uploads/<hash>.<ext>`; business services store only the URL and never touch files | local disk (uploads volume) |
 | GET /uploads/:file | Static hosting for uploaded images: filename regex whitelist (`^[0-9a-f]{32}\.(png\|jpg\|webp\|gif)$`) against path traversal, then read back with `ServeContent` | local disk (uploads volume) |
 
-### 3.2 Proxy routes (internal/{users,games,community,content}, proxy.NewUpstream passthrough)
+### 3.2 Proxy routes (internal/{users,games,community,content,datapanel,realtime}; users/games/community/content/data-panel are proxy.NewUpstream passthrough, realtime is a /ws tunnel)
 
 `**` below marks a whole route family rather than a literal character.
 
 | Prefix | Routes | Upstream |
 |---|---|---|
 | users | POST /auth/register, POST /auth/login, GET /users/:id (from 2026-10-11 login also goes through the proxy, envelope passed through verbatim) | user-service |
-| games | GET /games, GET /games/:id | game-catalog |
-| community | `/api/v1/topics**`, `/api/v1/posts**` (including /posts/search and :id/comments), `/api/v1/users/{following,likes}`, `/api/v1/notifications**`, `/api/v1/messages**`, `/api/v1/moderation**` — the full M1–M3 call surface | community |
+| games | GET /games, GET /games/:id (public), PATCH /games/:id/tags, GET /me, `admin/**` (roles/partners/reviews/ownership/publish/unpublish/versions/audit), `partner/**` (games/submit/versions) | game-catalog |
+| community | `/api/v1/topics**`, `/api/v1/posts**` (including /posts/search and :id/comments), `/api/v1/users/{following,likes}`, `/api/v1/users/:user_id/follow`, `/api/v1/notifications**`, `/api/v1/messages**`, `/api/v1/moderation**` — the full M1–M3 call surface | community |
 | content | `/api/v1/guides**`, `/api/v1/comments**` | content-service |
+| data-panel | `/api/v1/stats/users/:user_id/summary`, `/api/v1/stats/users/:user_id/games`, `/api/v1/stats/users/:user_id/games/:game_id`, POST `/api/v1/stats/records` | data-panel |
+| realtime | GET /ws (WebSocket tunnel: Hijack + bidirectional splice, 502 pre-Hijack; not registered when RealtimeHub.BaseURL is empty) | realtime-hub |
 
 Proxy semantics: path+query passthrough, hop-by-hop headers stripped, request
 body buffered and forwarded with a fixed length (1 MiB cap, 413 above. The
@@ -96,7 +98,8 @@ Cross-service:   user-service → game-catalog (recommendations);
 - `docker compose up --build` brings everything up in one command; each business
   service has its own Dockerfile (user-service-rpc has no image, deployed on a
   separate internal network by design; api-gateway/realtime-hub are
-  CGO_ENABLED=0 builds + distroless runtime, the rest CGO + debian:bookworm-slim).
+  CGO_ENABLED=0 builds — api-gateway on distroless, realtime-hub on
+  debian:bookworm-slim — the rest CGO + debian:bookworm-slim).
 - Configuration: `etc/*.yaml`, upstream addresses overridable by environment
   variables (`USER_SERVICE_URL` etc.).
 
@@ -109,7 +112,7 @@ Cross-service:   user-service → game-catalog (recommendations);
    gradle (`pnpm --dir apps/mobile-app build:android:release`); local push and
    the deep-link share card await device verification.
 3. data-panel has landed (2026-10-09, M4 first milestone): the mobile stats tab
-   + single-game detail (through the gateway's `/api/v1/stats/*` five-way
+   + single-game detail (through the gateway's `/api/v1/stats/*` four-route
    proxy), the web `/stats` panel, and the compose/nightly/Prometheus wiring
    all landed at the same time; device verification is deferred.
 4. realtime-hub: the realtime channel already tunnels through the gateway `/ws`

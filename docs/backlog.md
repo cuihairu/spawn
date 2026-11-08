@@ -67,10 +67,10 @@ it — row added below.)
 
 | Item | Blocker | Basis |
 |----|------|------|
-| ~~Realtime push (WebSocket)~~ | Cleared (realtime-hub M1/M2 landed, 2026-10-11) | docs/realtime-hub.zh.md |
+| ~~Realtime push (WebSocket)~~ | Cleared (realtime-hub M1/M2 landed, 2026-10-11) | docs/realtime-hub.md |
 | Full-text search upgrade (Elasticsearch) | No external middleware introduced; LIKE-level keyword search landed 2026-10-12 (`GET /api/v1/posts/search`, app-side filtering — see the community README) | community README long-term item |
-| Content recommendation (ML) | No external model service introduced | community README:285 |
-| Video content | No object-storage/transcoding infra initiated | community README:286 |
+| Content recommendation (ML) | No external model service introduced | community README:301 |
+| Video content | No object-storage/transcoding infra initiated | community README:302 |
 | matchmaking / crawler-jobs / admin-console / mini-program | Decided not to start (2026-10-09) | mobile_plan section 4 (realtime-hub cleared and landed 2026-10-11) |
 | On-device regression (local push / deep-link share cards / notification center) | No device or emulator in this environment; substitute = CI gates + `expo export --platform android` bundle walkthrough | mobile_plan risks section |
 | iOS backfill (TestFlight sideloading / Universal Links / APNs) | External credentials (Apple team / domain AASA / push certificates) | mobile_plan decision log 2026-10-09 |

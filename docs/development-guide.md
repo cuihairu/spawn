@@ -3,7 +3,7 @@
 
 > **No English version of this document yet.** The guide is 1,600+ lines of
 > Chinese; rather than ship a low-quality machine translation, the original is
-> kept at `development-guide.zh.md`.
+> kept at `zh/development-guide.md`.
 
 What it covers:
 
@@ -22,4 +22,4 @@ What it covers:
 - Client integration: web and mobile talking to the gateway.
 
 Anything not listed here is in the Chinese original — read
-`development-guide.zh.md` and translate as you go.
+`zh/development-guide.md` and translate as you go.

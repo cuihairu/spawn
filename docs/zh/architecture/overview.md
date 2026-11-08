@@ -2,7 +2,7 @@
 
 
 > 本文是愿景与方向；**当前已落地的服务边界、端口、网关反代拓扑与数据流**
-> 见同目录 `topology.zh.md`（现状文档，冲突时以现状文档为准）。
+> 见同目录 `topology.md`（现状文档，冲突时以现状文档为准）。
 
 ## 目标
 
@@ -32,11 +32,11 @@
 
 ## 技术栈：现状与候选
 
-现状（详见 `topology.zh.md`）：后端 go-zero REST + 少量 gRPC，前端 React/Vite 与 React Native（Expo），
+现状（详见 `topology.md`）：后端 go-zero REST + 少量 gRPC，前端 React/Vite 与 React Native（Expo），
 存储 SQLite/MySQL 双驱动，观测 Prometheus + Promtail/Loki/Grafana，部署 docker compose。
 
 候选（未选型，随演进阶段再定）：小程序端 Taro/UniApp、PostgreSQL 主库、ElasticSearch 搜索、
-Kafka 消息总线、Terraform + Kubernetes。本文其余章节同属愿景口径，与现状冲突时以 `topology.zh.md` 为准。
+Kafka 消息总线、Terraform + Kubernetes。本文其余章节同属愿景口径，与现状冲突时以 `topology.md` 为准。
 
 ## 演进路线
 

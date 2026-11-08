@@ -1064,7 +1064,7 @@ LastInsertId/RowsAffected/rows.Err）×14、INSERT IGNORE 回落成功 ×3。
 
 各业务服务目录下均有独立 `Dockerfile`（user-service-rpc 除外——集群内部按设计独立内网部署，无镜像）。
 SQLite 侧服务模式一致（以 `services/community/Dockerfile` 为例）；api-gateway 与
-realtime-hub 为 `CGO_ENABLED=0` 构建 + distroless 运行时：
+realtime-hub 为 `CGO_ENABLED=0` 构建（api-gateway 用 distroless 运行时、realtime-hub 用 debian:bookworm-slim 运行时）：
 **CGO 构建**（SQLite 驱动需要）+ **debian:bookworm-slim 运行时**（含 `sqlite3`）+
 `DATASOURCE` 环境变量注入数据源（默认本地 `file:` SQLite，生产注入 MySQL 连接串）：
 
@@ -1339,7 +1339,7 @@ curl localhost:3000                        # Grafana（Prometheus/Loki 已装配
 | community | 按路由校验 | `internal/middleware/auth_middleware.go`（`rest.Middleware`），写路由经 `rest.WithMiddlewares` 挂载，已有集成测试 |
 | api-gateway | 透传 | 转发 `Authorization` 头到上游（`upstream_test.go` 覆盖）；`/upload` 本地校验 JWT |
 | user-service-rpc | 无需鉴权 | 仅集群内部 gRPC 通信，不直接暴露公网 |
-| game-catalog | 按路由校验 | `utils/auth.go` + `middleware/auth.go`，`POST /games` 受保护，4 个 GET 路由保持匿名公开（上一批次补齐） |
+| game-catalog | 按路由校验 | `utils/auth.go` + `middleware/auth.go`，受保护路由含 `POST /games`、`PATCH /games/:id/tags`、`GET /me` 与 `admin/**`（角色/合作方/审核/上下架/版本）、`partner/**` 两族；4 个公开 GET 路由（列表/详情/精选/推荐）保持匿名 |
 | realtime-hub | WS 握手校验 | `internal/auth/auth.go`（HS256，`/ws?token=` 查询参数校验，失败回 401 拒绝升级） |
 
 ### 令牌机制
@@ -1373,7 +1373,22 @@ curl -X POST http://localhost:8890/games -d '{}'   # {"code":401,"message":"缺�
 curl -X POST http://localhost:8890/games \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"title":"Halo","description":"FPS","genres":["FPS"],"platforms":["Xbox"],"release_date":"2001-11-15","developer":"Bungie","publisher":"Microsoft","tags":[],"score":9.5,"cover_image":""}'
+  -d '{
+          "title": "Halo",
+          "description": "FPS",
+          "genres": [
+            "FPS"
+          ],
+          "platforms": [
+            "Xbox"
+          ],
+          "release_date": "2001-11-15",
+          "developer": "Bungie",
+          "publisher": "Microsoft",
+          "tags": [],
+          "score": 9.5,
+          "cover_image": ""
+        }'
 ```
 
 ### 新服务接入认证

@@ -48,10 +48,10 @@ realtime-hub 5 包，realtime-hub 快照时已由 go.work 动态纳入，原表�
 
 | 项 | 卡点 | 依据 |
 |----|------|------|
-| ~~实时推送（WebSocket）~~ | 已解除（realtime-hub M1/M2 落地，2026-10-11） | docs/realtime-hub.zh.md |
+| ~~实时推送（WebSocket）~~ | 已解除（realtime-hub M1/M2 落地，2026-10-11） | docs/zh/realtime-hub.md |
 | 全文搜索升级（Elasticsearch） | 外部中间件未引入；LIKE 级关键词搜索已于 2026-10-12 落地（`GET /api/v1/posts/search`，应用侧过滤，见 community README） | community README 长期项 |
-| 内容推荐系统（ML） | 外部模型服务未引入 | community README:285 |
-| 视频内容 | 对象存储/转码基建未立项 | community README:286 |
+| 内容推荐系统（ML） | 外部模型服务未引入 | community README:301 |
+| 视频内容 | 对象存储/转码基建未立项 | community README:302 |
 | matchmaking / crawler-jobs / admin-console / mini-program | 拍板不开工（2026-10-09） | mobile_plan 第 4 节（realtime-hub 已于 2026-10-11 解除并落地） |
 | 真机回归（本地推送/深链分享卡/通知中心） | 环境无设备无模拟器；替代口径 = CI 门禁 + `expo export --platform android` 产物走查 | mobile_plan 风险节 |
 | iOS 填空（TestFlight 侧载/Universal Links/APNs） | 外部凭据（Apple 团队/域名 AASA/推送证书） | mobile_plan 拍板记录 2026-10-09 |

@@ -5,30 +5,20 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'spawn',
   description:
-    '游戏社区平台：攻略、榜单与社区的 monorepo 实现，React Web 端、Expo 移动端与 go-zero 微服务。',
+    'Game community platform: guides, leaderboards and community in one monorepo, with React web, Expo mobile and go-zero microservices.',
   base: '/spawn/',
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/spawn/favicon.svg' }],
     ['link', { rel: 'icon', type: 'image/png', href: '/spawn/favicon.png' }],
     ['meta', { name: 'theme-color', content: '#d4237a' }]
   ],
-  rewrites: {
-    'index.zh.md': 'zh/index.md',
-    'README.zh.md': 'zh/README.md',
-    '审计-文档一致性.zh.md': 'zh/doc-audit.md',
-    'guide/getting-started.zh.md': 'zh/guide/getting-started.md',
-    'architecture/overview.zh.md': 'zh/architecture/overview.md',
-    'architecture/topology.zh.md': 'zh/architecture/topology.md',
-    'clients.zh.md': 'zh/clients.md',
-    'development-guide.zh.md': 'zh/development-guide.md',
-    'realtime-hub.zh.md': 'zh/realtime-hub.md',
-    'backlog.zh.md': 'zh/backlog.md',
-    'mobile_plan.zh.md': 'zh/mobile_plan.md'
-  },
   locales: {
     root: {
       label: 'English',
-      lang: 'en',
+      lang: 'en-US',
+      title: 'spawn',
+      description:
+        'Game community platform: guides, leaderboards and community in one monorepo, with React web, Expo mobile and go-zero microservices.',
       themeConfig: {
         logo: '/logo.svg',
         nav: [
@@ -117,6 +107,10 @@ export default defineConfig({
     zh: {
       label: '简体中文',
       lang: 'zh-CN',
+      link: '/zh/',
+      title: 'spawn',
+      description:
+        '游戏社区平台：攻略、榜单与社区的 monorepo 实现，React Web 端、Expo 移动端与 go-zero 微服务。',
       themeConfig: {
         logo: '/logo.svg',
         nav: [

@@ -34,6 +34,8 @@ their status; unimplemented features are not described.
   polling) plus the `/notifications` center (like / comment / reply / follow —
   four types, unread dots, mark all read; like/comment/reply open the original
   post).
+- Direct messages (landed): `/messages` page — conversation list, per-peer
+  thread with unread marking, delivered over the realtime-hub WebSocket channel.
 - Common scripts: `pnpm --dir apps/web-client run dev` (dev), `build`
   (tsc + vite bundle), `lint`.
 
@@ -48,6 +50,8 @@ their status; unimplemented features are not described.
 - In-app notifications (landed 2026-10-10): community-tab bell unread badge
   plus the `/notifications` center (like/comment/reply open the original post,
   mark all read).
+- Direct messages (landed): `/messages` screen — conversation list and per-peer
+  thread, consumed over the realtime-hub WebSocket channel.
 - Guide authoring and editing (landed 2026-10-10): `/guide-compose` writes a
   guide (plain text / Markdown, publishing on create); the detail page allows
   the author to edit (PUT partial update, game cannot be changed).
@@ -67,7 +71,7 @@ their status; unimplemented features are not described.
 | content-service | `services/content-service` | Guides, comments, publish flow, favourites | SQLite / MySQL dual driver + in-process read cache |
 | community | `services/community` | Posts, topics, follows, likes, follow feed, in-app notifications, direct messages, report moderation | SQLite / MySQL dual driver |
 | data-panel | `services/data-panel` | Stats ingest (monotonic increments) and player stats queries | SQLite / MySQL dual driver + TTL/LRU cache |
-| user-service-rpc | `services/user-service-rpc` | Internal gRPC API for the user domain (zrpc + etcd) | Reuses user-service storage |
+| user-service-rpc | `services/user-service-rpc` | Internal gRPC API for the user domain (zrpc + etcd; currently a Ping health-check stub, no storage yet) | — |
 | realtime-hub | `services/realtime-hub` | WebSocket push / presence / voice signalling (8893, no /metrics) | — (in-memory registry, optional Redis pub/sub relay) |
 
 The port table is in [Getting Started](/guide/getting-started); the current

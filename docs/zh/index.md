@@ -15,9 +15,6 @@ hero:
     - theme: alt
       text: 开发指南
       link: /zh/development-guide
-    - theme: alt
-      text: English
-      link: /
 
 features:
   - title: 游戏库与榜单
@@ -35,3 +32,9 @@ features:
   - title: 可观测性
     details: 七个服务各开一个 Prometheus /metrics 端口（9091–9097），日志 JSON 结构化进 Loki，deploy/ 下带 Prometheus、Loki、Grafana 的 compose。
 ---
+
+## 架构
+
+![spawn · 游戏社区平台架构](/images/architecture-zh.svg)
+
+> 分层：客户端 → 接入层（api-gateway / realtime-hub）→ 领域服务 → SQLite/MySQL 与 Redis；实线为业务数据，虚线为控制/规划。matchmaking 与 crawler-jobs 为规划服务，尚未创建。

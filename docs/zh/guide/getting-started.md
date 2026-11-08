@@ -28,7 +28,7 @@ pnpm install
 docker compose up --build
 ```
 
-各服务为独立镜像（api-gateway 与 realtime-hub 为 CGO_ENABLED=0 构建 + distroless 运行时，其余 CGO 构建 + debian:bookworm-slim），数据源由 `DATASOURCE` 环境变量注入，默认本地 SQLite 文件库并自动建表、写入内嵌种子数据。
+各服务为独立镜像（api-gateway 与 realtime-hub 为 CGO_ENABLED=0 构建——api-gateway 用 distroless、realtime-hub 用 debian:bookworm-slim——其余 CGO 构建 + debian:bookworm-slim），数据源由 `DATASOURCE` 环境变量注入，默认本地 SQLite 文件库并自动建表、写入内嵌种子数据。
 
 | 服务 | 业务端口 | /metrics 端口 |
 | --- | --- | --- |
@@ -75,6 +75,6 @@ mobile-app 基于 Expo，`expo start` 起开发服务后按提示在模拟器或
 
 ## 延伸阅读
 
-- 架构总览，愿景与服务边界。
-- 现状拓扑，端口、路由面、认证数据流的现状。
-- 开发指南，环境到部署的完整手册。
+- [架构总览](/zh/architecture/overview) — 愿景与服务边界。
+- [现状拓扑](/zh/architecture/topology) — 端口、路由面、认证数据流的现状。
+- [开发指南](/zh/development-guide) — 环境到部署的完整手册。

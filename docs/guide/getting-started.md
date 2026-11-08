@@ -15,7 +15,8 @@ or start each side separately.
 
 Backend toolchain (as needed): `goctl` (go-zero code generation), `protoc`
 with `protoc-gen-go` and `protoc-gen-go-grpc` — see the "Go-zero development
-conventions" section of the development guide for installation.
+conventions" section of [the development guide](/zh/development-guide.md) for
+installation.
 
 ## Get the code
 
@@ -32,7 +33,8 @@ docker compose up --build
 ```
 
 Each service is a separate image (api-gateway and realtime-hub are
-CGO_ENABLED=0 builds + distroless runtime, the rest are CGO builds +
+CGO_ENABLED=0 builds — api-gateway on distroless, realtime-hub on
+debian:bookworm-slim — the rest are CGO builds +
 debian:bookworm-slim). Data sources are injected via the `DATASOURCE`
 environment variable; the default is a local SQLite file database with
 automatic table creation and embedded seed data.
@@ -94,4 +96,5 @@ described in "Clients and services" (`docs/clients.md`).
 
 - [Architecture overview](/architecture/overview) — the vision and service boundaries.
 - [Current topology](/architecture/topology) — ports, the route surface and the auth data flow as built.
-- [Development guide](/development-guide) — the complete manual from environment to deployment.
+- [Development guide](/development-guide) — see the Chinese original at
+  `/zh/development-guide` for the complete manual from environment to deployment.

@@ -24,6 +24,8 @@ spawn 的客户端与服务端现状一览。规划中的端只列状态，不�
   带 Bearer 可见自己草稿）/我的点赞（`GET /api/v1/users/likes`）。
 - 站内通知（2026-10-09 落地）：导航铃铛带未读徽标（30s 轮询）+ `/notifications`
   通知中心（点赞/评论/回复/关注四类，未读圆点，全部已读；点赞/评论/回复点进原帖）。
+- 私信（已落地）：`/messages` 页——会话列表 + 按对方线程（未读标记），经 realtime-hub
+  WebSocket 通道收发。
 - 常用脚本：`pnpm --dir apps/web-client run dev`（开发）、`build`（tsc + vite 打包）、`lint`。
 
 ## 移动端（mobile-app）
@@ -32,9 +34,10 @@ spawn 的客户端与服务端现状一览。规划中的端只列状态，不�
 - 集成能力：expo-notifications（推送）、expo-linking（深链与分享卡）、expo-secure-store（凭据安全存储）。
 - 首页数据走 `api-gateway` 的 `GET /home/feed` 聚合消费点（发现 Tab）。
 - 站内通知（2026-10-10 落地）：社区 Tab 铃铛未读徽标 + `/notifications` 通知中心（点赞/评论/回复点进原帖，全部已读）。
+- 私信（已落地）：`/messages` 屏——会话列表 + 按对方线程，经 realtime-hub WebSocket 通道收发。
 - 攻略创作与编辑（2026-10-10 落地）：`/guide-compose` 写攻略（纯文本/Markdown，创建即发布）；详情页作者本人可编辑（PUT 部分更新，游戏不可改）。
 - Android 出包：`pnpm --dir apps/mobile-app run prebuild:android` 生成原生工程，`build:android:release` 走 gradle assembleRelease。
-- 真机回归项（本地推送、深链分享卡、通知中心）尚待设备验证，进度见[移动端计划]/mobile_plan.zh。
+- 真机回归项（本地推送、深链分享卡、通知中心）尚待设备验证，进度见[移动端计划](/zh/mobile_plan)。
 
 ## 服务端（七个 go-zero 微服务 + 一个实时中枢）
 
@@ -46,7 +49,7 @@ spawn 的客户端与服务端现状一览。规划中的端只列状态，不�
 | content-service | `services/content-service` | 攻略、评论、发布流、收藏 | SQLite / MySQL 双驱动 + 进程内读缓存 |
 | community | `services/community` | 帖子、话题、关注、点赞、关注流、站内通知、私信、举报审核 | SQLite / MySQL 双驱动 |
 | data-panel | `services/data-panel` | 战绩摄入（单调增量）与玩家战绩查询 | SQLite / MySQL 双驱动 + TTL/LRU 缓存 |
-| user-service-rpc | `services/user-service-rpc` | 用户域 gRPC 内部接口（zrpc + etcd） | 复用 user-service 存储 |
+| user-service-rpc | `services/user-service-rpc` | 用户域 gRPC 内部接口（zrpc + etcd，当前仅 Ping 探活 stub，尚无存储） | — |
 | realtime-hub | `services/realtime-hub` | WebSocket 推送/在线状态/语音信令（8893，无 /metrics） | —（内存注册表，可选 Redis pub/sub 中继） |
 
 端口表在快速上手，服务边界与认证数据流的现状记录在现状拓扑。

@@ -7,6 +7,10 @@
 - `mobile_plan.md`: 移动端计划与里程碑进度批注。
 - `architecture/`: `overview.md`（愿景层）与 `topology.md`（现状拓扑：服务边界/网关路由面/认证数据流）。
 
+产品调研与规划（功能未实现项以根 TODO 为准）：
+
+- [手游平台功能调研与 Spawn 扩展计划](product/mobile-platform-research.md)：八个平台公开功能、Spawn 差距、Courier SDK 复用边界与分阶段验收（2026-10-29）。
+
 推荐目录（规划，按需落地）：
 
 - `product/`: 产品需求、体验流程、竞品分析。
