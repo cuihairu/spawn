@@ -14,7 +14,7 @@
 - [x] GP-001 确定 Spawn/Courier 权威账号源与存量绑定方案，画清登录/验票/退出/注销/游戏级会话流；验收：跨游戏 token 被拒、迁移解绑可追踪（ecba93a；接入设计 §1，F13/F27）
 - [x] GP-002 定义 game ID ↔ Courier game_id/env、合作方、区服/角色映射与能力配置；验收：联运标签只作展示，scope 不入 URL/payload（ecba93a；接入设计 §2，F01/F14）
 - [x] GP-003 明确交易事实源、管理 API/事件接口与跨仓兼容规则，验证 SKU/订单/密钥/存储多游戏隔离（ecba93a；接入设计 §3，F15/F16）
-- [ ] GP-004 为后台与生产接入补最小权限、游戏归属、操作审计与持久化/备份恢复方案（F11/F26/F28；最小实现待 GP-105）
+- [x] GP-004 为后台与生产接入补最小权限、游戏归属、操作审计与持久化/备份恢复方案（F11/F26/F28；最小实现待 GP-105）（c57505c/2ac53b0；最小权限：POST /games 与 PATCH /games/:id/tags 收窄为 platform_admin/operator，审计 game_create/game_tag_update，JWT 密钥启动守卫（空密钥拒启/演示密钥大声告警）；持久化/备份恢复方案入接入设计 §4；go test -race 全绿，docs build 绿）
 - [ ] GP-005 提供 Spawn + Courier 联合沙箱配置、版本清单与一款示例游戏，记录真实渠道/游戏服/授权/设备依赖（F28；待 GP-105/GP-206）
 
 ### M1：统一游戏库与发行下载
