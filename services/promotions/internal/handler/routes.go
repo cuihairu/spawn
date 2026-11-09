@@ -36,12 +36,34 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodGet, Path: "/admin/activity-audit", Handler: ListActivityAuditHandler(svcCtx)},
 		// GP-302 奖励发放账本查询（管理面；评估入口为 S2S 专用不在此组）
 		{Method: http.MethodGet, Path: "/admin/reward-grants", Handler: ListRewardGrantsHandler(svcCtx)},
+		// GP-304 礼包管理面：配置/状态机 + 码库存 + 领取记录
+		{Method: http.MethodPost, Path: "/admin/gift-packs", Handler: CreateGiftPackHandler(svcCtx)},
+		{Method: http.MethodPut, Path: "/admin/gift-packs/:id", Handler: UpdateGiftPackHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/admin/gift-packs/:id/publish", Handler: PublishGiftPackHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/admin/gift-packs/:id/disable", Handler: DisableGiftPackHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/admin/gift-packs/:id/revise", Handler: ReviseGiftPackHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/gift-packs", Handler: ListGiftPacksHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/gift-packs/:id", Handler: GetGiftPackHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/admin/gift-packs/:id/codes", Handler: ImportGiftPackCodesHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/gift-packs/:id/codes", Handler: ListGiftPackCodesHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/gift-packs/:id/claims", Handler: ListGiftClaimsHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/gift-claims", Handler: ListGiftClaimsHandler(svcCtx)},
 	}
 	server.AddRoutes(rest.WithMiddleware(auth, adminRoutes...))
 
-	// GP-302 S2S 奖励评估（payments PAID 推送；HMAC 验签，不进网关）
+	// GP-304 玩家侧（平台 JWT，无需管理角色）：展示/领取/我的领取
+	playerRoutes := []rest.Route{
+		{Method: http.MethodGet, Path: "/gift-packs", Handler: ListPlayerGiftPacksHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/gift-packs/:id", Handler: GetPlayerGiftPackHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/gift-packs/:id/claim", Handler: ClaimGiftPackHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/gift-claims/me", Handler: MyGiftClaimsHandler(svcCtx)},
+	}
+	server.AddRoutes(rest.WithMiddleware(auth, playerRoutes...))
+
+	// GP-302/304 S2S（payments PAID 推送 / 游戏服核销回调；HMAC 验签，不进网关）
 	server.AddRoutes([]rest.Route{
 		{Method: http.MethodPost, Path: "/internal/reward-evaluations", Handler: EvaluateRewardHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/internal/gift-pack-redemptions", Handler: RedeemGiftPackHandler(svcCtx)},
 	})
 }
 

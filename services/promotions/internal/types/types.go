@@ -187,3 +187,156 @@ type RewardGrantListRequest struct {
 type RewardGrantListResponse struct {
 	Grants []RewardGrantView `json:"grants"`
 }
+
+// GP-304 礼包类型。
+
+// GiftPackConfig 礼包配置（服务端配置域）。CodeRequired=true 时内容经核销码
+// 兑换（库存=码池），false 为直发（库存不限，内容发放走游戏服接缝）。
+type GiftPackConfig struct {
+	Name         string         `json:"name"`
+	GameId       string         `json:"game_id"`
+	Description  string         `json:"description,optional"`
+	Timezone     string         `json:"timezone"`
+	StartAt      string         `json:"start_at"`
+	EndAt        string         `json:"end_at"`
+	ServerIds    []int64        `json:"server_ids,optional"`
+	Channel      string         `json:"channel,optional"`
+	Audience     map[string]any `json:"audience,optional"`
+	PerUserLimit int64          `json:"per_user_limit,optional"`
+	CodeRequired bool           `json:"code_required,optional"`
+	Content      map[string]any `json:"content"`
+}
+
+type CreateGiftPackRequest struct {
+	GiftPackConfig
+}
+
+type UpdateGiftPackRequest struct {
+	Id int64 `path:"id"`
+	GiftPackConfig
+}
+
+type GiftPackPathRequest struct {
+	Id int64 `path:"id"`
+}
+
+type GiftPackListRequest struct {
+	GameId string `form:"game_id,optional"`
+	Status string `form:"status,optional"`
+}
+
+// GiftPackView 礼包配置视图。
+type GiftPackView struct {
+	Id           int64          `json:"id"`
+	Name         string         `json:"name"`
+	GameId       string         `json:"game_id"`
+	Description  string         `json:"description"`
+	Status       string         `json:"status"`
+	Timezone     string         `json:"timezone"`
+	StartAt      string         `json:"start_at"`
+	EndAt        string         `json:"end_at"`
+	ServerIds    []int64        `json:"server_ids"`
+	Channel      string         `json:"channel"`
+	Audience     map[string]any `json:"audience"`
+	PerUserLimit int64          `json:"per_user_limit"`
+	CodeRequired bool           `json:"code_required"`
+	Content      map[string]any `json:"content"`
+	CreatedBy    int64          `json:"created_by"`
+	CreatedAt    string         `json:"created_at"`
+	UpdatedAt    string         `json:"updated_at"`
+}
+
+type GiftPackResponse struct {
+	GiftPack GiftPackView `json:"gift_pack"`
+}
+
+type GiftPackListResponse struct {
+	Items []GiftPackView `json:"items"`
+}
+
+// PlayerGiftPackView 玩家侧展示（含剩余库存与已领次数）。
+type PlayerGiftPackView struct {
+	GiftPackView
+	AvailableCodes int64 `json:"available_codes"`
+	ClaimedCount   int64 `json:"claimed_count"`
+}
+
+type PlayerGiftPackListResponse struct {
+	Items []PlayerGiftPackView `json:"items"`
+}
+
+// ImportCodesRequest 批量导入码库存。
+type ImportCodesRequest struct {
+	Id    int64    `path:"id"`
+	Codes []string `json:"codes"`
+}
+
+type ImportCodesResponse struct {
+	Imported  int `json:"imported"`
+	Duplicate int `json:"duplicate"`
+}
+
+type CodeListRequest struct {
+	Id     int64  `path:"id"`
+	Status string `form:"status,optional"`
+}
+
+type CodeListResponse struct {
+	Codes []CodeView `json:"codes"`
+}
+
+type CodeView struct {
+	Id        int64  `json:"id"`
+	PackId    int64  `json:"pack_id"`
+	Code      string `json:"code"`
+	Status    string `json:"status"`
+	AccountId string `json:"account_id"`
+	ClaimId   int64  `json:"claim_id"`
+	IssuedAt  string `json:"issued_at"`
+	UsedAt    string `json:"used_at"`
+	CreatedAt string `json:"created_at"`
+}
+
+// ClaimGiftPackRequest 玩家领取（server_id/role_id 为区服角色锚点；
+// audience_type 为定向人群标签，定向礼包须匹配；request_id 为幂等键）。
+type ClaimGiftPackRequest struct {
+	Id           int64  `path:"id"`
+	ServerId     int64  `json:"server_id,optional"`
+	RoleId       string `json:"role_id,optional"`
+	AudienceType string `json:"audience_type,optional"`
+	RequestId    string `json:"request_id"`
+}
+
+type ClaimGiftPackResponse struct {
+	Claim ClaimView `json:"claim"`
+	Code  *CodeView `json:"code,omitempty"`
+}
+
+type ClaimView struct {
+	Id         int64  `json:"id"`
+	PackId     int64  `json:"pack_id"`
+	AccountId  string `json:"account_id"`
+	GameId     string `json:"game_id"`
+	ServerId   int64  `json:"server_id"`
+	RoleId     string `json:"role_id"`
+	ClaimIndex int64  `json:"claim_index"`
+	RequestId  string `json:"request_id"`
+	Status     string `json:"status"`
+	CreatedAt  string `json:"created_at"`
+}
+
+type ClaimListResponse struct {
+	Claims []ClaimView `json:"claims"`
+}
+
+// ClaimListAdminRequest 管理面领取记录筛（全可选）。
+type ClaimListAdminRequest struct {
+	PackId    int64  `form:"pack_id,optional"`
+	AccountId string `form:"account_id,optional"`
+}
+
+// RedeemGiftPackRequest 游戏服核销回调（S2S 签名）：mark issued → used。
+type RedeemGiftPackRequest struct {
+	CodeId int64 `json:"code_id"`
+	PackId int64 `json:"pack_id"`
+}

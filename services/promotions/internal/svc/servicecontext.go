@@ -15,6 +15,7 @@ type ServiceContext struct {
 	Auth       *utils.Auth
 	ActivityDB *model.ActivityModel
 	RewardDB   *model.RewardGrantModel
+	GiftPackDB *model.GiftPackModel
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -37,11 +38,16 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := rewardDB.CreateTables(); err != nil {
 		panic(fmt.Sprintf("create reward grant tables: %v", err))
 	}
+	giftPackDB := model.NewGiftPackModel(db)
+	if err := giftPackDB.CreateTables(); err != nil {
+		panic(fmt.Sprintf("create gift pack tables: %v", err))
+	}
 
 	return &ServiceContext{
 		Config:     c,
 		Auth:       utils.NewAuth(c.Auth.JWTSecret),
 		ActivityDB: activityDB,
 		RewardDB:   rewardDB,
+		GiftPackDB: giftPackDB,
 	}
 }

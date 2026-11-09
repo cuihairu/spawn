@@ -39,5 +39,22 @@ func RegisterPromotionsRoutes(server *rest.Server, serverCtx *svc.ServiceContext
 		// GP-302 奖励发放账本查询。/internal/reward-evaluations 为 payments
 		// S2S 专用（HMAC 签名），不进网关。
 		{Method: http.MethodGet, Path: "/admin/reward-grants", Handler: h},
+		// GP-304 礼包：管理面 + 玩家侧展示/领取/我的领取。核销回调
+		// /internal/gift-pack-redemptions 为游戏服 S2S（HMAC），不进网关。
+		{Method: http.MethodPost, Path: "/admin/gift-packs", Handler: h},
+		{Method: http.MethodPut, Path: "/admin/gift-packs/:id", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/gift-packs/:id/publish", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/gift-packs/:id/disable", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/gift-packs/:id/revise", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/gift-packs", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/gift-packs/:id", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/gift-packs/:id/codes", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/gift-packs/:id/codes", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/gift-packs/:id/claims", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/gift-claims", Handler: h},
+		{Method: http.MethodGet, Path: "/gift-packs", Handler: h},
+		{Method: http.MethodGet, Path: "/gift-packs/:id", Handler: h},
+		{Method: http.MethodPost, Path: "/gift-packs/:id/claim", Handler: h},
+		{Method: http.MethodGet, Path: "/gift-claims/me", Handler: h},
 	})
 }
