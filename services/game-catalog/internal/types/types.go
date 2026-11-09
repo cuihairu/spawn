@@ -275,3 +275,39 @@ type MeResponse struct {
 	Role      string `json:"role"`
 	PartnerId int64  `json:"partner_id"`
 }
+
+// GP-201 区服目录/充值目标：合作方维护区服，玩家公开读开放区服。
+type GameServer struct {
+	Id        int64  `json:"id"`
+	GameId    string `json:"game_id"`
+	Name      string `json:"name"`
+	Region    string `json:"region"`
+	Status    string `json:"status"`
+	Sort      int64  `json:"sort"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// CreateServerRequest 新建区服（path id = game id）；status 缺省 open，
+// 可选 open/maintenance/closed。
+type CreateServerRequest struct {
+	Id     string `path:"id"`
+	Name   string `json:"name"`
+	Region string `json:"region,optional"`
+	Status string `json:"status,optional"`
+	Sort   int64  `json:"sort,optional"`
+}
+
+// UpdateServerRequest 更新区服（改名/迁移/状态变更）；空字段保持原值。
+type UpdateServerRequest struct {
+	Id       string `path:"id"`
+	ServerId int64  `path:"serverId"`
+	Name     string `json:"name,optional"`
+	Region   string `json:"region,optional"`
+	Status   string `json:"status,optional"`
+	Sort     int64  `json:"sort,optional"`
+}
+
+type ServerListResponse struct {
+	Items []GameServer `json:"items"`
+}

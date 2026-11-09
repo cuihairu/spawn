@@ -99,3 +99,13 @@ func toAudit(a *model.AuditLog) *types.AuditLog {
 		BeforeJson: a.BeforeJson, AfterJson: a.AfterJson, Ip: a.Ip, CreatedAt: a.CreatedAt,
 	}
 }
+
+func toTypesServer(s *model.GameServer) *types.GameServer {
+	if s == nil {
+		return &types.GameServer{}
+	}
+	return &types.GameServer{
+		Id: s.Id, GameId: s.GameId, Name: s.Name, Region: s.Region,
+		Status: s.Status, Sort: s.Sort, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
+	}
+}

@@ -45,6 +45,11 @@ func RegisterGameProxyRoutes(server *rest.Server, serverCtx *svc.ServiceContext)
 		{Method: http.MethodPost, Path: "/partner/games/:id/submit", Handler: h},
 		{Method: http.MethodPost, Path: "/partner/games/:id/versions", Handler: h},
 		{Method: http.MethodGet, Path: "/partner/games/:id/versions", Handler: h},
+		// GP-201 区服目录/充值目标：公开读 + 合作方维护（鉴权在 game-catalog 侧）
+		{Method: http.MethodGet, Path: "/games/:id/servers", Handler: h},
+		{Method: http.MethodPost, Path: "/partner/games/:id/servers", Handler: h},
+		{Method: http.MethodGet, Path: "/partner/games/:id/servers", Handler: h},
+		{Method: http.MethodPatch, Path: "/partner/games/:id/servers/:serverId", Handler: h},
 	})
 
 	// GP-105 包体通道：latest 元数据是小 JSON，走普通反代；上传/下载为

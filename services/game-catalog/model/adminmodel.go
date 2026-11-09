@@ -37,6 +37,12 @@ const (
 	VersionStatusRejected  = "rejected"
 	VersionStatusPublished = "published"
 	VersionStatusRevoked   = "revoked"
+
+	// 区服状态（GP-201）：open 可进/可充值，maintenance 维护中，closed 下线
+	// （玩家侧隐藏，仅合作方后台可见，保留充值对账记录）。
+	ServerStatusOpen        = "open"
+	ServerStatusMaintenance = "maintenance"
+	ServerStatusClosed      = "closed"
 )
 
 var (
@@ -45,6 +51,7 @@ var (
 	ErrVersionNotFound      = errors.New("version not found")
 	ErrVersionPackageLocked = errors.New("version package locked")
 	ErrOwnershipMissing     = errors.New("game ownership missing")
+	ErrServerNotFound       = errors.New("server not found")
 )
 
 // Partner 合作方主体（F11）：先最小化人工审核，在线签约后续再考虑。
@@ -105,6 +112,19 @@ type GameVersion struct {
 	CreatedAt       string `json:"created_at"`
 }
 
+// GameServer 游戏区服（GP-201 区服目录）：合作方维护，玩家公开读开放区服；
+// 同时作为充值目标（充值按 game_id + server_id 定位区服）。
+type GameServer struct {
+	Id        int64  `json:"id"`
+	GameId    string `json:"game_id"`
+	Name      string `json:"name"`
+	Region    string `json:"region"`
+	Status    string `json:"status"`
+	Sort      int64  `json:"sort"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
 // AuditLog 操作审计（设计 §4：绑定/映射/能力变更均写审计）。
 type AuditLog struct {
 	Id           int64  `json:"id"`
@@ -151,6 +171,12 @@ type AdminStore interface {
 	// GP-105 包体托管：上传后回填哈希/大小/托管地址；取当前已发布版本。
 	UpdateVersionPackage(id, hash string, sizeBytes int64, storageUrl string) (*GameVersion, error)
 	GetLatestPublishedVersion(gameId string) (*GameVersion, error)
+
+	// GP-201 区服目录/充值目标：合作方维护，玩家公开读（隐藏 closed）。
+	CreateGameServer(gameId string, s *GameServer) (*GameServer, error)
+	GetGameServer(id int64) (*GameServer, error)
+	ListGameServers(gameId string, includeClosed bool) ([]*GameServer, error)
+	UpdateGameServer(s *GameServer) (*GameServer, error)
 
 	WriteAudit(entry *AuditLog) error
 	ListAuditLogs(resourceType string, limit, offset int) ([]*AuditLog, int, error)
@@ -278,6 +304,29 @@ func (m *AdminModel) CreateAdminTables() error {
 				review_reason VARCHAR(1024) NOT NULL DEFAULT '',
 				created_at VARCHAR(32) NOT NULL,
 				KEY idx_versions_game (game_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			`CREATE TABLE IF NOT EXISTS game_servers (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				game_id VARCHAR(64) NOT NULL,
+				name VARCHAR(128) NOT NULL,
+				region VARCHAR(64) NOT NULL DEFAULT '',
+				status VARCHAR(16) NOT NULL DEFAULT 'open',
+				sort INTEGER NOT NULL DEFAULT 0,
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS game_servers (
+				id BIGINT AUTO_INCREMENT PRIMARY KEY,
+				game_id VARCHAR(64) NOT NULL,
+				name VARCHAR(128) NOT NULL,
+				region VARCHAR(64) NOT NULL DEFAULT '',
+				status VARCHAR(16) NOT NULL DEFAULT 'open',
+				sort BIGINT NOT NULL DEFAULT 0,
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				KEY idx_servers_game (game_id)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 		},
 		{

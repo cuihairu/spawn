@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/tappi/tappi/services/game-catalog/internal/store"
@@ -252,4 +253,109 @@ func (l *PartnerLogic) ListVersions(gameID string) (*types.VersionListResponse, 
 		out = append(out, *toVersion(v))
 	}
 	return &types.VersionListResponse{Versions: out}, nil
+}
+
+// ---- GP-201 区服目录/充值目标 ----
+
+func validServerStatus(status string) bool {
+	switch status {
+	case model.ServerStatusOpen, model.ServerStatusMaintenance, model.ServerStatusClosed:
+		return true
+	}
+	return false
+}
+
+// CreateServer 合作方为自有游戏新建区服（充值目标）。
+func (l *PartnerLogic) CreateServer(req *types.CreateServerRequest) (*types.GameServer, error) {
+	partnerID := l.partnerID()
+	if partnerID <= 0 {
+		return nil, newAPIError(http.StatusForbidden, "当前账号未绑定合作方")
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return nil, newAPIError(http.StatusBadRequest, "区服名不能为空")
+	}
+	if req.Status != "" && !validServerStatus(req.Status) {
+		return nil, newAPIError(http.StatusBadRequest, "非法区服状态")
+	}
+	if err := l.ownGame(partnerID, req.Id); err != nil {
+		return nil, err
+	}
+	s, err := l.svcCtx.AdminRepository.CreateGameServer(req.Id, &model.GameServer{
+		Name: strings.TrimSpace(req.Name), Region: req.Region, Status: req.Status, Sort: req.Sort,
+	})
+	if err != nil {
+		l.Errorf("create game server failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "创建区服失败")
+	}
+	l.audit("game_server_create", "game_server", strconvFormatInt(s.Id), "", toJSON(toTypesServer(s)))
+	return toTypesServer(s), nil
+}
+
+// UpdateServer 合作方更新区服（改名/迁移/状态变更）；空字段保持原值。
+func (l *PartnerLogic) UpdateServer(req *types.UpdateServerRequest) (*types.GameServer, error) {
+	partnerID := l.partnerID()
+	if partnerID <= 0 {
+		return nil, newAPIError(http.StatusForbidden, "当前账号未绑定合作方")
+	}
+	if err := l.ownGame(partnerID, req.Id); err != nil {
+		return nil, err
+	}
+	current, err := l.svcCtx.AdminRepository.GetGameServer(req.ServerId)
+	if errors.Is(err, model.ErrServerNotFound) || (err == nil && current.GameId != req.Id) {
+		return nil, newAPIError(http.StatusNotFound, "区服不存在")
+	}
+	if err != nil {
+		l.Errorf("get game server failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询区服失败")
+	}
+	if req.Status != "" {
+		if !validServerStatus(req.Status) {
+			return nil, newAPIError(http.StatusBadRequest, "非法区服状态")
+		}
+		current.Status = req.Status
+	}
+	if strings.TrimSpace(req.Name) != "" {
+		current.Name = strings.TrimSpace(req.Name)
+	}
+	if strings.TrimSpace(req.Region) != "" {
+		current.Region = req.Region
+	}
+	if req.Sort > 0 {
+		current.Sort = req.Sort
+	}
+	updated, err := l.svcCtx.AdminRepository.UpdateGameServer(current)
+	if errors.Is(err, model.ErrServerNotFound) {
+		return nil, newAPIError(http.StatusNotFound, "区服不存在")
+	}
+	if err != nil {
+		l.Errorf("update game server failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "更新区服失败")
+	}
+	l.audit("game_server_update", "game_server", strconvFormatInt(updated.Id), toJSON(toTypesServer(current)), toJSON(toTypesServer(updated)))
+	return toTypesServer(updated), nil
+}
+
+// ListPartnerServers 合作方视角区服列表：全部状态可见（closed 保留对账）。
+func (l *PartnerLogic) ListPartnerServers(gameID string) (*types.ServerListResponse, error) {
+	partnerID := l.partnerID()
+	if partnerID <= 0 {
+		return nil, newAPIError(http.StatusForbidden, "当前账号未绑定合作方")
+	}
+	if err := l.ownGame(partnerID, gameID); err != nil {
+		return nil, err
+	}
+	servers, err := l.svcCtx.AdminRepository.ListGameServers(gameID, true)
+	if err != nil {
+		l.Errorf("list game servers failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询区服失败")
+	}
+	items := make([]types.GameServer, 0, len(servers))
+	for _, s := range servers {
+		items = append(items, *toTypesServer(s))
+	}
+	return &types.ServerListResponse{Items: items}, nil
+}
+
+func strconvFormatInt(v int64) string {
+	return strconv.FormatInt(v, 10)
 }

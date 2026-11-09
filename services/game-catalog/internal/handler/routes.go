@@ -67,6 +67,8 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 	// 的版本，未发布/跨游戏一律 404 不泄露存在性。
 	server.AddRoutes([]rest.Route{
 		{Method: http.MethodGet, Path: "/games/:id/versions/latest", Handler: LatestVersionHandler(serverCtx)},
+		// GP-201 公开区服列表（充值目标）：只对已上架游戏开放，隐藏 closed
+		{Method: http.MethodGet, Path: "/games/:id/servers", Handler: PublicListServersHandler(serverCtx)},
 	})
 	server.AddRoutes(rest.WithMiddleware(auth,
 		rest.Route{Method: http.MethodGet, Path: "/games/:id/versions/:versionId/download", Handler: DownloadVersionHandler(serverCtx)},
@@ -103,6 +105,10 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			rest.Route{Method: http.MethodGet, Path: "/partner/games/:id/versions", Handler: PartnerListVersionsHandler(serverCtx)},
 			// GP-105 平台托管包体上传（multipart，流式落盘）
 			rest.Route{Method: http.MethodPost, Path: "/partner/games/:id/versions/:versionId/package", Handler: PartnerUploadPackageHandler(serverCtx)},
+			// GP-201 区服目录/充值目标：合作方维护自有游戏的区服
+			rest.Route{Method: http.MethodPost, Path: "/partner/games/:id/servers", Handler: PartnerCreateServerHandler(serverCtx)},
+			rest.Route{Method: http.MethodGet, Path: "/partner/games/:id/servers", Handler: PartnerListServersHandler(serverCtx)},
+			rest.Route{Method: http.MethodPatch, Path: "/partner/games/:id/servers/:serverId", Handler: PartnerUpdateServerHandler(serverCtx)},
 		)...,
 	))
 }
