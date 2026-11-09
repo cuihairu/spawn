@@ -127,7 +127,8 @@ func (l *OrderLogic) CreateOrder(req *types.CreateOrderRequest, bearer string) (
 	// 订单只读投影（事实副本）：CREATED 快照；状态后续由回调（PAID）与
 	// 投递面（DELIVERED）上报，本服务不推进状态机
 	if err := l.svcCtx.ProjectionDB.UpsertFromOrder(&model.OrderProjection{
-		OrderId: order.Id, GameId: product.GameId, PartnerId: product.PartnerId, AccountId: fmt.Sprintf("%d", userID),
+		OrderId: order.Id, GameId: product.GameId, PartnerId: product.PartnerId,
+		AccountId: fmt.Sprintf("%d", userID), BaseQuantity: product.BaseQuantity,
 		SkuId: req.SkuId, ProductId: product.ProductId, Form: product.Form,
 		AmountCents: product.AmountCents, Currency: product.Currency, Status: order.Status,
 	}); err != nil {

@@ -29,19 +29,22 @@ type Product struct {
 	ProductId   string `json:"product_id"` // 发货目标（道具/货币包 ID）
 	Form        string `json:"form"`       // 四形态之一
 	AmountCents int64  `json:"amount_cents"`
-	Currency    string `json:"currency"`   // ISO 4217，如 CNY
-	GameId      string `json:"game_id"`    // 所属游戏（scope）
-	PartnerId   int64  `json:"partner_id"` // 商户（合作方）归属
-	Enabled     bool   `json:"enabled"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	// BaseQuantity 基础购买内容数量（如 100 游戏币；GP-302 倍率赠送的
+	// 基础量，服务端配置随订单事实固化，非客户端上报）
+	BaseQuantity int64  `json:"base_quantity"`
+	Currency     string `json:"currency"`   // ISO 4217，如 CNY
+	GameId       string `json:"game_id"`    // 所属游戏（scope）
+	PartnerId    int64  `json:"partner_id"` // 商户（合作方）归属
+	Enabled      bool   `json:"enabled"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
-const productColumns = "id, product_id, form, amount_cents, currency, game_id, partner_id, enabled, created_at, updated_at"
+const productColumns = "id, product_id, form, amount_cents, base_quantity, currency, game_id, partner_id, enabled, created_at, updated_at"
 
 func scanProduct(p *Product) []any {
-	return []any{&p.Id, &p.ProductId, &p.Form, &p.AmountCents, &p.Currency,
-		&p.GameId, &p.PartnerId, &p.Enabled, &p.CreatedAt, &p.UpdatedAt}
+	return []any{&p.Id, &p.ProductId, &p.Form, &p.AmountCents, &p.BaseQuantity,
+		&p.Currency, &p.GameId, &p.PartnerId, &p.Enabled, &p.CreatedAt, &p.UpdatedAt}
 }
 
 func (m *ProductModel) CreateTables() error {
@@ -52,6 +55,7 @@ func (m *ProductModel) CreateTables() error {
 				product_id VARCHAR(128) NOT NULL,
 				form VARCHAR(32) NOT NULL,
 				amount_cents INTEGER NOT NULL,
+				base_quantity INTEGER NOT NULL DEFAULT 0,
 				currency VARCHAR(8) NOT NULL,
 				game_id VARCHAR(64) NOT NULL,
 				partner_id INTEGER NOT NULL DEFAULT 0,
@@ -64,6 +68,7 @@ func (m *ProductModel) CreateTables() error {
 				product_id VARCHAR(128) NOT NULL,
 				form VARCHAR(32) NOT NULL,
 				amount_cents BIGINT NOT NULL,
+				base_quantity BIGINT NOT NULL DEFAULT 0,
 				currency VARCHAR(8) NOT NULL,
 				game_id VARCHAR(64) NOT NULL,
 				partner_id BIGINT NOT NULL DEFAULT 0,
@@ -89,10 +94,10 @@ func (m *ProductModel) Create(p *Product) (*Product, error) {
 	p.Enabled = true
 	p.CreatedAt, p.UpdatedAt = now, now
 	if _, err := m.db.Exec(
-		`INSERT INTO payment_products (id, product_id, form, amount_cents, currency, game_id, partner_id, enabled, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.Id, p.ProductId, p.Form, p.AmountCents, p.Currency, p.GameId, p.PartnerId,
-		p.Enabled, now, now,
+		`INSERT INTO payment_products (id, product_id, form, amount_cents, base_quantity, currency, game_id, partner_id, enabled, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.Id, p.ProductId, p.Form, p.AmountCents, p.BaseQuantity, p.Currency,
+		p.GameId, p.PartnerId, p.Enabled, now, now,
 	); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "Duplicate") {
 			return nil, ErrProductExists

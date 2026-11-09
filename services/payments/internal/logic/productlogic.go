@@ -58,8 +58,9 @@ func (l *ProductLogic) Create(req *types.CreateProductRequest, authHeader string
 	}
 	p, err := l.svcCtx.ProductDB.Create(&model.Product{
 		Id: req.Id, ProductId: req.ProductId, Form: req.Form,
-		AmountCents: req.AmountCents, Currency: strings.ToUpper(req.Currency),
-		GameId: req.GameId, PartnerId: req.PartnerId,
+		AmountCents: req.AmountCents, BaseQuantity: req.BaseQuantity,
+		Currency: strings.ToUpper(req.Currency),
+		GameId:   req.GameId, PartnerId: req.PartnerId,
 	})
 	if err == model.ErrProductExists {
 		return nil, newAPIError(http.StatusConflict, "商品 id 已存在")
@@ -110,8 +111,9 @@ func toTypesProduct(p *model.Product) *types.Product {
 	}
 	return &types.Product{
 		Id: p.Id, ProductId: p.ProductId, Form: p.Form,
-		AmountCents: p.AmountCents, Currency: p.Currency,
-		GameId: p.GameId, PartnerId: p.PartnerId, Enabled: p.Enabled,
+		AmountCents: p.AmountCents, BaseQuantity: p.BaseQuantity,
+		Currency: p.Currency,
+		GameId:   p.GameId, PartnerId: p.PartnerId, Enabled: p.Enabled,
 		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
 }

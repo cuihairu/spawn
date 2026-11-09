@@ -156,6 +156,10 @@ services:
       # GP-203 发货接缝密钥：teller Deliver 钩子（进程内）的签名 webhook
       # 落地面。未配置 = 分发 fail-closed（全部 403）；生产必须注入。
       PAYMENTS_DELIVERY_SECRET: "${PAYMENTS_DELIVERY_SECRET:-}"
+      # GP-302 活动奖励评估：PAID 订单事实推送 promotions（倍率赠送）。
+      # SECRET 与 promotions 侧同值；未配置 URL = 不入队不分发。
+      PROMOTIONS_URL: http://promotions:8902
+      PROMOTIONS_REWARD_SECRET: "${PROMOTIONS_REWARD_SECRET:-tappi-promotions-reward-secret-2026}"
     depends_on:
       - user-service
       - game-catalog
@@ -173,6 +177,8 @@ services:
     environment:
       JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
       GAMECATALOG_BASE_URL: http://game-catalog:8890
+      # GP-302 S2S 评估签名密钥（与 payments 侧同值；生产必须覆盖默认值）
+      PROMOTIONS_REWARD_SECRET: "${PROMOTIONS_REWARD_SECRET:-tappi-promotions-reward-secret-2026}"
     depends_on:
       - user-service
       - game-catalog

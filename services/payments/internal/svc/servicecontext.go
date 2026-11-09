@@ -8,6 +8,7 @@ import (
 	"github.com/tappi/tappi/services/payments/internal/channel"
 	"github.com/tappi/tappi/services/payments/internal/config"
 	"github.com/tappi/tappi/services/payments/internal/delivery"
+	"github.com/tappi/tappi/services/payments/internal/promotion"
 	"github.com/tappi/tappi/services/payments/model"
 	"github.com/tappi/tappi/services/payments/utils"
 
@@ -15,16 +16,18 @@ import (
 )
 
 type ServiceContext struct {
-	Config       config.Config
-	Auth         *utils.Auth
-	ProductDB    *model.ProductModel
-	DeliveryDB   *model.DeliveryModel
-	ProjectionDB *model.OrderProjectionModel
-	StatementDB  *model.StatementModel
-	Courier      *courier.Client
-	Sandbox      *channel.SandboxHMAC
-	Real         *channel.RealChannel
-	Dispatcher   *delivery.Dispatcher
+	Config          config.Config
+	Auth            *utils.Auth
+	ProductDB       *model.ProductModel
+	DeliveryDB      *model.DeliveryModel
+	ProjectionDB    *model.OrderProjectionModel
+	StatementDB     *model.StatementModel
+	EvalDB          *model.PromotionEvalModel
+	Courier         *courier.Client
+	Sandbox         *channel.SandboxHMAC
+	Real            *channel.RealChannel
+	Dispatcher      *delivery.Dispatcher
+	PromotionBridge *promotion.Bridge
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -66,6 +69,13 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := statementDB.CreateTables(); err != nil {
 		panic(fmt.Sprintf("create statement tables: %v", err))
 	}
+	evalDB := model.NewPromotionEvalModel(db)
+	if err := evalDB.CreateTables(); err != nil {
+		panic(fmt.Sprintf("create promotion eval tables: %v", err))
+	}
+	// GP-302 奖励评估桥（PROMOTIONS_URL 未配置 = 不入队不分发）
+	bridge := promotion.NewBridge(evalDB, c.Promotions.BaseURL, c.Promotions.Secret,
+		c.Promotions.Timeout)
 
 	timeout := time.Millisecond * time.Duration(c.Courier.Timeout)
 	courierClient := courier.NewClient(c.Courier.BaseURL, timeout)
@@ -75,15 +85,17 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		func(orderID string) { _ = projectionDB.MarkDelivered(orderID, time.Now().UTC().Format(time.RFC3339)) })
 
 	return &ServiceContext{
-		Config:       c,
-		Auth:         utils.NewAuth(c.Auth.JWTSecret),
-		ProductDB:    productDB,
-		DeliveryDB:   deliveryDB,
-		ProjectionDB: projectionDB,
-		StatementDB:  statementDB,
-		Courier:      courierClient,
-		Sandbox:      &channel.SandboxHMAC{Secret: []byte(c.Channel.SandboxSecret)},
-		Real:         channel.NewRealChannel("real-channel"),
-		Dispatcher:   dispatcher,
+		Config:          c,
+		Auth:            utils.NewAuth(c.Auth.JWTSecret),
+		ProductDB:       productDB,
+		DeliveryDB:      deliveryDB,
+		ProjectionDB:    projectionDB,
+		StatementDB:     statementDB,
+		EvalDB:          evalDB,
+		Courier:         courierClient,
+		Sandbox:         &channel.SandboxHMAC{Secret: []byte(c.Channel.SandboxSecret)},
+		Real:            channel.NewRealChannel("real-channel"),
+		Dispatcher:      dispatcher,
+		PromotionBridge: bridge,
 	}
 }

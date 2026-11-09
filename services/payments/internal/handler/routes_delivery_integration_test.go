@@ -41,9 +41,30 @@ type testDeliveryEnv struct {
 	svcCtx     *svc.ServiceContext
 	sign       func(claims utils.JWTClaims) string
 	gameServer *deliveryGameStub
+	promo      *promoStub
 	orderSeq   int64
 	orderMu    sync.Mutex
 	orders     []map[string]any
+}
+
+// promoStub GP-302 promotions 评估接口存根（记录原始体+签名供验签断言）。
+type promoStub struct {
+	mu   sync.Mutex
+	raw  [][]byte
+	sigs []string
+	srv  *httptest.Server
+}
+
+func (p *promoStub) Calls() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.raw)
+}
+
+func (p *promoStub) Request(i int) ([]byte, string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.raw[i], p.sigs[i]
 }
 
 // deliveryGameStub 游戏服发货接口存根（可翻转失败；记录调用/载荷/签名）。
@@ -151,6 +172,19 @@ func newDeliveryServer(t *testing.T) *testDeliveryEnv {
 	t.Cleanup(game.srv.Close)
 	env.gameServer = game
 
+	// GP-302 promotions 评估接口存根（默认受理 200）
+	promo := &promoStub{}
+	promo.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		promo.mu.Lock()
+		promo.raw = append(promo.raw, raw)
+		promo.sigs = append(promo.sigs, r.Header.Get("X-Reward-Signature"))
+		promo.mu.Unlock()
+		_, _ = w.Write([]byte(`{"order_id":"x","replay":false,"grants":[],"skipped":[]}`))
+	}))
+	t.Cleanup(promo.srv.Close)
+	env.promo = promo
+
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("grab port: %v", err)
@@ -166,6 +200,8 @@ func newDeliveryServer(t *testing.T) *testDeliveryEnv {
 	c.GameCatalog.BaseURL = catalog.URL
 	c.Channel.SandboxSecret = testSandboxSecret
 	c.Delivery.Secret = testDeliverySecret
+	c.Promotions.BaseURL = promo.srv.URL
+	c.Promotions.Secret = "promotions-reward-test-secret"
 
 	svcCtx := svc.NewServiceContext(c)
 	server := rest.MustNewServer(c.RestConf)

@@ -79,6 +79,11 @@ func validate(cfg *types.ActivityConfig) error {
 			}
 		}
 	}
+	// GP-302 倍率奖励规格：语义显式（mode=total 含基础 ≥10000 / mode=extra
+	// 纯加赠 ≥0），草稿即校验，发布快照与运行时共用同一口径
+	if _, err := ParseMultiplierSpec(cfg.Rewards); err != nil {
+		return err
+	}
 	return nil
 }
 

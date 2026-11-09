@@ -216,8 +216,9 @@ func requireAdmin(ctx context.Context, svcCtx *svc.ServiceContext, authHeader st
 func toProjectionView(p *model.OrderProjection) types.OrderProjectionView {
 	return types.OrderProjectionView{
 		OrderId: p.OrderId, GameId: p.GameId, PartnerId: p.PartnerId, AccountId: p.AccountId, SkuId: p.SkuId,
-		ProductId: p.ProductId, Form: p.Form, AmountCents: p.AmountCents, Currency: p.Currency,
-		Status: p.Status, PaidAt: p.PaidAt, DeliveredAt: p.DeliveredAt,
+		ProductId: p.ProductId, Form: p.Form, AmountCents: p.AmountCents, BaseQuantity: p.BaseQuantity,
+		Currency: p.Currency,
+		Status:   p.Status, PaidAt: p.PaidAt, DeliveredAt: p.DeliveredAt,
 		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/tappi/tappi/services/payments/internal/channel"
+	"github.com/tappi/tappi/services/payments/internal/promotion"
 	"github.com/tappi/tappi/services/payments/internal/svc"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -60,6 +61,8 @@ func (l *CallbackLogic) Handle(channelName string, rawBody []byte, signature str
 	}
 	// 订单投影 PAID（事实副本；状态值来自 Courier 接受回调后，非本服务推进）
 	l.projectPaid(rawBody)
+	// GP-302 活动奖励评估入队（促销服务未部署时行为不变）
+	l.enqueueRewardEvaluation(rawBody, channelName)
 	return nil
 }
 
@@ -76,6 +79,48 @@ func (l *CallbackLogic) projectPaid(rawBody []byte) {
 	}
 	if err := l.svcCtx.ProjectionDB.MarkPaid(body.OrderId, body.PaidAt); err != nil {
 		l.Errorf("project paid order=%s failed: %v", body.OrderId, err)
+	}
+}
+
+// enqueueRewardEvaluation GP-302：PAID 后按投影+发货账本事实入队（基础量
+// 为下单时服务端商品固化值）。失败仅记日志（队列扫描会兜底重投；未入队
+// 的极端场景由投影/账本事实可查，不阻塞回调）。
+func (l *CallbackLogic) enqueueRewardEvaluation(rawBody []byte, channelName string) {
+	if !l.svcCtx.PromotionBridge.Enabled() {
+		return
+	}
+	var body struct {
+		OrderId string `json:"orderId"`
+		PaidAt  string `json:"paidAt"`
+	}
+	if err := json.Unmarshal(rawBody, &body); err != nil || body.OrderId == "" {
+		return
+	}
+	proj, err := l.svcCtx.ProjectionDB.Get(body.OrderId)
+	if err != nil {
+		l.Errorf("load projection for reward eval order=%s failed: %v", body.OrderId, err)
+		return
+	}
+	serverID, roleID := int64(0), ""
+	if d, err := l.svcCtx.DeliveryDB.Get(body.OrderId); err == nil {
+		serverID, roleID = d.ServerId, d.RoleId
+	}
+	facts := promotion.Facts{
+		OrderId:      proj.OrderId,
+		GameId:       proj.GameId,
+		ServerId:     serverID,
+		RoleId:       roleID,
+		AccountId:    proj.AccountId,
+		SkuId:        proj.SkuId,
+		ProductId:    proj.ProductId,
+		Channel:      channelName,
+		PaidCents:    proj.AmountCents,
+		Currency:     proj.Currency,
+		PaidAt:       proj.PaidAt,
+		BaseQuantity: proj.BaseQuantity,
+	}
+	if err := l.svcCtx.PromotionBridge.Enqueue(body.OrderId, channelName, facts); err != nil {
+		l.Errorf("enqueue reward eval order=%s failed: %v", body.OrderId, err)
 	}
 }
 

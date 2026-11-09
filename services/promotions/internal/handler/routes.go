@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -33,8 +34,15 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodGet, Path: "/admin/activities/:id", Handler: GetActivityHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/activities/:id/versions", Handler: ListActivityVersionsHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/activity-audit", Handler: ListActivityAuditHandler(svcCtx)},
+		// GP-302 奖励发放账本查询（管理面；评估入口为 S2S 专用不在此组）
+		{Method: http.MethodGet, Path: "/admin/reward-grants", Handler: ListRewardGrantsHandler(svcCtx)},
 	}
 	server.AddRoutes(rest.WithMiddleware(auth, adminRoutes...))
+
+	// GP-302 S2S 奖励评估（payments PAID 推送；HMAC 验签，不进网关）
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodPost, Path: "/internal/reward-evaluations", Handler: EvaluateRewardHandler(svcCtx)},
+	})
 }
 
 // AuthMiddleware 平台 JWT 认证（user-service 签发，本服务仅校验；注入原始
@@ -233,6 +241,41 @@ func ListActivityAuditHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 		resp, err := logic.NewActivityLogic(r.Context(), svcCtx).ListAudit(req.ActivityId, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// EvaluateRewardHandler GP-302 S2S 奖励评估：验签基于原始请求体
+// （HMAC 先于解析），与 payments 发货接缝同款。
+func EvaluateRewardHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rawBody, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewRewardLogic(r.Context(), svcCtx).Evaluate(rawBody, r.Header.Get("X-Reward-Signature"))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// ListRewardGrantsHandler GP-302 奖励账本管理面查询。
+func ListRewardGrantsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.RewardGrantListRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewRewardLogic(r.Context(), svcCtx).ListGrants(&req, authHeaderFrom(r))
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return

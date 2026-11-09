@@ -1,5 +1,7 @@
 package types
 
+import "encoding/json"
+
 // GP-301 活动基础类型。
 
 // ActivityConfig 活动配置（服务端配置域，不信任客户端可信金额/规则）。
@@ -104,4 +106,75 @@ type AuditView struct {
 
 type AuditListResponse struct {
 	Items []AuditView `json:"items"`
+}
+
+// GP-302 倍率赠送评估类型。
+
+// RewardEvaluateRequest 订单事实推送（payments S2S；基础量来自服务端
+// 商品配置，非客户端上报）。AudienceType 为玩家人群标签（可选；活动
+// 定向人群时须相等才命中）。
+type RewardEvaluateRequest struct {
+	OrderId      string `json:"order_id"`
+	GameId       string `json:"game_id"`
+	ServerId     int64  `json:"server_id"`
+	RoleId       string `json:"role_id"`
+	AccountId    string `json:"account_id"`
+	SkuId        string `json:"sku_id"`
+	ProductId    string `json:"product_id"`
+	Channel      string `json:"channel"`
+	PaidCents    int64  `json:"paid_cents"`
+	Currency     string `json:"currency"`
+	PaidAt       string `json:"paid_at"`
+	BaseQuantity int64  `json:"base_quantity"`
+	AudienceType string `json:"audience_type,optional"`
+}
+
+// RewardGrantView 奖励发放账本视图。
+type RewardGrantView struct {
+	Id              int64           `json:"id"`
+	OrderId         string          `json:"order_id"`
+	ActivityId      int64           `json:"activity_id"`
+	ActivityVersion int64           `json:"activity_version"`
+	GameId          string          `json:"game_id"`
+	ServerId        int64           `json:"server_id"`
+	RoleId          string          `json:"role_id"`
+	AccountId       string          `json:"account_id"`
+	SkuId           string          `json:"sku_id"`
+	PaidCents       int64           `json:"paid_cents"`
+	Currency        string          `json:"currency"`
+	BaseQuantity    int64           `json:"base_quantity"`
+	ExtraQuantity   int64           `json:"extra_quantity"`
+	TotalQuantity   int64           `json:"total_quantity"`
+	RateMode        string          `json:"rate_mode"`
+	RateBp          int64           `json:"rate_bp"`
+	Status          string          `json:"status"`
+	Snapshot        json.RawMessage `json:"snapshot"`
+	GrantedAt       string          `json:"granted_at"`
+}
+
+// RewardSkip 未发放明细（叠加排除/限次/零赠送）。
+type RewardSkip struct {
+	ActivityId int64  `json:"activity_id"`
+	Reason     string `json:"reason"`
+}
+
+// RewardEvaluateResponse 评估结果（Replay=同订单重放，返回已发放事实）。
+type RewardEvaluateResponse struct {
+	OrderId string            `json:"order_id"`
+	Replay  bool              `json:"replay"`
+	Grants  []RewardGrantView `json:"grants"`
+	Skipped []RewardSkip      `json:"skipped"`
+}
+
+// RewardGrantListRequest 管理面账本查询（全可选过滤）。
+type RewardGrantListRequest struct {
+	ActivityId int64  `form:"activity_id,optional"`
+	OrderId    string `form:"order_id,optional"`
+	GameId     string `form:"game_id,optional"`
+	AccountId  string `form:"account_id,optional"`
+}
+
+// RewardGrantListResponse 管理面账本列表。
+type RewardGrantListResponse struct {
+	Grants []RewardGrantView `json:"grants"`
 }

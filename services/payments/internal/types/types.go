@@ -8,12 +8,14 @@ type Product struct {
 	ProductId   string `json:"product_id"`
 	Form        string `json:"form"`
 	AmountCents int64  `json:"amount_cents"`
-	Currency    string `json:"currency"`
-	GameId      string `json:"game_id"`
-	PartnerId   int64  `json:"partner_id"`
-	Enabled     bool   `json:"enabled"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	// BaseQuantity 基础购买内容数量（GP-302 倍率赠送的基础量）
+	BaseQuantity int64  `json:"base_quantity"`
+	Currency     string `json:"currency"`
+	GameId       string `json:"game_id"`
+	PartnerId    int64  `json:"partner_id"`
+	Enabled      bool   `json:"enabled"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 // Order 订单快照（Courier 只读投影；不复制状态机）。
@@ -38,9 +40,11 @@ type CreateProductRequest struct {
 	ProductId   string `json:"product_id"`
 	Form        string `json:"form"`
 	AmountCents int64  `json:"amount_cents"`
-	Currency    string `json:"currency"`
-	GameId      string `json:"game_id"`
-	PartnerId   int64  `json:"partner_id,optional"`
+	// BaseQuantity 基础购买内容数量（可选；缺省 0 = 商品无数值内容量）
+	BaseQuantity int64  `json:"base_quantity,optional"`
+	Currency     string `json:"currency"`
+	GameId       string `json:"game_id"`
+	PartnerId    int64  `json:"partner_id,optional"`
 }
 
 // SetProductEnabledRequest 上下架商品（path id = SKU 标识）。
@@ -198,12 +202,14 @@ type OrderProjectionView struct {
 	ProductId   string `json:"product_id"`
 	Form        string `json:"form"`
 	AmountCents int64  `json:"amount_cents"`
-	Currency    string `json:"currency"`
-	Status      string `json:"status"`
-	PaidAt      string `json:"paid_at"`
-	DeliveredAt string `json:"delivered_at"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	// BaseQuantity 基础购买量（下单时从服务端商品配置固化）
+	BaseQuantity int64  `json:"base_quantity"`
+	Currency     string `json:"currency"`
+	Status       string `json:"status"`
+	PaidAt       string `json:"paid_at"`
+	DeliveredAt  string `json:"delivered_at"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 type AdminOrderListResponse struct {

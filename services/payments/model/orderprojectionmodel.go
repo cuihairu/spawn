@@ -32,12 +32,15 @@ type OrderProjection struct {
 	ProductId   string `json:"product_id"`
 	Form        string `json:"form"`
 	AmountCents int64  `json:"amount_cents"`
-	Currency    string `json:"currency"`
-	Status      string `json:"status"`
-	PaidAt      string `json:"paid_at"`
-	DeliveredAt string `json:"delivered_at"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	// BaseQuantity 基础购买量（下单时从服务端商品配置固化，GP-302 倍率
+	// 赠送的基础量；后改商品不改变旧订单）
+	BaseQuantity int64  `json:"base_quantity"`
+	Currency     string `json:"currency"`
+	Status       string `json:"status"`
+	PaidAt       string `json:"paid_at"`
+	DeliveredAt  string `json:"delivered_at"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 // OrderAuditLog 运营查询/退款操作审计（GP-004 模型：actor/action/资源/detail）。
@@ -76,11 +79,11 @@ const (
 	RefundActionCorrect  = "CORRECTION"
 )
 
-const projectionColumns = "order_id, game_id, partner_id, account_id, sku_id, product_id, form, amount_cents, currency, status, paid_at, delivered_at, created_at, updated_at"
+const projectionColumns = "order_id, game_id, partner_id, account_id, sku_id, product_id, form, amount_cents, base_quantity, currency, status, paid_at, delivered_at, created_at, updated_at"
 
 func scanProjection(p *OrderProjection) []any {
 	return []any{&p.OrderId, &p.GameId, &p.PartnerId, &p.AccountId, &p.SkuId, &p.ProductId, &p.Form,
-		&p.AmountCents, &p.Currency, &p.Status, &p.PaidAt, &p.DeliveredAt, &p.CreatedAt, &p.UpdatedAt}
+		&p.AmountCents, &p.BaseQuantity, &p.Currency, &p.Status, &p.PaidAt, &p.DeliveredAt, &p.CreatedAt, &p.UpdatedAt}
 }
 
 // OrderProjectionModel 投影/审计/退款数据访问。
@@ -104,6 +107,7 @@ func (m *OrderProjectionModel) CreateTables() error {
 				product_id VARCHAR(128) NOT NULL DEFAULT '',
 				form VARCHAR(32) NOT NULL DEFAULT '',
 				amount_cents INTEGER NOT NULL DEFAULT 0,
+				base_quantity INTEGER NOT NULL DEFAULT 0,
 				currency VARCHAR(8) NOT NULL DEFAULT '',
 				status VARCHAR(16) NOT NULL,
 				paid_at VARCHAR(32) NOT NULL DEFAULT '',
@@ -120,6 +124,7 @@ func (m *OrderProjectionModel) CreateTables() error {
 				product_id VARCHAR(128) NOT NULL DEFAULT '',
 				form VARCHAR(32) NOT NULL DEFAULT '',
 				amount_cents BIGINT NOT NULL DEFAULT 0,
+				base_quantity BIGINT NOT NULL DEFAULT 0,
 				currency VARCHAR(8) NOT NULL DEFAULT '',
 				status VARCHAR(16) NOT NULL,
 				paid_at VARCHAR(32) NOT NULL DEFAULT '',
@@ -200,21 +205,21 @@ func (m *OrderProjectionModel) UpsertFromOrder(p *OrderProjection) error {
 	}
 	p.UpdatedAt = now
 	_, err := m.db.Exec(
-		`INSERT INTO order_projection (order_id, game_id, partner_id, account_id, sku_id, product_id, form, amount_cents, currency, status, paid_at, delivered_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO order_projection (order_id, game_id, partner_id, account_id, sku_id, product_id, form, amount_cents, base_quantity, currency, status, paid_at, delivered_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(order_id) DO UPDATE SET status = excluded.status, paid_at = excluded.paid_at, delivered_at = excluded.delivered_at, updated_at = excluded.updated_at`,
 		p.OrderId, p.GameId, p.PartnerId, p.AccountId, p.SkuId, p.ProductId, p.Form, p.AmountCents,
-		p.Currency, p.Status, p.PaidAt, p.DeliveredAt, p.CreatedAt, p.UpdatedAt,
+		p.BaseQuantity, p.Currency, p.Status, p.PaidAt, p.DeliveredAt, p.CreatedAt, p.UpdatedAt,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "syntax") || strings.Contains(err.Error(), "near") {
 			// MySQL 回退（ON CONFLICT 为 SQLite 语法）
 			_, err2 := m.db.Exec(
-				`INSERT INTO order_projection (order_id, game_id, partner_id, account_id, sku_id, product_id, form, amount_cents, currency, status, paid_at, delivered_at, created_at, updated_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				`INSERT INTO order_projection (order_id, game_id, partner_id, account_id, sku_id, product_id, form, amount_cents, base_quantity, currency, status, paid_at, delivered_at, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				 ON DUPLICATE KEY UPDATE status = VALUES(status), paid_at = VALUES(paid_at), delivered_at = VALUES(delivered_at), updated_at = VALUES(updated_at)`,
 				p.OrderId, p.GameId, p.PartnerId, p.AccountId, p.SkuId, p.ProductId, p.Form, p.AmountCents,
-				p.Currency, p.Status, p.PaidAt, p.DeliveredAt, p.CreatedAt, p.UpdatedAt,
+				p.BaseQuantity, p.Currency, p.Status, p.PaidAt, p.DeliveredAt, p.CreatedAt, p.UpdatedAt,
 			)
 			return err2
 		}

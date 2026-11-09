@@ -36,5 +36,8 @@ func RegisterPromotionsRoutes(server *rest.Server, serverCtx *svc.ServiceContext
 		{Method: http.MethodGet, Path: "/admin/activities/:id", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/activities/:id/versions", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/activity-audit", Handler: h},
+		// GP-302 奖励发放账本查询。/internal/reward-evaluations 为 payments
+		// S2S 专用（HMAC 签名），不进网关。
+		{Method: http.MethodGet, Path: "/admin/reward-grants", Handler: h},
 	})
 }

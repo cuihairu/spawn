@@ -42,4 +42,14 @@ type Config struct {
 		RetryIntervalSeconds int64  `json:",default=60,env=PAYMENTS_DELIVERY_RETRY_SECONDS"`
 		TimeoutMs            int64  `json:",default=5000,env=PAYMENTS_DELIVERY_TIMEOUT"`
 	}
+
+	// Promotions 活动/促销服务（GP-302）：订单 PAID 后推送订单事实做倍率
+	// 赠送评估。BaseURL 未配置 = 不入队不分发（部署面未带促销服务时行为
+	// 不变）；Secret 与 promotions 侧 PROMOTIONS_REWARD_SECRET 同值。
+	Promotions struct {
+		BaseURL  string `json:",env=PROMOTIONS_URL,optional"`
+		Secret   string `json:",env=PROMOTIONS_REWARD_SECRET,optional"`
+		Timeout  int64  `json:",default=5000,env=PROMOTIONS_TIMEOUT"`
+		Interval int64  `json:",default=60,env=PROMOTIONS_EVAL_INTERVAL_SECONDS"`
+	}
 }

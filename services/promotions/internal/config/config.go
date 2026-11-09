@@ -20,4 +20,9 @@ type Config struct {
 		BaseURL string `json:",default=http://localhost:8890,env=GAMECATALOG_BASE_URL"`
 		Timeout int64  `json:",default=5000,env=GAMECATALOG_TIMEOUT"`
 	}
+
+	// GP-302 奖励评估 S2S 密钥（与 payments 共享；未配置 fail-closed 403）
+	Reward struct {
+		Secret string `json:",env=PROMOTIONS_REWARD_SECRET,optional"`
+	}
 }

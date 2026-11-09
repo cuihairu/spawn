@@ -28,6 +28,9 @@ import (
 
 const testJWTSecret = "promotions-integration-secret"
 
+// testRewardSecret GP-302 S2S 评估签名密钥（测试环境固定值）。
+const testRewardSecret = "promotions-reward-test-secret"
+
 type testActivityEnv struct {
 	base   string
 	svcCtx *svc.ServiceContext
@@ -63,6 +66,7 @@ func newActivityServer(t *testing.T) *testActivityEnv {
 	c.MySQL.DataSource = "file:" + t.TempDir() + "/activity.db"
 	c.Auth.JWTSecret = testJWTSecret
 	c.GameCatalog.BaseURL = catalog.URL
+	c.Reward.Secret = testRewardSecret
 
 	svcCtx := svc.NewServiceContext(c)
 	httpx.SetErrorHandlerCtx(logic.ErrorHandler)
@@ -139,7 +143,7 @@ const validActivityBody = `{
 	"trigger":{"type":"order","min_amount_cents":1000},
 	"limits":{"per_user_count":3,"budget_cents":100000,"global_count":1000},
 	"stackable":false,"stack_group":"national-day",
-	"rewards":{"type":"multiplier","rate_bp":1500}
+	"rewards":{"type":"multiplier","mode":"total","rate_bp":15000}
 }`
 
 func TestRoutes_ActivityBasics(t *testing.T) {

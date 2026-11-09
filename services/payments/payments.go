@@ -58,6 +58,11 @@ func run() error {
 		time.Second*time.Duration(c.Delivery.RetryIntervalSeconds))
 	go recovery.Run(recoveryCtx)
 
+	// GP-302 奖励评估扫描：PAID 队列重投（PROMOTIONS_URL 未配置时空转退出），
+	// 与发货恢复共用同一 ctx（进程信号面）。
+	go ctx.PromotionBridge.Scan(recoveryCtx,
+		time.Second*time.Duration(c.Promotions.Interval))
+
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()
 	return nil

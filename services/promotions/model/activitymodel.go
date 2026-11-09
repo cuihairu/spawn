@@ -408,3 +408,35 @@ func (m *ActivityModel) ListAudit(activityID int64, limit int) ([]*ActivityAudit
 	}
 	return out, rows.Err()
 }
+
+// PublishedActivity 运行时命中用的发布活动（当前版本快照引用）。
+type PublishedActivity struct {
+	ActivityId int64  `json:"activity_id"`
+	Version    int64  `json:"version"`
+	Snapshot   string `json:"snapshot"` // 发布时点完整配置 JSON（不可变）
+}
+
+// ListPublishedSnapshots 指定游戏的已发布活动及其当前版本快照（GP-302
+// 运行时按 current_version 引用快照匹配，不读可变草稿行——后改草稿不
+// 影响运行中版本）。
+func (m *ActivityModel) ListPublishedSnapshots(gameID string) ([]PublishedActivity, error) {
+	rows, err := m.db.Query(
+		`SELECT a.id, v.version, v.snapshot
+		   FROM activities a
+		   JOIN activity_versions v ON v.activity_id = a.id AND v.version = a.current_version
+		  WHERE a.status = 'published' AND a.game_id = ?
+		  ORDER BY a.id ASC`, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PublishedActivity
+	for rows.Next() {
+		var p PublishedActivity
+		if err := rows.Scan(&p.ActivityId, &p.Version, &p.Snapshot); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
