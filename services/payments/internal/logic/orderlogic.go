@@ -105,6 +105,14 @@ func (l *OrderLogic) CreateOrder(req *types.CreateOrderRequest, bearer string) (
 			req.SkuId, product.AmountCents, product.Currency, order.AmountCents, order.Currency)
 		return nil, newAPIError(http.StatusConflict, "订单金额与商品配置不一致")
 	}
+	// GP-305 券报价：客户端仅提交 coupon_ids，金额/门槛/叠加全服务端计算。
+	// 锁券失败回滚（券被并发占用），订单在 Courier 侧为未付 CREATED（孤儿
+	// 可弃），玩家重试即可；不把折让下传 Courier（Frozen 只读，见 todo）。
+	discountCents, applied, err := NewCouponLogic(l.ctx, l.svcCtx).ApplyCoupons(
+		order.Id, product.GameId, req.SkuId, userID, product.AmountCents, req.CouponIds)
+	if err != nil {
+		return nil, err
+	}
 	// 发货账本：订单 → 充值目标/商品快照（投递事实；teller Deliver 钩子的
 	// webhook 面凭它定位区服）。落账失败即拒绝下单——没有目标的订单必然
 	// 断单，宁可让玩家重试也不造断单。
@@ -125,17 +133,25 @@ func (l *OrderLogic) CreateOrder(req *types.CreateOrderRequest, bearer string) (
 		return nil, newAPIError(http.StatusInternalServerError, "落发货目标失败，请重试")
 	}
 	// 订单只读投影（事实副本）：CREATED 快照；状态后续由回调（PAID）与
-	// 投递面（DELIVERED）上报，本服务不推进状态机
+	// 投递面（DELIVERED）上报，本服务不推进状态机。DiscountCents 为优惠承担
+	//（GP-305，供 GP-205 分成基数冲减）。
 	if err := l.svcCtx.ProjectionDB.UpsertFromOrder(&model.OrderProjection{
 		OrderId: order.Id, GameId: product.GameId, PartnerId: product.PartnerId,
 		AccountId: fmt.Sprintf("%d", userID), BaseQuantity: product.BaseQuantity,
 		SkuId: req.SkuId, ProductId: product.ProductId, Form: product.Form,
-		AmountCents: product.AmountCents, Currency: product.Currency, Status: order.Status,
+		AmountCents: product.AmountCents, DiscountCents: discountCents,
+		Currency: product.Currency, Status: order.Status,
 	}); err != nil {
 		l.Errorf("project order failed: order=%s err=%v", order.Id, err)
 		return nil, newAPIError(http.StatusInternalServerError, "投影订单失败，请重试")
 	}
-	return &types.OrderResponse{Order: toTypesOrder(order)}, nil
+	resp := &types.OrderResponse{Order: toTypesOrder(order)}
+	if discountCents > 0 {
+		resp.DiscountCents = discountCents
+		resp.PayAmountCents = product.AmountCents - discountCents
+		resp.Coupons = applied
+	}
+	return resp, nil
 }
 
 // GetOrder 玩家查询订单（scope=path gameId；Courier 归属校验：非本人 404）。

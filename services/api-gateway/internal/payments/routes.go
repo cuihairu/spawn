@@ -54,6 +54,16 @@ func RegisterPaymentsRoutes(server *rest.Server, serverCtx *svc.ServiceContext) 
 		{Method: http.MethodPut, Path: "/admin/statements/:id/settlement", Handler: h},
 		{Method: http.MethodPost, Path: "/admin/statements/:id/confirm", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/statements/:id/export", Handler: h},
+		// GP-305 优惠券：玩家领取/我的券 + 管理面定义/状态机/列表。
+		{Method: http.MethodPost, Path: "/coupons/:id/claim", Handler: h},
+		{Method: http.MethodGet, Path: "/coupons/my", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/coupons", Handler: h},
+		{Method: http.MethodPut, Path: "/admin/coupons/:id", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/coupons/:id/publish", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/coupons/:id/disable", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/coupons/:id/revise", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/coupons", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/coupons/:id", Handler: h},
 		{Method: http.MethodPost, Path: "/callback/:channel", Handler: h},
 	})
 }

@@ -61,9 +61,25 @@ func (l *CallbackLogic) Handle(channelName string, rawBody []byte, signature str
 	}
 	// 订单投影 PAID（事实副本；状态值来自 Courier 接受回调后，非本服务推进）
 	l.projectPaid(rawBody)
+	// GP-305 券核销：订单关联的 locked 券 → used（幂等，无关联即 no-op）
+	l.redeemOrderCoupons(rawBody)
 	// GP-302 活动奖励评估入队（促销服务未部署时行为不变）
 	l.enqueueRewardEvaluation(rawBody, channelName)
 	return nil
+}
+
+// redeemOrderCoupons 从回调体解析 orderId 并核销关联券（locked → used）。
+// 解析失败仅记日志，不影响回调结果（券仍锁于订单，可经退款返还回收）。
+func (l *CallbackLogic) redeemOrderCoupons(rawBody []byte) {
+	var body struct {
+		OrderId string `json:"orderId"`
+	}
+	if err := json.Unmarshal(rawBody, &body); err != nil || body.OrderId == "" {
+		return
+	}
+	if err := NewCouponLogic(l.ctx, l.svcCtx).RedeemOrderCoupons(body.OrderId); err != nil {
+		l.Errorf("redeem coupons for order=%s failed: %v", body.OrderId, err)
+	}
 }
 
 // projectPaid 从回调体解析 orderId 并投影 PAID（解析失败仅记日志，不影响

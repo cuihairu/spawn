@@ -23,6 +23,7 @@ type ServiceContext struct {
 	ProjectionDB    *model.OrderProjectionModel
 	StatementDB     *model.StatementModel
 	EvalDB          *model.PromotionEvalModel
+	CouponDB        *model.CouponModel
 	Courier         *courier.Client
 	Sandbox         *channel.SandboxHMAC
 	Real            *channel.RealChannel
@@ -73,6 +74,10 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := evalDB.CreateTables(); err != nil {
 		panic(fmt.Sprintf("create promotion eval tables: %v", err))
 	}
+	couponDB := model.NewCouponModel(db)
+	if err := couponDB.CreateTables(); err != nil {
+		panic(fmt.Sprintf("create coupon tables: %v", err))
+	}
 	// GP-302 奖励评估桥（PROMOTIONS_URL 未配置 = 不入队不分发）
 	bridge := promotion.NewBridge(evalDB, c.Promotions.BaseURL, c.Promotions.Secret,
 		c.Promotions.Timeout)
@@ -92,6 +97,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		ProjectionDB:    projectionDB,
 		StatementDB:     statementDB,
 		EvalDB:          evalDB,
+		CouponDB:        couponDB,
 		Courier:         courierClient,
 		Sandbox:         &channel.SandboxHMAC{Secret: []byte(c.Channel.SandboxSecret)},
 		Real:            channel.NewRealChannel("real-channel"),

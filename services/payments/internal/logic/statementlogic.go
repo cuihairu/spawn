@@ -78,8 +78,12 @@ func (l *StatementLogic) Generate(req *types.GenerateStatementRequest, authHeade
 		l.Errorf("refund aggregate failed: %v", err)
 		return nil, newAPIError(http.StatusInternalServerError, "聚合退款冲减失败")
 	}
-	// 优惠承担 = 0（优惠券子系统未接，GP-305 接入后自订单快照计）
-	discount := int64(0)
+	// 优惠承担（GP-305 券折让：coupon_order_links 按已付订单聚合）
+	discount, err := l.svcCtx.StatementDB.StatementDiscountAggregate(req.PartnerId, start, end)
+	if err != nil {
+		l.Errorf("discount aggregate failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "聚合优惠承担失败")
+	}
 	base := paid.Amount - discount - refund
 	split := base * req.SplitRateBp / 10000
 	settlement := int64(0)

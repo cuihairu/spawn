@@ -30,6 +30,9 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodGet, Path: "/games/:gameId/orders/:orderId", Handler: GetOrderHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/games/:gameId/orders", Handler: ListMyOrdersHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/games/:gameId/skus", Handler: ListSkusHandler(svcCtx)},
+		// GP-305 玩家侧：领取/我的券（平台 JWT）
+		{Method: http.MethodPost, Path: "/coupons/:id/claim", Handler: ClaimCouponHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/coupons/my", Handler: MyCouponsHandler(svcCtx)},
 	}
 	server.AddRoutes(rest.WithMiddleware(auth, playerRoutes...))
 
@@ -55,6 +58,14 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodPut, Path: "/admin/statements/:id/settlement", Handler: UpdateSettlementHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/admin/statements/:id/confirm", Handler: ConfirmStatementHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/statements/:id/export", Handler: ExportStatementHandler(svcCtx)},
+		// GP-305 优惠券管理面：定义/状态机/列表/详情（platform_admin/operator）
+		{Method: http.MethodPost, Path: "/admin/coupons", Handler: CreateCouponHandler(svcCtx)},
+		{Method: http.MethodPut, Path: "/admin/coupons/:id", Handler: UpdateCouponHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/admin/coupons/:id/publish", Handler: PublishCouponHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/admin/coupons/:id/disable", Handler: DisableCouponHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/admin/coupons/:id/revise", Handler: ReviseCouponHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/coupons", Handler: ListCouponsHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/coupons/:id", Handler: GetCouponHandler(svcCtx)},
 	}
 	server.AddRoutes(rest.WithMiddleware(auth, adminRoutes...))
 

@@ -289,6 +289,22 @@ func (m *StatementModel) StatementPaidAggregate(partnerID int64, start, end stri
 	return &a, nil
 }
 
+// StatementDiscountAggregate 周期内优惠承担（GP-305 券折让：coupon_order_links
+// ⋈ order_projection，仅计已付订单，按 paid_at 归属周期）。
+func (m *StatementModel) StatementDiscountAggregate(partnerID int64, start, end string) (int64, error) {
+	var total int64
+	err := m.db.QueryRow(
+		`SELECT COALESCE(SUM(l.discount_cents), 0) FROM coupon_order_links l
+		 JOIN order_projection p ON p.order_id = l.order_id
+		 WHERE p.partner_id = ? AND p.status IN `+statementPaidStatuses+` AND p.paid_at >= ? AND p.paid_at <= ?`,
+		partnerID, start, end,
+	).Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
 // StatementRefundAggregate 周期内已执行退款冲减（EXECUTED；执行器接入前为 0）。
 func (m *StatementModel) StatementRefundAggregate(partnerID int64, start, end string) (int64, error) {
 	var total int64

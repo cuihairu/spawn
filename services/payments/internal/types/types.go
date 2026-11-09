@@ -62,15 +62,18 @@ type ProductListResponse struct {
 	Items []Product `json:"items"`
 }
 
-// CreateOrderRequest 玩家下单：scope = path gameId；请求体仅 skuId（服务端
-// 定价，payment.md 安全边界 1）；env 缺省 prod。server_id/role_id 为充值
-// 目标（GP-201 区服目录；服务端校验区服归属与开放状态，不下发可信金额）。
+// CreateOrderRequest 玩家下单：scope = path gameId；请求体仅 skuId + 可选
+// coupon_ids（服务端定价与券报价，payment.md 安全边界 1——客户端不下发
+// 可信金额）；env 缺省 prod。server_id/role_id 为充值目标（GP-201 区服目录；
+// 服务端校验区服归属与开放状态）。coupon_ids 为已领取券 id（GP-305）：
+// 服务端按券报价（门槛/折扣/叠加），金额一律本侧计算。
 type CreateOrderRequest struct {
-	GameId   string `path:"gameId"`
-	SkuId    string `json:"sku_id"`
-	ServerId int64  `json:"server_id,optional"`
-	RoleId   string `json:"role_id,optional"`
-	Env      string `json:"env,optional"`
+	GameId    string  `path:"gameId"`
+	SkuId     string  `json:"sku_id"`
+	CouponIds []int64 `json:"coupon_ids,optional"`
+	ServerId  int64   `json:"server_id,optional"`
+	RoleId    string  `json:"role_id,optional"`
+	Env       string  `json:"env,optional"`
 }
 
 // OrderQueryRequest 玩家订单查询：scope = path gameId。
@@ -87,8 +90,20 @@ type OrderListRequest struct {
 }
 
 // OrderResponse 订单快照（Courier 只读投影 + 归属核验后原样透传）。
+// DiscountCents/PayAmountCents 为 GP-305 服务端券报价（折让与应付款项，
+// 信息面；Courier 实收仍为列表价，折让为本侧优惠承担账本）。
 type OrderResponse struct {
-	Order Order `json:"order"`
+	Order          Order           `json:"order"`
+	DiscountCents  int64           `json:"discount_cents,omitempty"`
+	PayAmountCents int64           `json:"pay_amount_cents,omitempty"`
+	Coupons        []CouponApplied `json:"coupons,omitempty"`
+}
+
+// CouponApplied 订单实际应用的券（报价快照）。
+type CouponApplied struct {
+	CouponId      int64  `json:"coupon_id"`
+	Code          string `json:"code"`
+	DiscountCents int64  `json:"discount_cents"`
 }
 
 // CallbackRequest 渠道回调：S2S，签名经 X-Payment-Signature（原生渠道验签接缝）。
@@ -333,4 +348,95 @@ type StatementResponse struct {
 
 type StatementListResponse struct {
 	Items []StatementView `json:"items"`
+}
+
+// ---- GP-305 优惠券 ----
+
+// CouponConfig 优惠券定义（服务端配置域）。discount_type=fixed（discount_value
+// 直减分）/ percent_bp（discount_value=基点，10000=100%）；threshold_cents
+// 为使用门槛（list ≥ threshold）；stackable=true 可与其他可叠券合并。
+type CouponConfig struct {
+	Code           string `json:"code"`
+	Name           string `json:"name"`
+	GameId         string `json:"game_id"`
+	SkuId          string `json:"sku_id,optional"` // 空 = 全部 sku
+	ThresholdCents int64  `json:"threshold_cents,optional"`
+	DiscountType   string `json:"discount_type"`
+	DiscountValue  int64  `json:"discount_value"`
+	Stackable      bool   `json:"stackable,optional"`
+	PerUserLimit   int64  `json:"per_user_limit,optional"`
+	TotalCount     int64  `json:"total_count,optional"`
+	StartAt        string `json:"start_at"`
+	EndAt          string `json:"end_at"`
+}
+
+type CreateCouponRequest struct {
+	CouponConfig
+}
+
+type UpdateCouponRequest struct {
+	Id int64 `path:"id"`
+	CouponConfig
+}
+
+type CouponPathRequest struct {
+	Id int64 `path:"id"`
+}
+
+type CouponListRequest struct {
+	GameId string `form:"game_id,optional"`
+	Status string `form:"status,optional"`
+}
+
+type CouponView struct {
+	Id             int64  `json:"id"`
+	Code           string `json:"code"`
+	Name           string `json:"name"`
+	GameId         string `json:"game_id"`
+	SkuId          string `json:"sku_id"`
+	ThresholdCents int64  `json:"threshold_cents"`
+	DiscountType   string `json:"discount_type"`
+	DiscountValue  int64  `json:"discount_value"`
+	Stackable      bool   `json:"stackable"`
+	PerUserLimit   int64  `json:"per_user_limit"`
+	TotalCount     int64  `json:"total_count"`
+	StartAt        string `json:"start_at"`
+	EndAt          string `json:"end_at"`
+	Status         string `json:"status"`
+	UsedCount      int64  `json:"used_count"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
+type CouponResponse struct {
+	Coupon CouponView `json:"coupon"`
+}
+
+type CouponListResponse struct {
+	Items []CouponView `json:"items"`
+}
+
+// ClaimCouponRequest 玩家领取（coupon_id 路径；request_id 幂等键）。
+type ClaimCouponRequest struct {
+	Id        int64  `path:"id"`
+	RequestId string `json:"request_id"`
+}
+
+type UserCouponView struct {
+	Id            int64  `json:"id"`
+	CouponId      int64  `json:"coupon_id"`
+	Code          string `json:"code"`
+	Name          string `json:"name"`
+	Status        string `json:"status"`
+	ClaimedAt     string `json:"claimed_at"`
+	LockedOrderId string `json:"locked_order_id,omitempty"`
+	UsedAt        string `json:"used_at"`
+}
+
+type ClaimCouponResponse struct {
+	Coupon UserCouponView `json:"coupon"`
+}
+
+type MyCouponsResponse struct {
+	Items []UserCouponView `json:"items"`
 }
