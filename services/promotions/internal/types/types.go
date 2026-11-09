@@ -127,6 +127,11 @@ type RewardEvaluateRequest struct {
 	PaidAt       string `json:"paid_at"`
 	BaseQuantity int64  `json:"base_quantity"`
 	AudienceType string `json:"audience_type,optional"`
+	// GP-303 首充/累充订单事实（payments 按投影计算推送）：
+	// FirstPurchase=同账号同游戏无更早 PAID/DELIVERED 订单；
+	// CumulativeCents=累充净额（PAID/DELIVERED 实付合计 − EXECUTED 退款）
+	FirstPurchase   bool  `json:"first_purchase,optional"`
+	CumulativeCents int64 `json:"cumulative_cents,optional"`
 }
 
 // RewardGrantView 奖励发放账本视图。
@@ -147,6 +152,8 @@ type RewardGrantView struct {
 	TotalQuantity   int64           `json:"total_quantity"`
 	RateMode        string          `json:"rate_mode"`
 	RateBp          int64           `json:"rate_bp"`
+	RuleType        string          `json:"rule_type"`
+	Milestone       int64           `json:"milestone"`
 	Status          string          `json:"status"`
 	Snapshot        json.RawMessage `json:"snapshot"`
 	GrantedAt       string          `json:"granted_at"`
@@ -164,6 +171,8 @@ type RewardEvaluateResponse struct {
 	Replay  bool              `json:"replay"`
 	Grants  []RewardGrantView `json:"grants"`
 	Skipped []RewardSkip      `json:"skipped"`
+	// Revoked GP-303 退款撤销：累充净额跌破已发档位时置 revoked
+	Revoked []RewardGrantView `json:"revoked"`
 }
 
 // RewardGrantListRequest 管理面账本查询（全可选过滤）。

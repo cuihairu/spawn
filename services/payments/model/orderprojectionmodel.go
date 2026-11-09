@@ -246,6 +246,47 @@ func (m *OrderProjectionModel) MarkDelivered(orderID, deliveredAt string) error 
 	return err
 }
 
+// GP-303 首充/累充口径（与 GP-205 实付口径同源，但 CLOSED 语义可能含
+// 退款关闭，累充不把 CLOSED 计入实付——退款经 refund_requests 单独冲减，
+// 避免双重计数）：PAID/DELIVERED 为有效充值订单。
+
+// HasEarlierPaidOrder 首充判定：该账号该游戏是否已有更早 PAID/DELIVERED
+// 订单（排除当前订单自身——当前单刚被 MarkPaid 计入）。无更早 → 当前即首充。
+func (m *OrderProjectionModel) HasEarlierPaidOrder(accountID, gameID, excludeOrderID string) (bool, error) {
+	var n int64
+	err := m.db.QueryRow(
+		`SELECT COUNT(1) FROM order_projection
+		 WHERE account_id = ? AND game_id = ? AND status IN ('PAID','DELIVERED') AND order_id != ?`,
+		accountID, gameID, excludeOrderID,
+	).Scan(&n)
+	return n > 0, err
+}
+
+// AccountGameNetCents 累充净额：该账号该游戏 PAID/DELIVERED 订单实付合计
+// − EXECUTED 退款合计（退款经 refund_requests⋈order_projection 按账号+游戏
+// 维度聚合）。
+func (m *OrderProjectionModel) AccountGameNetCents(accountID, gameID string) (int64, error) {
+	var paid, refunded int64
+	err := m.db.QueryRow(
+		`SELECT COALESCE(SUM(amount_cents),0) FROM order_projection
+		 WHERE account_id = ? AND game_id = ? AND status IN ('PAID','DELIVERED')`,
+		accountID, gameID,
+	).Scan(&paid)
+	if err != nil {
+		return 0, err
+	}
+	err = m.db.QueryRow(
+		`SELECT COALESCE(SUM(r.amount_cents),0) FROM refund_requests r
+		 JOIN order_projection p ON p.order_id = r.order_id
+		 WHERE p.account_id = ? AND p.game_id = ? AND r.status = 'EXECUTED'`,
+		accountID, gameID,
+	).Scan(&refunded)
+	if err != nil {
+		return 0, err
+	}
+	return paid - refunded, nil
+}
+
 func (m *OrderProjectionModel) Get(orderID string) (*OrderProjection, error) {
 	var p OrderProjection
 	err := m.db.QueryRow(`SELECT `+projectionColumns+` FROM order_projection WHERE order_id = ?`, orderID).

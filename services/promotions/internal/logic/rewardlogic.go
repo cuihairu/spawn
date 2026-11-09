@@ -72,6 +72,14 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 
 	resp := &types.RewardEvaluateResponse{OrderId: req.OrderId}
 
+	// 命中：已发布版本快照（不读可变草稿行）。撤销通道按最新累充净额重算，
+	// 重放路径同样需要，故先加载。
+	published, err := l.svcCtx.ActivityDB.ListPublishedSnapshots(req.GameId)
+	if err != nil {
+		l.Errorf("list published activities game=%s failed: %v", req.GameId, err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询活动失败")
+	}
+
 	// 幂等重放：该订单已有账本行时直接返回已发放事实（不重复发放）
 	existing, err := l.svcCtx.RewardDB.ListGrants(0, req.OrderId, "", "")
 	if err != nil {
@@ -83,15 +91,17 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 		for i := range existing {
 			resp.Grants = append(resp.Grants, toGrantView(&existing[i]))
 		}
-		l.audit(req, "reward_evaluate_replay", map[string]any{"grants": len(existing)})
+		// 重放也要跑撤销通道（退款执行器 Requeue 的订单已有账本行，
+		// 撤销口径按最新累充净额重算）
+		revoked, err := l.revokeBelowThresholds(req, published)
+		if err != nil {
+			return nil, err
+		}
+		resp.Revoked = revoked
+		l.audit(req, "reward_evaluate_replay", map[string]any{
+			"grants": len(existing), "revoked": len(revoked),
+		})
 		return resp, nil
-	}
-
-	// 命中：已发布版本快照（不读可变草稿行）
-	published, err := l.svcCtx.ActivityDB.ListPublishedSnapshots(req.GameId)
-	if err != nil {
-		l.Errorf("list published activities game=%s failed: %v", req.GameId, err)
-		return nil, newAPIError(http.StatusInternalServerError, "查询活动失败")
 	}
 	skipped := map[int64]string{}
 	var cands []*candidate
@@ -107,10 +117,6 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 		if !periodCovers(cfg, paidAt) {
 			continue
 		}
-		spec, err := ParseMultiplierSpec(snapshotMap(cfg, "rewards"))
-		if err != nil || spec == nil {
-			continue
-		}
 		trg, err := parseTrigger(snapshotMap(cfg, "trigger"))
 		if err != nil {
 			skipped[p.ActivityId] = "trigger-invalid"
@@ -124,14 +130,54 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 			skipped[p.ActivityId] = "limits-invalid"
 			continue
 		}
-		cands = append(cands, &candidate{
+		base := candidate{
 			ActivityId: p.ActivityId, Version: p.Version, Config: cfg,
-			Spec: spec, Trigger: trg, Limits: lim,
-			Stackable:     snapshotBool(cfg, "stackable"),
-			StackGroup:    snapshotString(cfg, "stack_group"),
-			BaseQuantity:  req.BaseQuantity,
-			ExtraQuantity: spec.bonusQuantity(req.BaseQuantity),
-		})
+			Trigger: trg, Limits: lim,
+			Stackable:    snapshotBool(cfg, "stackable"),
+			StackGroup:   snapshotString(cfg, "stack_group"),
+			BaseQuantity: req.BaseQuantity,
+		}
+		rewards := snapshotMap(cfg, "rewards")
+		switch t, _ := rewards["type"].(string); t {
+		case model.RuleTypeMultiplier:
+			spec, err := ParseMultiplierSpec(rewards)
+			if err != nil || spec == nil {
+				continue
+			}
+			c := base
+			c.RuleType, c.Spec = t, spec
+			c.ExtraQuantity = spec.bonusQuantity(req.BaseQuantity)
+			cands = append(cands, &c)
+		case model.RuleTypeFirstPurchase:
+			// GP-303 首充：订单事实 first_purchase=true 才参与
+			if !req.FirstPurchase {
+				continue
+			}
+			spec, err := ParseFirstPurchaseSpec(rewards)
+			if err != nil || spec == nil {
+				continue
+			}
+			c := base
+			c.RuleType, c.First = t, spec
+			c.ExtraQuantity = spec.ExtraQuantity
+			cands = append(cands, &c)
+		case model.RuleTypeCumulative:
+			// GP-303 累充：净额达档每档一候选（Milestone=档位序号）
+			spec, err := ParseCumulativeSpec(rewards)
+			if err != nil || spec == nil {
+				continue
+			}
+			for i, th := range spec.Thresholds {
+				if req.CumulativeCents < th.Cents {
+					continue
+				}
+				c := base
+				c.RuleType, c.Cumulative = t, spec
+				c.Milestone = int64(i)
+				c.ExtraQuantity = th.ExtraQuantity
+				cands = append(cands, &c)
+			}
+		}
 	}
 
 	winners, excluded := resolveStack(cands)
@@ -143,6 +189,41 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 		if w.ExtraQuantity <= 0 {
 			skipped[w.ActivityId] = "zero-bonus"
 			continue
+		}
+		// GP-303 首充兜底（迟到事件双首充口径）：该账号该活动首充已发放
+		// 即跳过（先到先得，审计可查；由订单事实误判双 true 的极端场景兜底）
+		if w.RuleType == model.RuleTypeFirstPurchase {
+			n, err := l.svcCtx.RewardDB.CountGrantsByUserRule(w.ActivityId, req.AccountId, model.RuleTypeFirstPurchase)
+			if err != nil {
+				l.Errorf("count first purchase grants activity=%d failed: %v", w.ActivityId, err)
+				return nil, newAPIError(http.StatusInternalServerError, "首充查询失败")
+			}
+			if n > 0 {
+				skipped[w.ActivityId] = "first-purchase-already-granted"
+				continue
+			}
+		}
+		// GP-303 累充档位幂等是账号+活动+档位维度（非订单维度）：该账号
+		// 该活动该档位已有 granted 即跳过（跨订单不重复发放；撤销后可补发
+		// ——ListGrantedCumulativeMilestones 只返回 granted）。同一实例的扫描
+		// 循环串行消费，应用层检查无并发窗口。
+		if w.RuleType == model.RuleTypeCumulative {
+			already, err := l.svcCtx.RewardDB.ListGrantedCumulativeMilestones(w.ActivityId, req.AccountId)
+			if err != nil {
+				l.Errorf("list cumulative grants activity=%d failed: %v", w.ActivityId, err)
+				return nil, newAPIError(http.StatusInternalServerError, "累充账本查询失败")
+			}
+			hit := false
+			for _, g := range already {
+				if g.Milestone == w.Milestone {
+					hit = true
+					break
+				}
+			}
+			if hit {
+				skipped[w.ActivityId] = "milestone-already-granted"
+				continue
+			}
 		}
 		// 限次消费（per_user_count / global_count；budget 扣减不在本项）
 		if w.Limits.PerUserCount > 0 {
@@ -175,10 +256,13 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 			BaseQuantity:  req.BaseQuantity,
 			ExtraQuantity: w.ExtraQuantity,
 			TotalQuantity: req.BaseQuantity + w.ExtraQuantity,
-			RateMode:      w.Spec.Mode, RateBp: w.Spec.RateBp,
+			RuleType:      w.RuleType, Milestone: w.Milestone,
 			Status:    model.RewardStatusGranted,
 			Snapshot:  buildGrantSnapshot(req, paidAt, w),
 			GrantedAt: time.Now().UTC().Format(time.RFC3339),
+		}
+		if w.Spec != nil {
+			g.RateMode, g.RateBp = w.Spec.Mode, w.Spec.RateBp
 		}
 		created, err := l.svcCtx.RewardDB.InsertGrant(g)
 		if err != nil {
@@ -187,7 +271,7 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 		}
 		if created {
 			resp.Grants = append(resp.Grants, toGrantView(g))
-		} else {
+		} else if w.Milestone == 0 {
 			// 并发同订单重放：返回已落库事实（幂等）
 			row, err := l.svcCtx.RewardDB.GetGrant(req.OrderId, w.ActivityId)
 			if err != nil {
@@ -195,39 +279,105 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 				return nil, newAPIError(http.StatusInternalServerError, "查询奖励账本失败")
 			}
 			resp.Grants = append(resp.Grants, toGrantView(row))
+		} else {
+			// 累充档位已被其他订单发放：本订单不重复发放
+			skipped[w.ActivityId] = "milestone-already-granted"
 		}
 	}
+
+	// GP-303 退款撤销通道：按推送的累充净额重算已发放档位，跌破即置
+	// revoked（快照保留原发放事实；不追溯撤销前的消耗）
+	revoked, err := l.revokeBelowThresholds(req, published)
+	if err != nil {
+		return nil, err
+	}
+	resp.Revoked = revoked
+
 	for id, reason := range skipped {
 		resp.Skipped = append(resp.Skipped, types.RewardSkip{ActivityId: id, Reason: reason})
 	}
 	l.audit(req, "reward_evaluate", map[string]any{
 		"grants": len(resp.Grants), "skipped": len(resp.Skipped),
+		"revoked":    len(resp.Revoked),
 		"paid_cents": req.PaidCents, "base_quantity": req.BaseQuantity,
+		"first_purchase": req.FirstPurchase, "cumulative_cents": req.CumulativeCents,
 	})
 	return resp, nil
 }
 
-// buildGrantSnapshot 固化订单+奖励快照（命中的活动版本、倍率语义、计算
+// revokeBelowThresholds GP-303 退款撤销：遍历该游戏全部已发布累充活动
+// （撤销是账号+游戏维度口径，不受当笔订单命中范围限制），累充净额跌破
+// 已发放档位即置 revoked（快照保留原发放事实；不追溯撤销前的消耗）。
+func (l *RewardLogic) revokeBelowThresholds(req types.RewardEvaluateRequest, published []model.PublishedActivity) ([]types.RewardGrantView, error) {
+	var revoked []types.RewardGrantView
+	for _, p := range published {
+		cfg, err := parseSnapshot(p.Snapshot)
+		if err != nil {
+			continue
+		}
+		if t, _ := snapshotMap(cfg, "rewards")["type"].(string); t != model.RuleTypeCumulative {
+			continue
+		}
+		spec, err := ParseCumulativeSpec(snapshotMap(cfg, "rewards"))
+		if err != nil || spec == nil {
+			continue
+		}
+		granted, err := l.svcCtx.RewardDB.ListGrantedCumulativeMilestones(p.ActivityId, req.AccountId)
+		if err != nil {
+			l.Errorf("list cumulative grants activity=%d failed: %v", p.ActivityId, err)
+			return nil, newAPIError(http.StatusInternalServerError, "累充账本查询失败")
+		}
+		for i := range granted {
+			g := granted[i]
+			if int(g.Milestone) >= len(spec.Thresholds) {
+				continue
+			}
+			if req.CumulativeCents < spec.Thresholds[g.Milestone].Cents {
+				if err := l.svcCtx.RewardDB.MarkGrantRevoked(g.Id); err != nil {
+					l.Errorf("revoke grant id=%d failed: %v", g.Id, err)
+					return nil, newAPIError(http.StatusInternalServerError, "撤销发放失败")
+				}
+				g.Status = model.RewardStatusRevoked
+				revoked = append(revoked, toGrantView(&g))
+			}
+		}
+	}
+	return revoked, nil
+}
+
+// buildGrantSnapshot 固化订单+奖励快照（命中的活动版本、规则语义、计算
 // 明细、目标）——后改活动/商品不改变旧账本。
 func buildGrantSnapshot(req types.RewardEvaluateRequest, paidAt string, w *candidate) string {
-	formulas := map[string]string{
-		ModeTotal: "extra = base x (rate_bp - 10000) / 10000",
-		ModeExtra: "extra = base x rate_bp / 10000",
+	rule := map[string]any{"type": w.RuleType}
+	computation := map[string]any{
+		"base_quantity":  req.BaseQuantity,
+		"extra_quantity": w.ExtraQuantity,
+		"total_quantity": req.BaseQuantity + w.ExtraQuantity,
+	}
+	switch w.RuleType {
+	case model.RuleTypeMultiplier:
+		formulas := map[string]string{
+			ModeTotal: "extra = base x (rate_bp - 10000) / 10000",
+			ModeExtra: "extra = base x rate_bp / 10000",
+		}
+		rule["mode"], rule["rate_bp"] = w.Spec.Mode, w.Spec.RateBp
+		rule["formula"] = formulas[w.Spec.Mode]
+	case model.RuleTypeFirstPurchase:
+		rule["extra_quantity"] = w.First.ExtraQuantity
+		rule["first_purchase"] = true
+	case model.RuleTypeCumulative:
+		th := w.Cumulative.Thresholds[w.Milestone]
+		rule["threshold_cents"] = th.Cents
+		rule["milestone"] = w.Milestone
+		computation["cumulative_cents"] = req.CumulativeCents
 	}
 	snap, _ := json.Marshal(map[string]any{
 		"activity": map[string]any{
 			"id": w.ActivityId, "version": w.Version,
 			"name": snapshotString(w.Config, "name"),
 		},
-		"rule": map[string]any{
-			"mode": w.Spec.Mode, "rate_bp": w.Spec.RateBp,
-			"formula": formulas[w.Spec.Mode],
-		},
-		"computation": map[string]any{
-			"base_quantity":  req.BaseQuantity,
-			"extra_quantity": w.ExtraQuantity,
-			"total_quantity": req.BaseQuantity + w.ExtraQuantity,
-		},
+		"rule":        rule,
+		"computation": computation,
 		"order": map[string]any{
 			"order_id": req.OrderId, "account_id": req.AccountId,
 			"server_id": req.ServerId, "role_id": req.RoleId,
@@ -277,6 +427,7 @@ func toGrantView(g *model.RewardGrant) types.RewardGrantView {
 		SkuId: g.SkuId, PaidCents: g.PaidCents, Currency: g.Currency,
 		BaseQuantity: g.BaseQuantity, ExtraQuantity: g.ExtraQuantity,
 		TotalQuantity: g.TotalQuantity, RateMode: g.RateMode, RateBp: g.RateBp,
+		RuleType: g.RuleType, Milestone: g.Milestone,
 		Status: g.Status, Snapshot: json.RawMessage(g.Snapshot),
 		GrantedAt: g.GrantedAt,
 	}

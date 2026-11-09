@@ -13,7 +13,12 @@ import (
 
 const (
 	RewardStatusGranted = "granted"
-	RewardStatusRevoked = "revoked" // 退款后的奖励撤销归 GP-303，本项预留状态
+	RewardStatusRevoked = "revoked" // GP-303 退款后累充跌破档位撤销
+
+	// 规则类型（GP-302 multiplier / GP-303 first_purchase、cumulative_recharge）
+	RuleTypeMultiplier    = "multiplier"
+	RuleTypeFirstPurchase = "first_purchase"
+	RuleTypeCumulative    = "cumulative_recharge"
 )
 
 // ErrRewardGrantNotFound 账本行不存在。
@@ -35,12 +40,16 @@ type RewardGrant struct {
 	BaseQuantity    int64  `json:"base_quantity"`
 	ExtraQuantity   int64  `json:"extra_quantity"`
 	TotalQuantity   int64  `json:"total_quantity"`
-	RateMode        string `json:"rate_mode"` // total | extra
+	RateMode        string `json:"rate_mode"` // total | extra（multiplier 专用）
 	RateBp          int64  `json:"rate_bp"`
-	Status          string `json:"status"`
-	Snapshot        string `json:"snapshot"` // 订单+奖励快照 JSON（调研 §5）
-	GrantedAt       string `json:"granted_at"`
-	CreatedAt       string `json:"created_at"`
+	// RuleType 规则类型（GP-302 multiplier / GP-303 first_purchase /
+	// cumulative_recharge）；Milestone 为累充档位序号（0 = 非档位发放）
+	RuleType  string `json:"rule_type"`
+	Milestone int64  `json:"milestone"`
+	Status    string `json:"status"`
+	Snapshot  string `json:"snapshot"` // 订单+奖励快照 JSON（调研 §5）
+	GrantedAt string `json:"granted_at"`
+	CreatedAt string `json:"created_at"`
 }
 
 // RewardGrantModel 奖励发放账本。
@@ -75,11 +84,13 @@ func (m *RewardGrantModel) CreateTables() error {
 				total_quantity INTEGER NOT NULL DEFAULT 0,
 				rate_mode VARCHAR(16) NOT NULL,
 				rate_bp INTEGER NOT NULL,
+				rule_type VARCHAR(16) NOT NULL DEFAULT 'multiplier',
+				milestone INTEGER NOT NULL DEFAULT 0,
 				status VARCHAR(16) NOT NULL DEFAULT 'granted',
 				snapshot TEXT NOT NULL DEFAULT '',
 				granted_at VARCHAR(32) NOT NULL,
 				created_at VARCHAR(32) NOT NULL,
-				UNIQUE (order_id, activity_id)
+				UNIQUE (order_id, activity_id, milestone)
 			)`,
 			`CREATE TABLE IF NOT EXISTS reward_grants (
 				id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -98,11 +109,13 @@ func (m *RewardGrantModel) CreateTables() error {
 				total_quantity BIGINT NOT NULL DEFAULT 0,
 				rate_mode VARCHAR(16) NOT NULL,
 				rate_bp BIGINT NOT NULL,
+				rule_type VARCHAR(16) NOT NULL DEFAULT 'multiplier',
+				milestone BIGINT NOT NULL DEFAULT 0,
 				status VARCHAR(16) NOT NULL DEFAULT 'granted',
 				snapshot TEXT NOT NULL,
 				granted_at VARCHAR(32) NOT NULL,
 				created_at VARCHAR(32) NOT NULL,
-				UNIQUE KEY uk_order_activity (order_id, activity_id)
+				UNIQUE KEY uk_order_activity_milestone (order_id, activity_id, milestone)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 		},
 	}
@@ -116,12 +129,13 @@ func (m *RewardGrantModel) CreateTables() error {
 	return nil
 }
 
-const grantColumns = "id, order_id, activity_id, activity_version, game_id, server_id, role_id, account_id, sku_id, paid_cents, currency, base_quantity, extra_quantity, total_quantity, rate_mode, rate_bp, status, snapshot, granted_at, created_at"
+const grantColumns = "id, order_id, activity_id, activity_version, game_id, server_id, role_id, account_id, sku_id, paid_cents, currency, base_quantity, extra_quantity, total_quantity, rate_mode, rate_bp, rule_type, milestone, status, snapshot, granted_at, created_at"
 
 func scanGrant(g *RewardGrant) []any {
 	return []any{&g.Id, &g.OrderId, &g.ActivityId, &g.ActivityVersion, &g.GameId,
 		&g.ServerId, &g.RoleId, &g.AccountId, &g.SkuId, &g.PaidCents, &g.Currency,
 		&g.BaseQuantity, &g.ExtraQuantity, &g.TotalQuantity, &g.RateMode, &g.RateBp,
+		&g.RuleType, &g.Milestone,
 		&g.Status, &g.Snapshot, &g.GrantedAt, &g.CreatedAt}
 }
 
@@ -131,22 +145,22 @@ func (m *RewardGrantModel) InsertGrant(g *RewardGrant) (bool, error) {
 	now := nowUTC()
 	g.CreatedAt = now
 	res, err := m.db.Exec(
-		`INSERT OR IGNORE INTO reward_grants (order_id, activity_id, activity_version, game_id, server_id, role_id, account_id, sku_id, paid_cents, currency, base_quantity, extra_quantity, total_quantity, rate_mode, rate_bp, status, snapshot, granted_at, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT OR IGNORE INTO reward_grants (order_id, activity_id, activity_version, game_id, server_id, role_id, account_id, sku_id, paid_cents, currency, base_quantity, extra_quantity, total_quantity, rate_mode, rate_bp, rule_type, milestone, status, snapshot, granted_at, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		g.OrderId, g.ActivityId, g.ActivityVersion, g.GameId, g.ServerId, g.RoleId,
 		g.AccountId, g.SkuId, g.PaidCents, g.Currency, g.BaseQuantity,
-		g.ExtraQuantity, g.TotalQuantity, g.RateMode, g.RateBp, g.Status,
-		g.Snapshot, g.GrantedAt, now,
+		g.ExtraQuantity, g.TotalQuantity, g.RateMode, g.RateBp, g.RuleType,
+		g.Milestone, g.Status, g.Snapshot, g.GrantedAt, now,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "syntax") || strings.Contains(err.Error(), "near") {
 			res, err = m.db.Exec(
-				`INSERT IGNORE INTO reward_grants (order_id, activity_id, activity_version, game_id, server_id, role_id, account_id, sku_id, paid_cents, currency, base_quantity, extra_quantity, total_quantity, rate_mode, rate_bp, status, snapshot, granted_at, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				`INSERT IGNORE INTO reward_grants (order_id, activity_id, activity_version, game_id, server_id, role_id, account_id, sku_id, paid_cents, currency, base_quantity, extra_quantity, total_quantity, rate_mode, rate_bp, rule_type, milestone, status, snapshot, granted_at, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				g.OrderId, g.ActivityId, g.ActivityVersion, g.GameId, g.ServerId, g.RoleId,
 				g.AccountId, g.SkuId, g.PaidCents, g.Currency, g.BaseQuantity,
-				g.ExtraQuantity, g.TotalQuantity, g.RateMode, g.RateBp, g.Status,
-				g.Snapshot, g.GrantedAt, now,
+				g.ExtraQuantity, g.TotalQuantity, g.RateMode, g.RateBp, g.RuleType,
+				g.Milestone, g.Status, g.Snapshot, g.GrantedAt, now,
 			)
 		}
 		if err != nil {
@@ -228,4 +242,46 @@ func (m *RewardGrantModel) CountGrantsByActivity(activityID int64) (int64, error
 		`SELECT COUNT(*) FROM reward_grants WHERE activity_id = ? AND status = ?`,
 		activityID, RewardStatusGranted).Scan(&n)
 	return n, err
+}
+
+// CountGrantsByUserRule 单用户单活动指定规则类型的已发放条数
+// （first_purchase 全局一次的判定依据）。
+func (m *RewardGrantModel) CountGrantsByUserRule(activityID int64, accountID, ruleType string) (int64, error) {
+	var n int64
+	err := m.db.QueryRow(
+		`SELECT COUNT(*) FROM reward_grants WHERE activity_id = ? AND account_id = ? AND rule_type = ? AND status = ?`,
+		activityID, accountID, ruleType, RewardStatusGranted).Scan(&n)
+	return n, err
+}
+
+// ListGrantedCumulativeMilestones 单用户单活动累充已发放（未撤销）档位。
+func (m *RewardGrantModel) ListGrantedCumulativeMilestones(activityID int64, accountID string) ([]RewardGrant, error) {
+	rows, err := m.db.Query(
+		`SELECT `+grantColumns+` FROM reward_grants
+		  WHERE activity_id = ? AND account_id = ? AND rule_type = ? AND status = ?
+		  ORDER BY milestone ASC`,
+		activityID, accountID, RuleTypeCumulative, RewardStatusGranted)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RewardGrant
+	for rows.Next() {
+		var g RewardGrant
+		if err := rows.Scan(scanGrant(&g)...); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// MarkGrantRevoked 撤销发放（退款后累充跌破档位；快照保留原发放事实；
+// 账本行无 updated_at，撤销时间以 granted_at 原值 + 状态为准）。
+func (m *RewardGrantModel) MarkGrantRevoked(id int64) error {
+	_, err := m.db.Exec(
+		`UPDATE reward_grants SET status = ? WHERE id = ?`,
+		RewardStatusRevoked, id,
+	)
+	return err
 }

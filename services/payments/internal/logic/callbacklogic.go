@@ -119,6 +119,21 @@ func (l *CallbackLogic) enqueueRewardEvaluation(rawBody []byte, channelName stri
 		PaidAt:       proj.PaidAt,
 		BaseQuantity: proj.BaseQuantity,
 	}
+	// GP-303 首充/累充事实：投影口径计算（首充=同账号同游戏无更早
+	// PAID/DELIVERED 订单；累充净额=PAID/DELIVERED 实付 − EXECUTED 退款）。
+	// 投影查询失败即 fail-closed 不入队（不推送错误事实；记日志可查）。
+	firstPurchase, err := l.svcCtx.ProjectionDB.HasEarlierPaidOrder(proj.AccountId, proj.GameId, proj.OrderId)
+	if err != nil {
+		l.Errorf("first purchase fact order=%s failed: %v", proj.OrderId, err)
+		return
+	}
+	facts.FirstPurchase = !firstPurchase
+	cumulative, err := l.svcCtx.ProjectionDB.AccountGameNetCents(proj.AccountId, proj.GameId)
+	if err != nil {
+		l.Errorf("cumulative fact order=%s failed: %v", proj.OrderId, err)
+		return
+	}
+	facts.CumulativeCents = cumulative
 	if err := l.svcCtx.PromotionBridge.Enqueue(body.OrderId, channelName, facts); err != nil {
 		l.Errorf("enqueue reward eval order=%s failed: %v", body.OrderId, err)
 	}

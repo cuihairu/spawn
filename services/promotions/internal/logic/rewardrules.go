@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/tappi/tappi/services/promotions/model"
 )
 
 // MultiplierSpec 倍率奖励规格（rewards.type=multiplier）。
@@ -79,6 +81,75 @@ func toInt64(v any) (int64, bool) {
 		return int64(n), true
 	}
 	return 0, false
+}
+
+// GP-303 首充/累充/回流规则（F19；不塞入基础商品倍率——与 multiplier 并列
+// 的独立规则类型，可各自成活动或叠加）：
+//   - first_purchase 首充：订单事实 first_purchase=true（payments 按投影判定：
+//     同账号同游戏无更早 PAID/DELIVERED 订单）时发放一次；迟到事件双首充
+//     由 promotions 账本兜底（该账号该活动 first_purchase 已发放即跳过）。
+//   - cumulative_recharge 累充：累充口径=同账号同游戏 PAID/DELIVERED 订单
+//     实付合计 − EXECUTED 退款合计（净额，payments 推送时计算）；thresholds
+//     升序档位 [{cents, extra_quantity}]，累计净额首次达到档位即发放（幂等键
+//     含档位序号）；退款后净额跌破已发档位 → 该档位发放置 revoked（评估
+//     时重算，不追回已撤销前的消耗）。
+//   - 回流：人群定向机制（audience.type + 评估请求 audience_type）GP-302
+//     已就位，回流人群标签判定源（登录行为数据）未建，见 todo。
+
+// FirstPurchaseSpec 首充奖励规格。
+type FirstPurchaseSpec struct {
+	ExtraQuantity int64 `json:"extra_quantity"` // 首充加赠数量
+}
+
+// ParseFirstPurchaseSpec 解析 first_purchase 规格。
+func ParseFirstPurchaseSpec(rewards map[string]any) (*FirstPurchaseSpec, error) {
+	if t, _ := rewards["type"].(string); t != model.RuleTypeFirstPurchase {
+		return nil, nil
+	}
+	q, ok := toInt64(rewards["extra_quantity"])
+	if !ok || q <= 0 {
+		return nil, newAPIError(http.StatusBadRequest, "首充奖励 extra_quantity 必须为正整数")
+	}
+	return &FirstPurchaseSpec{ExtraQuantity: q}, nil
+}
+
+// CumulativeThreshold 累充档位。
+type CumulativeThreshold struct {
+	Cents         int64 `json:"cents"`          // 累计净额门槛（最小货币单位）
+	ExtraQuantity int64 `json:"extra_quantity"` // 达档加赠数量
+}
+
+// CumulativeSpec 累充奖励规格（档位升序）。
+type CumulativeSpec struct {
+	Thresholds []CumulativeThreshold `json:"thresholds"`
+}
+
+// ParseCumulativeSpec 解析 cumulative_recharge 规格（档位必须升序且为正）。
+func ParseCumulativeSpec(rewards map[string]any) (*CumulativeSpec, error) {
+	if t, _ := rewards["type"].(string); t != model.RuleTypeCumulative {
+		return nil, nil
+	}
+	raw, _ := rewards["thresholds"].([]any)
+	if len(raw) == 0 {
+		return nil, newAPIError(http.StatusBadRequest, "累充奖励 thresholds 不能为空")
+	}
+	var prev int64 = -1
+	spec := &CumulativeSpec{Thresholds: make([]CumulativeThreshold, 0, len(raw))}
+	for i, item := range raw {
+		m, _ := item.(map[string]any)
+		cents, ok1 := toInt64(m["cents"])
+		qty, ok2 := toInt64(m["extra_quantity"])
+		if !ok1 || !ok2 || cents <= 0 || qty <= 0 {
+			return nil, newAPIError(http.StatusBadRequest, "累充档位 cents/extra_quantity 必须为正整数")
+		}
+		if cents <= prev {
+			return nil, newAPIError(http.StatusBadRequest, "累充档位必须按 cents 升序且不重复")
+		}
+		prev = cents
+		spec.Thresholds = append(spec.Thresholds, CumulativeThreshold{Cents: cents, ExtraQuantity: qty})
+		_ = i
+	}
+	return spec, nil
 }
 
 // triggerSpec 触发条件（type=order + min_amount_cents）。
@@ -149,11 +220,18 @@ func (s *MultiplierSpec) bonusQuantity(base int64) int64 {
 }
 
 // candidate 运行时命中的活动候选（快照 + 已算出的规格与额外量）。
+// GP-303 起 candidate 可为三类规则之一：multiplier（按倍率算额外量）、
+// first_purchase（固定加赠，仅首充订单）、cumulative_recharge（每达一档
+// 生成一候选，Milestone 为档位序号）。
 type candidate struct {
 	ActivityId    int64
 	Version       int64
 	Config        map[string]any
-	Spec          *MultiplierSpec
+	RuleType      string             // model.RuleType*
+	Spec          *MultiplierSpec    // multiplier 专用
+	First         *FirstPurchaseSpec // 首充专用
+	Cumulative    *CumulativeSpec    // 累充专用
+	Milestone     int64              // 累充档位序号
 	Trigger       triggerSpec
 	Limits        limitsSpec
 	Stackable     bool
@@ -165,67 +243,104 @@ type candidate struct {
 // bonusKey 排序键：额外量优先，大者优先；平票取 activity id 小者（确定性）。
 func (c *candidate) bonusKey() (int64, int64) { return c.ExtraQuantity, -c.ActivityId }
 
-// resolveStack 叠加裁决：返回发放列表与排除明细（activity_id → 原因）。
+// activityGroup 同一活动的候选聚合（累充一活动可产出多档位候选，叠加
+// 裁决以活动为单位，活动胜出则其全部档位候选都发放）。
+type activityGroup struct {
+	activityId int64
+	stackable  bool
+	stackGroup string
+	total      int64 // 活动合计额外量（叠加比较用）
+	members    []*candidate
+}
+
+// resolveStack 叠加裁决（按活动聚合）：返回胜出活动的全部候选与排除明细
+// （activity_id → 原因）。
 func resolveStack(cands []*candidate) (winners []*candidate, excluded map[int64]string) {
 	excluded = map[int64]string{}
 	if len(cands) == 0 {
 		return nil, excluded
 	}
-	// 规则一：任一 stackable=false → 独跑（额外量最大、平票 id 小）
-	var solo *candidate
+	byActivity := map[int64]*activityGroup{}
+	var order []int64
 	for _, c := range cands {
-		if !c.Stackable && (solo == nil || betterThan(c, solo)) {
-			solo = c
+		g, ok := byActivity[c.ActivityId]
+		if !ok {
+			g = &activityGroup{activityId: c.ActivityId, stackable: c.Stackable,
+				stackGroup: c.StackGroup}
+			byActivity[c.ActivityId] = g
+			order = append(order, c.ActivityId)
+		}
+		g.total += c.ExtraQuantity
+		g.members = append(g.members, c)
+	}
+	groups := make([]*activityGroup, 0, len(order))
+	for _, id := range order {
+		groups = append(groups, byActivity[id])
+	}
+	// 规则一：任一 stackable=false → 独跑（合计额外量最大、平票 id 小）
+	var solo *activityGroup
+	for _, g := range groups {
+		if g.stackable && !betterGroup(g, solo) {
+			continue
+		}
+		if !g.stackable && (solo == nil || betterGroup(g, solo)) {
+			solo = g
 		}
 	}
 	if solo != nil {
-		for _, c := range cands {
-			if c.ActivityId == solo.ActivityId {
+		for _, g := range groups {
+			if g.activityId == solo.activityId {
 				continue
 			}
 			reason := "excluded-by-non-stackable"
-			if !c.Stackable {
+			if !g.stackable {
 				reason = "stack-group-conflict"
 			}
-			excluded[c.ActivityId] = reason
+			excluded[g.activityId] = reason
 		}
-		return []*candidate{solo}, excluded
+		return solo.members, excluded
 	}
-	// 规则二：同 stack_group 互斥，组内挑额外量最大者；不同组/无组叠加
-	groups := map[string][]*candidate{}
-	var order []string
-	for _, c := range cands {
-		g := c.StackGroup
-		if _, ok := groups[g]; !ok {
-			order = append(order, g)
+	// 规则二：同 stack_group 互斥，组内挑合计额外量最大者；不同组/无组叠加。
+	// 无组（stack_group 为空）的活动各自独立成组——"无组可叠加"意味着它们
+	// 不与他人互斥，空串不可当作共享组键（否则两个无组活动会互相冲突）。
+	byStackGroup := map[string][]*activityGroup{}
+	var stackOrder []string
+	for _, g := range groups {
+		key := g.stackGroup
+		if key == "" {
+			key = fmt.Sprintf("__nogroup_%d", g.activityId)
 		}
-		groups[g] = append(groups[g], c)
+		if _, ok := byStackGroup[key]; !ok {
+			stackOrder = append(stackOrder, key)
+		}
+		byStackGroup[key] = append(byStackGroup[key], g)
 	}
-	for _, g := range order {
-		members := groups[g]
+	for _, sg := range stackOrder {
+		members := byStackGroup[sg]
 		best := members[0]
-		for _, c := range members[1:] {
-			if betterThan(c, best) {
-				best = c
+		for _, g := range members[1:] {
+			if betterGroup(g, best) {
+				best = g
 			}
 		}
-		winners = append(winners, best)
-		for _, c := range members {
-			if c.ActivityId != best.ActivityId {
-				excluded[c.ActivityId] = "stack-group-conflict"
+		winners = append(winners, best.members...)
+		for _, g := range members {
+			if g.activityId != best.activityId {
+				excluded[g.activityId] = "stack-group-conflict"
 			}
 		}
 	}
 	return winners, excluded
 }
 
-func betterThan(a, b *candidate) bool {
-	aExtra, aNeg := a.bonusKey()
-	bExtra, bNeg := b.bonusKey()
-	if aExtra != bExtra {
-		return aExtra > bExtra
+func betterGroup(a, b *activityGroup) bool {
+	if b == nil {
+		return true
 	}
-	return -aNeg < -bNeg // id 小者优先
+	if a.total != b.total {
+		return a.total > b.total
+	}
+	return a.activityId < b.activityId // id 小者优先
 }
 
 // parseSnapshot 解析版本快照 JSON（Publish 时固化的完整配置）。

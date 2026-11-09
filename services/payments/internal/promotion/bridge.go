@@ -26,19 +26,23 @@ import (
 )
 
 // Facts 推送给 promotions 的订单事实（基础量来自服务端商品配置，非客户端）。
+// GP-303 增首充/累充事实：FirstPurchase=同账号同游戏无更早 PAID/DELIVERED
+// 订单；CumulativeCents=累充净额（PAID/DELIVERED 实付合计 − EXECUTED 退款）。
 type Facts struct {
-	OrderId      string `json:"order_id"`
-	GameId       string `json:"game_id"`
-	ServerId     int64  `json:"server_id"`
-	RoleId       string `json:"role_id"`
-	AccountId    string `json:"account_id"`
-	SkuId        string `json:"sku_id"`
-	ProductId    string `json:"product_id"`
-	Channel      string `json:"channel"`
-	PaidCents    int64  `json:"paid_cents"`
-	Currency     string `json:"currency"`
-	PaidAt       string `json:"paid_at"`
-	BaseQuantity int64  `json:"base_quantity"`
+	OrderId         string `json:"order_id"`
+	GameId          string `json:"game_id"`
+	ServerId        int64  `json:"server_id"`
+	RoleId          string `json:"role_id"`
+	AccountId       string `json:"account_id"`
+	SkuId           string `json:"sku_id"`
+	ProductId       string `json:"product_id"`
+	Channel         string `json:"channel"`
+	PaidCents       int64  `json:"paid_cents"`
+	Currency        string `json:"currency"`
+	PaidAt          string `json:"paid_at"`
+	BaseQuantity    int64  `json:"base_quantity"`
+	FirstPurchase   bool   `json:"first_purchase,omitempty"`
+	CumulativeCents int64  `json:"cumulative_cents,omitempty"`
 }
 
 // Bridge 评估队列分发桥。

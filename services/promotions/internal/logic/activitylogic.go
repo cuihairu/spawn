@@ -79,10 +79,27 @@ func validate(cfg *types.ActivityConfig) error {
 			}
 		}
 	}
-	// GP-302 倍率奖励规格：语义显式（mode=total 含基础 ≥10000 / mode=extra
-	// 纯加赠 ≥0），草稿即校验，发布快照与运行时共用同一口径
-	if _, err := ParseMultiplierSpec(cfg.Rewards); err != nil {
-		return err
+	// GP-302/303 奖励规格：multiplier（语义显式 total/extra）、
+	// first_purchase、cumulative_recharge（档位升序）草稿即校验，发布快照
+	// 与运行时共用同一口径；未知 type 拒绝（运行时只认这三类）
+	if len(cfg.Rewards) > 0 {
+		t, _ := cfg.Rewards["type"].(string)
+		switch t {
+		case model.RuleTypeMultiplier:
+			if _, err := ParseMultiplierSpec(cfg.Rewards); err != nil {
+				return err
+			}
+		case model.RuleTypeFirstPurchase:
+			if _, err := ParseFirstPurchaseSpec(cfg.Rewards); err != nil {
+				return err
+			}
+		case model.RuleTypeCumulative:
+			if _, err := ParseCumulativeSpec(cfg.Rewards); err != nil {
+				return err
+			}
+		default:
+			return newAPIError(http.StatusBadRequest, "奖励类型须为 multiplier/first_purchase/cumulative_recharge")
+		}
 	}
 	return nil
 }
