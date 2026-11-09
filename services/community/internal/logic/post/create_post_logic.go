@@ -56,9 +56,17 @@ func (l *CreatePostLogic) CreatePost(req *types.CreatePostReq) (resp *types.Post
 		return nil, err
 	}
 
+	// GP-307 官方身份：审核管理员发言 = 官方帖（author_official 落库，
+	// 公告入口按此聚合；身份由服务端角色判定，客户端不可自报）。
 	p, err := l.svcCtx.PostRepo.Create(req.TopicId, userId, username, req)
 	if err != nil {
 		return nil, err
+	}
+	if l.svcCtx.IsAdmin(userId) {
+		if err := l.svcCtx.PostRepo.SetAuthorOfficial(p.Id, true); err != nil {
+			l.Errorf("mark post %d official failed: %v", p.Id, err)
+		}
+		p.AuthorOfficial = true
 	}
 	_ = l.svcCtx.TopicRepo.IncrementPostCount(req.TopicId, 1)
 

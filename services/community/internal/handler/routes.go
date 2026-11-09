@@ -130,7 +130,28 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 				Path:    "/posts/search",
 				Handler: post.SearchPostsHandler(serverCtx),
 			},
+			// GP-307 公告入口：官方帖聚合（置顶优先），公开读
+			{
+				Method:  http.MethodGet,
+				Path:    "/announcements",
+				Handler: post.ListAnnouncementsHandler(serverCtx),
+			},
 		},
+		rest.WithPrefix("/api/v1"),
+	)
+
+	// GP-307 置顶运营位：仅审核管理员（POST body pinned=true/false）
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPost,
+					Path:    "/posts/:id/pin",
+					Handler: post.PinPostHandler(serverCtx),
+				},
+			}...,
+		),
 		rest.WithPrefix("/api/v1"),
 	)
 

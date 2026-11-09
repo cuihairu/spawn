@@ -31,6 +31,12 @@ func RegisterCourierAdapterRoutes(server *rest.Server, serverCtx *svc.ServiceCon
 		{Method: http.MethodPost, Path: "/session/redeem", Handler: h},
 		{Method: http.MethodPost, Path: "/games/:id/account/delete", Handler: h},
 		{Method: http.MethodPost, Path: "/games/:id/account/delete/cancel", Handler: h},
+		// GP-307 售后工单（Courier SupportProvider 适配代理；能力按需开通）
+		{Method: http.MethodPost, Path: "/games/:id/support/tickets", Handler: h},
+		{Method: http.MethodGet, Path: "/games/:id/support/tickets", Handler: h},
+		{Method: http.MethodGet, Path: "/games/:id/support/tickets/:ticketId", Handler: h},
+		{Method: http.MethodPost, Path: "/games/:id/support/tickets/:ticketId/messages", Handler: h},
+		{Method: http.MethodGet, Path: "/games/:id/support/faq", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/games/:id/mapping", Handler: h},
 		{Method: http.MethodPut, Path: "/admin/games/:id/mapping", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/audit", Handler: h},

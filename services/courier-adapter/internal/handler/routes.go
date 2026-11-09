@@ -29,6 +29,13 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodPost, Path: "/games/:id/session", Handler: GameSessionHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/games/:id/account/delete", Handler: DeleteAccountHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/games/:id/account/delete/cancel", Handler: CancelDeleteHandler(svcCtx)},
+		// GP-307 售后工单（Courier SupportProvider 适配；能力按需开通，
+		// 映射 capabilities.support 未开 → 403）
+		{Method: http.MethodPost, Path: "/games/:id/support/tickets", Handler: CreateSupportTicketHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/games/:id/support/tickets", Handler: ListSupportTicketsHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/games/:id/support/tickets/:ticketId", Handler: SupportTicketDetailHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/games/:id/support/tickets/:ticketId/messages", Handler: AppendSupportTicketHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/games/:id/support/faq", Handler: SupportFaqHandler(svcCtx)},
 	}
 	server.AddRoutes(rest.WithMiddleware(auth, playerRoutes...))
 
@@ -208,6 +215,88 @@ func UpsertMappingHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 func ListAuditHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		resp, err := logic.NewAdminLogic(r.Context(), svcCtx).ListAudit(authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// --- GP-307 售后工单（Courier SupportProvider 适配代理）---
+
+func CreateSupportTicketHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.CreateSupportTicketRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewSupportLogic(r.Context(), svcCtx).Create(&req, authHeaderFrom(r), userIDFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func ListSupportTicketsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.SupportTicketListRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewSupportLogic(r.Context(), svcCtx).List(&req, authHeaderFrom(r), userIDFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func SupportTicketDetailHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.SupportTicketPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewSupportLogic(r.Context(), svcCtx).Detail(&req, authHeaderFrom(r), userIDFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func AppendSupportTicketHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.AppendSupportTicketRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewSupportLogic(r.Context(), svcCtx).Append(&req, authHeaderFrom(r), userIDFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func SupportFaqHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.SupportFaqRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewSupportLogic(r.Context(), svcCtx).FAQ(&req, authHeaderFrom(r), userIDFrom(r))
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return

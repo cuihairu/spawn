@@ -10,11 +10,13 @@ import (
 var ErrMappingNotFound = errors.New("courier game mapping not found")
 
 // Capabilities 每游戏开通能力（接入设计 §2.1：按需开通，与标签解耦；
-// 「联运」标签只作展示，永不联动本表）。
+// 「联运」标签只作展示，永不联动本表）。Support = GP-307 售后工单
+// （Courier /v1/support/* 代登录代理）；存量行无该键 = 未开通（fail-closed）。
 type Capabilities struct {
 	Login    bool `json:"login"`
 	Payment  bool `json:"payment"`
 	Download bool `json:"download"`
+	Support  bool `json:"support"`
 }
 
 // GameMapping spawn_game_id ↔ (courier_game_id, env) 一一映射（GP-002）。

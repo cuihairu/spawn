@@ -53,6 +53,7 @@ func (l *AdminLogic) UpsertMapping(req *types.UpsertMappingRequest, authHeader s
 			Login:    req.Capabilities.Login,
 			Payment:  req.Capabilities.Payment,
 			Download: req.Capabilities.Download,
+			Support:  req.Capabilities.Support,
 		},
 	}
 	if err := l.svcCtx.Mappings.Upsert(m); err != nil {
@@ -87,6 +88,7 @@ func (l *AdminLogic) GetMapping(spawnGameID, authHeader string) (*types.MappingR
 			Login:    m.Capabilities.Login,
 			Payment:  m.Capabilities.Payment,
 			Download: m.Capabilities.Download,
+			Support:  m.Capabilities.Support,
 		},
 	}, nil
 }
@@ -112,7 +114,8 @@ func (l *AdminLogic) ListAudit(authHeader string) (*types.ListAuditResponse, err
 
 func fmtMappingDetail(m *model.GameMapping) string {
 	return fmt.Sprintf(`{"courierGameId":%q,"env":%q,"partnerId":%d,`+
-		`"capabilities":{"login":%t,"payment":%t,"download":%t}}`,
+		`"capabilities":{"login":%t,"payment":%t,"download":%t,"support":%t}}`,
 		m.CourierGameId, m.Env, m.PartnerId,
-		m.Capabilities.Login, m.Capabilities.Payment, m.Capabilities.Download)
+		m.Capabilities.Login, m.Capabilities.Payment, m.Capabilities.Download,
+		m.Capabilities.Support)
 }

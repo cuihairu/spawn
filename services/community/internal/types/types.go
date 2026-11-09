@@ -208,28 +208,40 @@ type LikeReq struct {
 }
 
 type Post struct {
-	Id           int64    `json:"id"`
-	TopicId      int64    `json:"topic_id"` // 所属话题ID
-	AuthorId     int64    `json:"author_id"`
-	AuthorName   string   `json:"author_name,omitempty"`
-	Title        string   `json:"title"`
-	Content      string   `json:"content"`
-	Images       []string `json:"images,omitempty"` // 图片URL列表
-	Type         string   `json:"type"`             // 类型：discussion/question/share
-	Tags         []string `json:"tags,omitempty"`
-	ViewCount    int64    `json:"view_count"`
-	LikeCount    int64    `json:"like_count"`
-	CommentCount int64    `json:"comment_count"`
-	ShareCount   int64    `json:"share_count"`
-	IsPinned     bool     `json:"is_pinned"` // 是否置顶
-	IsHot        bool     `json:"is_hot"`    // 是否热门
-	Status       string   `json:"status"`    // draft/published/deleted
-	CreatedAt    string   `json:"created_at"`
-	UpdatedAt    string   `json:"updated_at"`
+	Id             int64    `json:"id"`
+	TopicId        int64    `json:"topic_id"` // 所属话题ID
+	AuthorId       int64    `json:"author_id"`
+	AuthorName     string   `json:"author_name,omitempty"`
+	Title          string   `json:"title"`
+	Content        string   `json:"content"`
+	Images         []string `json:"images,omitempty"` // 图片URL列表
+	Type           string   `json:"type"`             // 类型：discussion/question/share
+	Tags           []string `json:"tags,omitempty"`
+	ViewCount      int64    `json:"view_count"`
+	LikeCount      int64    `json:"like_count"`
+	CommentCount   int64    `json:"comment_count"`
+	ShareCount     int64    `json:"share_count"`
+	IsPinned       bool     `json:"is_pinned"`       // 是否置顶
+	IsHot          bool     `json:"is_hot"`          // 是否热门
+	AuthorOfficial bool     `json:"author_official"` // 官方身份（GP-307：管理员发言=官方帖）
+	Status         string   `json:"status"`          // draft/published/deleted
+	CreatedAt      string   `json:"created_at"`
+	UpdatedAt      string   `json:"updated_at"`
 }
 
 type PostResp struct {
 	Post Post `json:"post"`
+}
+
+// PinPostReq 置顶/取消置顶（GP-307，仅管理员；pinned=true 置顶）。
+type PinPostReq struct {
+	Id     int64 `path:"id"`
+	Pinned bool  `json:"pinned,optional"`
+}
+
+// AnnouncementsReq 官方公告列表（GP-307 公告入口，公开读）。
+type AnnouncementsReq struct {
+	Limit int64 `form:"limit,optional"`
 }
 
 type PostsResp struct {

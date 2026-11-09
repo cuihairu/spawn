@@ -1,11 +1,14 @@
 package types
 
+import "github.com/tappi/tappi/services/courier-adapter/courier"
+
 // Capabilities 每游戏开通能力（GP-002：与「联运」标签解耦）。
 // 字段 optional：go-zero 严格解析要求显式标注，未传即 false。
 type Capabilities struct {
 	Login    bool `json:"login,optional"`
 	Payment  bool `json:"payment,optional"`
 	Download bool `json:"download,optional"`
+	Support  bool `json:"support,optional"`
 }
 
 // UpsertMappingRequest 管理面映射写入（operator/platform_admin）。
@@ -93,4 +96,73 @@ type AuditItem struct {
 	Detail       string `json:"detail"`
 	Ip           string `json:"ip"`
 	CreatedAt    string `json:"createdAt"`
+}
+
+// --- GP-307 售后工单（Courier SupportProvider 适配，契约 Frozen v1.1）---
+
+// CreateSupportTicketRequest 提单：title/body/category 走 Courier 契约；
+// serverId 由 Spawn 校验区服归属后入 context；orderId 透传；context 为
+// 业务自定义键（自动附加键不可被覆盖，Spawn 侧强制）。
+type CreateSupportTicketRequest struct {
+	Id       string         `path:"id"`
+	Title    string         `json:"title"`
+	Body     string         `json:"body"`
+	Category string         `json:"category,optional"`
+	ServerId string         `json:"serverId,optional"`
+	OrderId  string         `json:"orderId,optional"`
+	Context  map[string]any `json:"context,optional"`
+}
+
+// SupportTicketPathRequest 工单路径（游戏 + 工单 id）。
+type SupportTicketPathRequest struct {
+	Id       string `path:"id"`
+	TicketId string `path:"ticketId"`
+}
+
+// AppendSupportTicketRequest 追加工单消息。
+type AppendSupportTicketRequest struct {
+	Id       string `path:"id"`
+	TicketId string `path:"ticketId"`
+	Body     string `json:"body"`
+}
+
+// SupportTicketListRequest 我的工单列表（limit/cursor 契约透传）。
+type SupportTicketListRequest struct {
+	Id     string `path:"id"`
+	Limit  string `form:"limit,optional"`
+	Cursor string `form:"cursor,optional"`
+}
+
+// SupportFaqRequest FAQ 检索（keyword 空 = 全量）。
+type SupportFaqRequest struct {
+	Id      string `path:"id"`
+	Keyword string `form:"keyword,optional"`
+	Limit   string `form:"limit,optional"`
+}
+
+// SupportTicketResponse 提单返回（Courier 工单原样）。
+type SupportTicketResponse struct {
+	Ticket courier.SupportTicket `json:"ticket"`
+}
+
+// SupportTicketListResponse 工单列表页。
+type SupportTicketListResponse struct {
+	Items      []courier.SupportTicket `json:"items"`
+	NextCursor string                  `json:"nextCursor"`
+}
+
+// SupportTicketDetailResponse 工单详情：处理记录 = messages（升序）。
+type SupportTicketDetailResponse struct {
+	Ticket   courier.SupportTicket    `json:"ticket"`
+	Messages []courier.SupportMessage `json:"messages"`
+}
+
+// SupportMessageResponse 追加消息返回。
+type SupportMessageResponse struct {
+	Message courier.SupportMessage `json:"message"`
+}
+
+// SupportFaqResponse FAQ 列表。
+type SupportFaqResponse struct {
+	Items []courier.SupportFAQ `json:"items"`
 }

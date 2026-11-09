@@ -39,22 +39,9 @@ func (l *SessionLogic) GameSession(spawnGameID, authHeader string, userID int64)
 		return nil, newAPIError(http.StatusForbidden, "该游戏未开通游戏内登录")
 	}
 
-	binding, err := l.svcCtx.Bindings.GetByUser(userID)
-	var sess *courier.Session
-	switch {
-	case errors.Is(err, model.ErrBindingNotFound):
-		// 首次进入：静默建号（register 即登录该 scope），直接复用注册会话
-		binding, sess, err = l.autoBind(mapping, authHeader, userID)
-		if err != nil {
-			return nil, err
-		}
-	case err != nil:
-		return nil, newAPIError(http.StatusInternalServerError, "查询绑定失败")
-	default:
-		sess, err = l.proxyLogin(mapping, binding, userID)
-		if err != nil {
-			return nil, err
-		}
+	sess, err := l.EnsureSession(mapping, authHeader, userID)
+	if err != nil {
+		return nil, err
 	}
 
 	t, err := l.svcCtx.Tickets.Issue(userID, mapping.CourierGameId, mapping.Env, sess)
@@ -67,6 +54,25 @@ func (l *SessionLogic) GameSession(spawnGameID, authHeader string, userID int64)
 		GameId:    mapping.CourierGameId,
 		Env:       mapping.Env,
 	}, nil
+}
+
+// EnsureSession 查/建绑定（无绑定静默建 Courier 账号）→ 代登录该 scope
+// 返回会话。GP-201 游戏会话与 GP-307 售后工单共用同一绑定/代登录路径。
+func (l *SessionLogic) EnsureSession(mapping *model.GameMapping, authHeader string, userID int64) (*courier.Session, error) {
+	binding, err := l.svcCtx.Bindings.GetByUser(userID)
+	switch {
+	case errors.Is(err, model.ErrBindingNotFound):
+		// 首次进入：静默建号（register 即登录该 scope），直接复用注册会话
+		_, sess, err := l.autoBind(mapping, authHeader, userID)
+		if err != nil {
+			return nil, err
+		}
+		return sess, nil
+	case err != nil:
+		return nil, newAPIError(http.StatusInternalServerError, "查询绑定失败")
+	default:
+		return l.proxyLogin(mapping, binding, userID)
+	}
 }
 
 // autoBind 无绑定时的静默建号：随机密码（AES-GCM 加密落库，不存明文）、

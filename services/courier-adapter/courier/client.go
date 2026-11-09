@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -140,6 +141,11 @@ func (c *Client) sessionCall(ctx context.Context, gameID, env, action string, pa
 
 // call 发请求并解信封。scope 只经 header；body 恒不含 game_id/env。
 func (c *Client) call(ctx context.Context, gameID, env, method, action, accessToken string, payload any) (json.RawMessage, error) {
+	return c.callPath(ctx, gameID, env, method, "/v1/identity/"+action, accessToken, payload)
+}
+
+// callPath 同 call，但路径整条由调用方给（support 域 /v1/support/* 用）。
+func (c *Client) callPath(ctx context.Context, gameID, env, method, path, accessToken string, payload any) (json.RawMessage, error) {
 	var body io.Reader
 	if payload != nil {
 		buf, err := json.Marshal(payload)
@@ -150,7 +156,7 @@ func (c *Client) call(ctx context.Context, gameID, env, method, action, accessTo
 	} else if method != http.MethodGet {
 		body = bytes.NewReader([]byte("{}"))
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+"/v1/identity/"+action, body)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -164,12 +170,12 @@ func (c *Client) call(ctx context.Context, gameID, env, method, action, accessTo
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("courier %s: %w", action, err)
+		return nil, fmt.Errorf("courier %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, fmt.Errorf("read courier %s response: %w", action, err)
+		return nil, fmt.Errorf("read courier %s response: %w", path, err)
 	}
 	if resp.StatusCode >= 400 {
 		var fail struct {
@@ -189,7 +195,148 @@ func (c *Client) call(ctx context.Context, gameID, env, method, action, accessTo
 		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &ok); err != nil {
-		return nil, fmt.Errorf("decode courier %s envelope: %w", action, err)
+		return nil, fmt.Errorf("decode courier %s envelope: %w", path, err)
 	}
 	return ok.Data, nil
+}
+
+// --- GP-307 售后工单（support 域，契约 Frozen v1.1 只读适配）---
+
+// SupportTicket 工单 wire 形状（契约数据模型；context 原样回显）。
+type SupportTicket struct {
+	ID        string         `json:"id"`
+	Title     string         `json:"title"`
+	Status    string         `json:"status"`
+	Category  string         `json:"category"`
+	Context   map[string]any `json:"context,omitempty"`
+	CreatedAt string         `json:"createdAt"`
+	UpdatedAt string         `json:"updatedAt"`
+}
+
+// SupportMessage 工单消息（senderType PLAYER/AGENT/SYSTEM）。
+type SupportMessage struct {
+	SenderType string `json:"senderType"`
+	Body       string `json:"body"`
+	CreatedAt  string `json:"createdAt"`
+}
+
+// SupportTicketDetail 工单详情：处理记录 = messages（createdAt 升序）。
+type SupportTicketDetail struct {
+	Ticket   SupportTicket    `json:"ticket"`
+	Messages []SupportMessage `json:"messages"`
+}
+
+// SupportPage 工单列表页（updatedAt 倒序，cursor 契约原样透传）。
+type SupportTicketPage struct {
+	Items      []SupportTicket `json:"items"`
+	NextCursor string          `json:"nextCursor"`
+}
+
+// SupportFAQ FAQ 条目。
+type SupportFAQ struct {
+	ID       string   `json:"id"`
+	Question string   `json:"question"`
+	Answer   string   `json:"answer"`
+	Keywords []string `json:"keywords"`
+}
+
+// SupportTicketInput 提单入参（context 由 Spawn 侧构建后传入）。
+type SupportTicketInput struct {
+	Title    string         `json:"title"`
+	Body     string         `json:"body"`
+	Category string         `json:"category,omitempty"`
+	Context  map[string]any `json:"context,omitempty"`
+}
+
+// CreateTicket 提单（POST /v1/support/tickets；Bearer = 该 scope 会话）。
+func (c *Client) CreateTicket(ctx context.Context, gameID, env, accessToken string, in SupportTicketInput) (*SupportTicket, error) {
+	data, err := c.callPath(ctx, gameID, env, http.MethodPost, "/v1/support/tickets", accessToken, in)
+	if err != nil {
+		return nil, err
+	}
+	t := &SupportTicket{}
+	if err := json.Unmarshal(data, t); err != nil {
+		return nil, fmt.Errorf("decode support ticket: %w", err)
+	}
+	return t, nil
+}
+
+// ListTickets 我的工单列表（GET /v1/support/tickets；limit/cursor 透传）。
+func (c *Client) ListTickets(ctx context.Context, gameID, env, accessToken string, limit, cursor string) (*SupportTicketPage, error) {
+	q := url.Values{}
+	if limit != "" {
+		q.Set("limit", limit)
+	}
+	if cursor != "" {
+		q.Set("cursor", cursor)
+	}
+	path := "/v1/support/tickets"
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	data, err := c.callPath(ctx, gameID, env, http.MethodGet, path, accessToken, nil)
+	if err != nil {
+		return nil, err
+	}
+	page := &SupportTicketPage{Items: []SupportTicket{}}
+	if err := json.Unmarshal(data, page); err != nil {
+		return nil, fmt.Errorf("decode support ticket page: %w", err)
+	}
+	return page, nil
+}
+
+// TicketDetail 工单详情（处理记录 = messages 升序）。
+func (c *Client) TicketDetail(ctx context.Context, gameID, env, accessToken, ticketID string) (*SupportTicketDetail, error) {
+	data, err := c.callPath(ctx, gameID, env, http.MethodGet, "/v1/support/tickets/"+url.PathEscape(ticketID), accessToken, nil)
+	if err != nil {
+		return nil, err
+	}
+	d := &SupportTicketDetail{}
+	if err := json.Unmarshal(data, d); err != nil {
+		return nil, fmt.Errorf("decode support ticket detail: %w", err)
+	}
+	return d, nil
+}
+
+// AppendTicketMessage 追加工单消息（POST .../messages；CLOSED → 409）。
+func (c *Client) AppendTicketMessage(ctx context.Context, gameID, env, accessToken, ticketID, body string) (*SupportMessage, error) {
+	data, err := c.callPath(ctx, gameID, env, http.MethodPost,
+		"/v1/support/tickets/"+url.PathEscape(ticketID)+"/messages", accessToken, map[string]string{"body": body})
+	if err != nil {
+		return nil, err
+	}
+	m := &SupportMessage{}
+	if err := json.Unmarshal(data, m); err != nil {
+		return nil, fmt.Errorf("decode support message: %w", err)
+	}
+	return m, nil
+}
+
+// SearchFAQ FAQ 检索（keyword 可空 = 全量；limit 透传）。
+func (c *Client) SearchFAQ(ctx context.Context, gameID, env, accessToken, keyword, limit string) ([]SupportFAQ, error) {
+	q := url.Values{}
+	if keyword != "" {
+		q.Set("keyword", keyword)
+	}
+	if limit != "" {
+		q.Set("limit", limit)
+	}
+	path := "/v1/support/faq"
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	data, err := c.callPath(ctx, gameID, env, http.MethodGet, path, accessToken, nil)
+	if err != nil {
+		return nil, err
+	}
+	var page struct {
+		Items []SupportFAQ `json:"items"`
+	}
+	if err := json.Unmarshal(data, &page); err != nil {
+		return nil, fmt.Errorf("decode support faq: %w", err)
+	}
+	if page.Items == nil {
+		page.Items = []SupportFAQ{}
+	}
+	return page.Items, nil
 }
