@@ -49,6 +49,8 @@
 ### M3：活动、礼包与玩家服务
 
 - [ ] GP-301 建活动基础：状态、起止时间/时区、游戏/区服/渠道/人群、触发条件、限次、预算、叠加与奖励；配置发布需版本快照（F18）。
+  - 代码完成：新建 services/promotions 模块（go-zero，端口 8902/metrics 9103，SQLite 默认 `file:data/promotions.db` 或 MySQL，go.work + docker-compose + 网关反代已接）：活动配置域三表 activities/activity_versions/activity_audit_logs；活动状态机 draft→published→disabled→revise（回草稿改配置再发布出新版本；已发布/停用直接编辑 409，须 revise；草稿 disable 409）；起止时间/时区（RFC3339 带时区，开始须早于结束）、游戏归属、区服列表、渠道、人群（audience.type=all 等服务端解析）、触发条件（trigger.type/min_amount_cents）、限次（per_user_count/global_count/budget_cents）、叠加组（stackable+stack_group）、奖励配置（rewards.type/rate_bp 等）全在服务端配置域校验，不信任客户端可信金额；**发布生成不可变版本快照**：activity_versions.snapshot 存发布时点配置 JSON，current_version 递增（v1/v2 旧版本保留可查 GET /admin/activities/:id/versions），运行时按 current_version 引用快照；管理面角色经 game-catalog /me 权威判定（platform_admin/operator 放行，player 403）；操作审计 activity_create/update/publish/disable/revise/list。测试：集成 TestRoutes_ActivityBasics（建草稿/草稿可改/发布 v1+快照/已发布编辑 409/disable/revise/再发布 v2 且 v1 快照保留/列表筛选/详情/玩家 403×2/起止倒置 400/未知 404/草稿停用 409/审计含五动作）；go test -race 全绿（promotions + api-gateway 双模块 gate）。api-gateway 增 Promotions 上游（PROMOTIONS_URL，未配置不注册）+ 9 条反代；topology 落档。
+  - 未完，保持未勾：奖励/优惠的运行时计算与发放归 GP-302/303/305（本项只建配置域与版本快照，不做运行时匹配/扣减）；限次/预算的运行时扣减（per_user_count/budget_cents 消费记账）归后续任务；活动快照的运行时消费接口（玩家侧/游戏服侧读取）未建。
 - [ ] GP-302 在活动上实现倍率赠送，区分基础购买量、额外赠送量、实付和结算；明确总倍率/额外倍率语义，服务端计算，保留订单与奖励快照及幂等发奖（F19）。
 - [ ] GP-303 按需增加首充、累充与回流规则，定义累充口径、迟到事件、退款后的资格/奖励处理和补发；不把所有促销塞入基础商品倍率（F19）。
 - [ ] GP-304 建礼包展示/领取记录、码库存/核销/限领；结合 Courier F62 已有评估确定游戏内兑换边界，未实现能力不标已完成（F17）。
