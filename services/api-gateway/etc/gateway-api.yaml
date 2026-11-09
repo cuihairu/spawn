@@ -42,6 +42,11 @@ Upstreams:
   Payments:
     BaseURL: "http://localhost:8898"
     Timeout: 5000
+  # GP-301 活动/促销配置服务：活动状态机/版本快照管理面
+  # （未配置则网关不注册该组路由）。
+  Promotions:
+    BaseURL: "http://localhost:8902"
+    Timeout: 5000
 
 # Prometheus 指标端点（go-zero agent 自动暴露 /metrics）
 Prometheus:

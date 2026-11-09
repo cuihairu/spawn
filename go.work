@@ -10,6 +10,7 @@ use (
 	./services/data-panel
 	./services/game-catalog
 	./services/payments
+	./services/promotions
 	./services/realtime-hub
 	./services/user-service
 	./services/user-service-rpc

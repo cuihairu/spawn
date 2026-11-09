@@ -20,6 +20,8 @@ services:
       COURIER_ADAPTER_URL: http://courier-adapter:8897
       # GP-202 支付接入服务（商品配置/下单/订单查询/回调验签接缝）
       PAYMENTS_URL: http://payments:8898
+      # GP-301 活动/促销配置服务（活动状态机/版本快照管理面）
+      PROMOTIONS_URL: http://promotions:8902
     volumes:
       - uploads:/app/uploads
     depends_on:
@@ -31,6 +33,7 @@ services:
       - realtime-hub
       - courier-adapter
       - payments
+      - promotions
     ports:
       - "8800:8800"
       - "9095:9095" # /metrics（deploy/ 观测栈抓取）
@@ -159,6 +162,23 @@ services:
     ports:
       - "8898:8898"
       - "9099:9099" # /metrics（deploy/ 观测栈抓取）
+    restart: unless-stopped
+
+  # GP-301 活动/促销配置服务：活动状态机 draft→published→disabled→revise、
+  # 起止时间/时区/区服/渠道/人群、触发/限次/预算/叠加/奖励配置；发布生成
+  # 不可变版本快照。奖励/优惠的运行时计算归 GP-302/303/305。
+  promotions:
+    build:
+      context: ./services/promotions
+    environment:
+      JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
+      GAMECATALOG_BASE_URL: http://game-catalog:8890
+    depends_on:
+      - user-service
+      - game-catalog
+    ports:
+      - "8902:8902"
+      - "9103:9103" # /metrics（deploy/ 观测栈抓取）
     restart: unless-stopped
 
   web-client:

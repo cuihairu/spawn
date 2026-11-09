@@ -56,5 +56,10 @@ type Config struct {
 			BaseURL string `json:",env=PAYMENTS_URL,optional"`
 			Timeout int64  `json:",default=5000"`
 		}
+		// GP-301 活动/促销配置服务：活动状态机/版本快照管理面。
+		Promotions struct {
+			BaseURL string `json:",env=PROMOTIONS_URL,optional"`
+			Timeout int64  `json:",default=5000"`
+		}
 	}
 }

@@ -15,6 +15,7 @@
 | data-panel | Go / go-zero | 8896 | 9097 | 战绩摄入（JWT 保护，单调增量 upsert）与玩家战绩查询（公开，win_rate/kd 读侧 4 位小数） | SQLite/MySQL + TTL/LRU 缓存 |
 | courier-adapter | Go / go-zero | 8897 | 9098 | GP-201 平台账号 ↔ Courier 适配：courier_game_mapping（GP-002 映射/能力）、platform_courier_binding（GP-001 一对一绑定，代登录随机密码 AES-GCM 密文落库）、游戏启动票据（一次性/短期/不落盘）、注销同步；管理面角色经 game-catalog /me 权威判定 | SQLite（默认 `file:data/adapter.db`）或 MySQL；绑定/映射/审计三表 + adapter_audit_logs |
 | payments | Go / go-zero | 8898 | 9099 | GP-202 支付接入：商品配置（服务端定价 + 商户归属）、玩家下单/订单查询（Courier /v1/payments/* 只读转发 + 金额/币种核验）、渠道 S2S 回调验签接缝（沙箱 HMAC 仅开发，真实渠道原生验签待 ChannelAdapter + 渠道密钥）；订单事实源在 Courier teller，不复制状态机。GP-203 发货接缝：订单→区服/角色/商品关联（下单时校验区服归属/开放）+ teller Deliver 钩子的签名 webhook 落地面（`POST /internal/deliveries`，验签先于解析，未配置密钥 fail-closed 403）+ 游戏服发货接口配置（每游戏 endpoint+secret，管理面）+ 按订单幂等投递账本 + 有权限补单/目标回填 + 定时恢复（退避重投，重启续扫）；teller Deliver 生产接线归 Courier 提案/GP-005，本服务不复制订单状态机。GP-204 订单运营面：玩家我的订单列表（Courier 只读转发）+ 运营订单检索/详情经只读投影（order_projection 事实副本，状态= Courier 上报值 CREATED/PAID/DELIVERED）+ 操作审计（order_audit_logs）+ 退款/冲正管理适配（refund_requests 登记 PENDING 意图 + 状态映射，执行待 Courier 退款端点提案，不伪造成功）。GP-205 厂商对账单：从只读投影按商户维度聚合实付/优惠承担（暂 0，优惠券未接 GP-305）/退款冲减（只计 EXECUTED），算合同分成基数（split_base=实付-优惠-退款）与差异（base-结算单人工录入）；先人工确认不自动打款（F23）+ CSV 导出（明细+汇总）；无全局结算 HTTP API（边界 6），对账单为快照不旁路契约 | SQLite（默认 `file:data/payments.db`）或 MySQL；payment_products + delivery_orders + game_delivery_endpoints + order_projection + order_audit_logs + refund_requests + vendor_statements |
+| promotions | Go / go-zero | 8902 | 9103 | GP-301 活动基础：活动状态机 draft→published（发布生成不可变版本快照 activity_versions.snapshot，运行时按 current_version 引用）→disabled→revise（回草稿再发布出新版本）；起止时间/时区、游戏/区服/渠道/人群、触发条件、限次/预算、叠加组、奖励配置（服务端配置域，不信任客户端可信金额）；管理面角色经 game-catalog /me 权威判定；操作审计（activity_audit_logs）；奖励/优惠的运行时计算归 GP-302/303/305，限次/预算运行时扣减归后续 | SQLite（默认 `file:data/promotions.db`）或 MySQL；activities + activity_versions + activity_audit_logs |
 | api-gateway | Go / go-zero | 8800 | 9095 | BFF：自有聚合 handler + 六路反代（见 §3）+ 统一图片上传入口（见 §3.1） | uploads 卷（图片本地盘存储，选型方案 A） |
 | user-service-rpc | Go / gRPC | 8080 (gRPC) | 9096 | 内网 gRPC 通道（手机/Web 均不直连；protoc 生成代码缺口保留原样） | — |
 
@@ -53,7 +54,7 @@ web-client 直连拓扑保持不变，网关路由扩容不要求 web 迁移。
 | POST /upload | 统一图片上传入口（2026-10-08 方案 A 落地）：Bearer JWT 本地校验（HS256 与 user-service 同密钥）、512 字节魔数嗅探白名单 png/jpeg/webp/gif、10MB 上限、随机文件名 `O_EXCL` 落 uploads 卷，返回 `/uploads/<hash>.<ext>`；业务服务只存 URL 不碰文件 | 本地盘（uploads 卷） |
 | GET /uploads/:file | 已上传图片静态托管：文件名正则白名单（`^[0-9a-f]{32}\.(png\|jpg\|webp\|gif)$`）防路径遍历后 `ServeContent` 回读 | 本地盘（uploads 卷） |
 
-### 3.2 反代路由（internal/{users,games,community,content,datapanel,adapter,payments,realtime}；users/games/community/content/data-panel 为 proxy.NewUpstream passthrough，realtime 为 /ws 隧道）
+### 3.2 反代路由（internal/{users,games,community,content,datapanel,adapter,payments,promotions,realtime}；users/games/community/content/data-panel 为 proxy.NewUpstream passthrough，realtime 为 /ws 隧道）
 
 | 前缀 | 路由 | 上游 |
 |------|------|------|
@@ -64,6 +65,7 @@ web-client 直连拓扑保持不变，网关路由扩容不要求 web 迁移。
 | data-panel | `/api/v1/stats/users/:user_id/summary`、`/api/v1/stats/users/:user_id/games`、`/api/v1/stats/users/:user_id/games/:game_id`、POST `/api/v1/stats/records` | data-panel |
 | adapter | POST /games/:id/session、POST /session/redeem、POST /games/:id/account/delete(+ /cancel)、GET/PUT /admin/games/:id/mapping、GET /admin/audit（GP-201；CourierAdapter.BaseURL 为空时不注册） | courier-adapter |
 | payments | POST /games/:gameId/orders、GET /games/:gameId/orders/:orderId、GET /games/:gameId/orders、GET /games/:gameId/skus、POST /admin/products/:id、PATCH /admin/products/:id/enabled、GET /admin/games/:gameId/products、PUT/GET /admin/games/:gameId/delivery、GET /admin/deliveries、POST /admin/deliveries/:orderId/redeliver、PATCH /admin/deliveries/:orderId/target、GET /admin/orders、GET /admin/orders/:orderId、POST /admin/orders/:orderId/refund、GET /admin/refunds、GET /admin/audit、POST/GET /admin/statements、GET /admin/statements/:id、PUT /admin/statements/:id/settlement、POST /admin/statements/:id/confirm、GET /admin/statements/:id/export、POST /callback/:channel（GP-202/203/204/205；Payments.BaseURL 为空时不注册；`/internal/deliveries` 为 S2S 专用不进网关） | payments |
+| promotions | POST /admin/activities、PUT /admin/activities/:id、POST /admin/activities/:id/{publish,disable,revise}、GET /admin/activities、GET /admin/activities/:id、GET /admin/activities/:id/versions、GET /admin/activity-audit（GP-301；Promotions.BaseURL 为空时不注册） | promotions |
 | realtime | GET /ws（WebSocket 隧道：Hijack + 双向 splice，Hijack 前 502；RealtimeHub.BaseURL 为空时不注册） | realtime-hub |
 
 反代语义：path+query 透传、hop-by-hop 头剥离、请求体缓冲定长转发（1 MiB 上限，超限 413。缓冲是为绕开 go-zero 上游不解析 chunked 请求体的缺陷）、状态码/响应体原样回传（匿名 401 等语义保持）。
