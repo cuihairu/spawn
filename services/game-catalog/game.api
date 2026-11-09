@@ -137,6 +137,8 @@ type GameVersion {
 	Status string `json:"status"`
 	ReviewReason string `json:"review_reason"`
 	CreatedAt string `json:"created_at"`
+	// GP-105：包体托管在平台（storage_url 为 package://）时 true，可走受控下载
+	Downloadable bool `json:"downloadable"`
 }
 
 type AuditLog {
@@ -224,6 +226,11 @@ type VersionPathRequest {
 
 type VersionListResponse {
 	Versions []GameVersion `json:"versions"`
+}
+
+// LatestVersionResponse 游戏当前已发布版本（GP-105 公开视图；storage_url 置空）
+type LatestVersionResponse {
+	Version GameVersion `json:"version"`
 }
 
 type ListAuditRequest {
@@ -323,6 +330,18 @@ service game-catalog {
 
 	@handler RevokeVersionHandler
 	post /admin/games/:id/versions/:versionId/revoke (VersionPathRequest) returns (GameVersion)
+
+	// ---- GP-105：包体托管与受控下载 ----
+	// latest 公开元数据；download 登录后仅放行已发布+平台托管版本（流式二进制，
+	// 支持 Range 续传，sha256 在响应头 X-Package-Sha256）；上传为 partner multipart。
+	@handler LatestVersionHandler
+	get /games/:id/versions/latest (IdPathRequest) returns (LatestVersionResponse)
+
+	@handler DownloadVersionHandler
+	get /games/:id/versions/:versionId/download (VersionPathRequest)
+
+	@handler PartnerUploadPackageHandler
+	post /partner/games/:id/versions/:versionId/package (VersionPathRequest)
 }
 
 

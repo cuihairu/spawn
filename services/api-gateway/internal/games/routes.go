@@ -46,4 +46,16 @@ func RegisterGameProxyRoutes(server *rest.Server, serverCtx *svc.ServiceContext)
 		{Method: http.MethodPost, Path: "/partner/games/:id/versions", Handler: h},
 		{Method: http.MethodGet, Path: "/partner/games/:id/versions", Handler: h},
 	})
+
+	// GP-105 包体通道：latest 元数据是小 JSON，走普通反代；上传/下载为
+	// GB 级流量，走流式透传（不受 1 MiB 缓冲/整体超时约束），鉴权、
+	// 角色与大小上限都在 game-catalog 侧强制。
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/games/:id/versions/latest", Handler: h},
+	})
+	stream := upstream.StreamingHandler()
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/games/:id/versions/:versionId/download", Handler: stream},
+		{Method: http.MethodPost, Path: "/partner/games/:id/versions/:versionId/package", Handler: stream},
+	})
 }

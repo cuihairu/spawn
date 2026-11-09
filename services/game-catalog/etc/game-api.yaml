@@ -11,6 +11,11 @@ MySQL:
 Auth:
   JWTSecret: "tappi-user-service-jwt-secret-key-2024"
 
+# 包体存储（GP-105 受控下载）：本地磁盘目录托管渠道包，生产挂持久卷并纳入
+# 备份（接入设计 §4）；容器内由 PACKAGE_DIR 环境变量覆盖。
+Package:
+  Dir: "data/packages"
+
 # Prometheus 指标端点（go-zero agent 自动暴露 /metrics）
 Prometheus:
   Host: 0.0.0.0

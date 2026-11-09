@@ -202,6 +202,34 @@ export async function fetchGameById(id: string): Promise<Game> {
   return payload.game;
 }
 
+
+// GP-105 游戏当前已发布版本（受控下载元数据）：/games/:id/versions/latest。
+// 无已发布版本时后端返回 404 → 返回 null（调用方回退商店链接，F08）。
+export interface LatestGameVersion {
+  id: string;
+  version: string;
+  changelog?: string;
+  package_name?: string;
+  version_code?: number;
+  size_bytes?: number;
+  hash?: string;
+  downloadable?: boolean;
+}
+
+export async function fetchLatestGameVersion(gameId: string): Promise<LatestGameVersion | null> {
+  try {
+    const payload = await requestEnvelope<{ version: LatestGameVersion }>(
+      `${GAME_SERVICE_URL}/games/${encodeURIComponent(gameId)}/versions/latest`,
+    );
+    return payload.version;
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
+      return null; // 暂无已发布版本：客户端走商店链接承接
+    }
+    throw err;
+  }
+}
+
 export async function fetchFeaturedGames(limit = 20): Promise<Game[]> {
   const payload = await request<{ games: Game[] }>(`${GAME_SERVICE_URL}/games/featured?limit=${limit}`);
   return payload.games ?? [];

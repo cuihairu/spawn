@@ -40,10 +40,11 @@ const (
 )
 
 var (
-	ErrPartnerNotFound  = errors.New("partner not found")
-	ErrReviewNotFound   = errors.New("review not found")
-	ErrVersionNotFound  = errors.New("version not found")
-	ErrOwnershipMissing = errors.New("game ownership missing")
+	ErrPartnerNotFound      = errors.New("partner not found")
+	ErrReviewNotFound       = errors.New("review not found")
+	ErrVersionNotFound      = errors.New("version not found")
+	ErrVersionPackageLocked = errors.New("version package locked")
+	ErrOwnershipMissing     = errors.New("game ownership missing")
 )
 
 // Partner 合作方主体（F11）：先最小化人工审核，在线签约后续再考虑。
@@ -147,6 +148,9 @@ type AdminStore interface {
 	// GP-104 发布/撤回：发布校验不覆盖低版本渠道包（version_code 低于已发布版本）。
 	PublishVersion(id string) (*GameVersion, error)
 	RevokeVersion(id string) (*GameVersion, error)
+	// GP-105 包体托管：上传后回填哈希/大小/托管地址；取当前已发布版本。
+	UpdateVersionPackage(id, hash string, sizeBytes int64, storageUrl string) (*GameVersion, error)
+	GetLatestPublishedVersion(gameId string) (*GameVersion, error)
 
 	WriteAudit(entry *AuditLog) error
 	ListAuditLogs(resourceType string, limit, offset int) ([]*AuditLog, int, error)
@@ -737,6 +741,47 @@ func (m *AdminModel) RevokeVersion(id string) (*GameVersion, error) {
 		return nil, errors.New("仅已发布版本可撤回")
 	}
 	return m.SetVersionStatus(id, VersionStatusRevoked, "")
+}
+
+// UpdateVersionPackage 回填包体指纹（GP-105）：合作方上传平台托管包体后，
+// 更新哈希/大小/托管地址。仅 draft/pending/rejected 允许换包；approved/
+// published/revoked 禁止（审核与发布后不得掉包，与 GP-104 防回退同一原则）。
+func (m *AdminModel) UpdateVersionPackage(id, hash string, sizeBytes int64, storageUrl string) (*GameVersion, error) {
+	v, err := m.GetVersion(id)
+	if err != nil {
+		return nil, err
+	}
+	switch v.Status {
+	case VersionStatusDraft, VersionStatusPending, VersionStatusRejected:
+	default:
+		return nil, ErrVersionPackageLocked
+	}
+	if _, err := m.db.Exec(
+		`UPDATE game_versions SET hash = ?, size_bytes = ?, storage_url = ? WHERE id = ?`,
+		hash, sizeBytes, storageUrl, id); err != nil {
+		return nil, fmt.Errorf("更新版本包体失败: %w", err)
+	}
+	return m.GetVersion(id)
+}
+
+// GetLatestPublishedVersion 取游戏当前已发布版本（GP-105 受控下载定位）：
+// 按 version_code 降序、created_at 兜底；无已发布版本返回 ErrVersionNotFound。
+func (m *AdminModel) GetLatestPublishedVersion(gameId string) (*GameVersion, error) {
+	v := &GameVersion{}
+	err := m.db.QueryRow(
+		`SELECT `+versionSelectColumns+` FROM game_versions
+		 WHERE game_id = ? AND status = ?
+		 ORDER BY version_code DESC, created_at DESC LIMIT 1`,
+		gameId, VersionStatusPublished).
+		Scan(&v.Id, &v.GameId, &v.Version, &v.Changelog, &v.PackageName, &v.VersionCode,
+			&v.SignFingerprint, &v.SizeBytes, &v.Hash, &v.StorageUrl, &v.Status, &v.ReviewReason, &v.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, ErrVersionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("查询已发布版本失败: %w", err)
+	}
+	return v, nil
 }
 
 // ---- 审计 ----

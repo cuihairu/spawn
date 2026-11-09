@@ -127,7 +127,9 @@ type GameReview struct {
 	ReviewedAt   string `json:"reviewed_at"`
 }
 
-// GameVersion 游戏版本/渠道包（响应视图）。
+// GameVersion 游戏版本/渠道包（响应视图）。Downloadable 为派生字段：
+// 包体托管在平台（storage_url 为 package:// 协议）时 true，客户端可走
+// 受控下载端点（GP-105）；外部存储走 storage_url/商店链接承接（F08）。
 type GameVersion struct {
 	Id              string `json:"id"`
 	GameId          string `json:"game_id"`
@@ -142,6 +144,7 @@ type GameVersion struct {
 	Status          string `json:"status"`
 	ReviewReason    string `json:"review_reason"`
 	CreatedAt       string `json:"created_at"`
+	Downloadable    bool   `json:"downloadable"`
 }
 
 // AuditLog 审计记录（响应视图）。
@@ -239,6 +242,13 @@ type VersionPathRequest struct {
 
 type VersionListResponse struct {
 	Versions []GameVersion `json:"versions"`
+}
+
+// LatestVersionResponse 游戏当前已发布版本（GP-105 公开视图）：
+// storage_url 是内部托管细节，公开端点一律置空，客户端凭 downloadable/
+// hash/size 走受控下载与完整性校验。
+type LatestVersionResponse struct {
+	Version GameVersion `json:"version"`
 }
 
 // ListAuditRequest 审计查询。

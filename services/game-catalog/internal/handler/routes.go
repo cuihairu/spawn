@@ -62,6 +62,16 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		rest.Route{Method: http.MethodGet, Path: "/me", Handler: MeHandler(serverCtx)},
 	))
 
+	// GP-105 受控下载：latest 公开返回当前已发布版本元数据（客户端据此选
+	// 平台下载或商店链接）；download 需登录，logic 层只放行已发布+平台托管
+	// 的版本，未发布/跨游戏一律 404 不泄露存在性。
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/games/:id/versions/latest", Handler: LatestVersionHandler(serverCtx)},
+	})
+	server.AddRoutes(rest.WithMiddleware(auth,
+		rest.Route{Method: http.MethodGet, Path: "/games/:id/versions/:versionId/download", Handler: DownloadVersionHandler(serverCtx)},
+	))
+
 	// 运营后台（GP-103）：platform_admin/operator 方可访问；
 	// 角色授予收紧为 platform_admin（最小权限）。
 	adminRoutes := rest.WithMiddleware(middleware.RequireRole(model.RolePlatformAdmin),
@@ -91,6 +101,8 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			rest.Route{Method: http.MethodPost, Path: "/partner/games/:id/submit", Handler: PartnerSubmitHandler(serverCtx)},
 			rest.Route{Method: http.MethodPost, Path: "/partner/games/:id/versions", Handler: PartnerCreateVersionHandler(serverCtx)},
 			rest.Route{Method: http.MethodGet, Path: "/partner/games/:id/versions", Handler: PartnerListVersionsHandler(serverCtx)},
+			// GP-105 平台托管包体上传（multipart，流式落盘）
+			rest.Route{Method: http.MethodPost, Path: "/partner/games/:id/versions/:versionId/package", Handler: PartnerUploadPackageHandler(serverCtx)},
 		)...,
 	))
 }

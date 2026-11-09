@@ -14,6 +14,13 @@ type Config struct {
 		DataSource string `json:",env=DATASOURCE,default=file:data/games.db"`
 	}
 
+	// Package 包体存储（GP-105 受控下载）：本地磁盘目录托管合作方上传的
+	// 渠道包，按版本 id 组织，仅供已发布版本受控分发；生产部署须挂持久卷
+	// 并纳入备份（接入设计 §4）。留空时包体上传/下载端点返回 500（未配置）。
+	Package struct {
+		Dir string `json:",env=PACKAGE_DIR,default=data/packages"`
+	}
+
 	// Auth JWT 校验配置（与 user-service 共享密钥，令牌由 user-service 签发）
 	Auth struct {
 		JWTSecret string `json:",env=JWT_SECRET"`

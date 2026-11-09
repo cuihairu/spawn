@@ -42,6 +42,8 @@ func newAuthedTestServer(t *testing.T) (string, func(claims utils.JWTClaims) str
 	var c config.Config
 	c.Port = port
 	c.MySQL.DataSource = "file:" + t.TempDir() + "/games.db"
+	// GP-105 包体存储隔离到临时目录（自动清理，不污染源码树）
+	c.Package.Dir = t.TempDir() + "/packages"
 	c.Auth.JWTSecret = testJWTSecret
 	// 引导 user 1 为 platform_admin，覆盖 GP-103 角色守卫与后台链路
 	c.Auth.AdminUserIds = []string{"1"}

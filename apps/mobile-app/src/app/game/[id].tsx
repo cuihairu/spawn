@@ -4,14 +4,17 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { fetchGameById, fetchGuides, type Game, type Guide } from '../../api/client';
+import { fetchGameById, fetchGuides, fetchLatestGameVersion, type Game, type Guide, type LatestGameVersion } from '../../api/client';
 import { colors } from '../../constants/colors';
+import { PackageDownload } from '../../components/PackageDownload';
 
 // 游戏详情（Stack 动态路由 /game/[id]）：GET /games/:id（返回 { game } 包裹）。
 export default function GameDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [game, setGame] = useState<Game | null>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
+  // GP-105 当前已发布版本元数据（受控下载入口）；无发布版本为 null
+  const [pkg, setPkg] = useState<LatestGameVersion | null>(null);
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +44,16 @@ export default function GameDetailScreen() {
     });
   }, [id]);
 
+  // GP-105 平台包体：最新已发布版本（失败静默，回退商店链接）
+  const loadPackage = useCallback(() => {
+    if (!id) return;
+    void fetchLatestGameVersion(id)
+      .then(setPkg)
+      .catch(() => {
+        // 元数据拉取失败不阻断详情；下载区隐藏，入口区走下载/商店链接
+      });
+  }, [id]);
+
   // 发起加载推迟到微任务，effect 同步调用栈内不触发 setState（与 web-client 同款纪律）。
   useEffect(() => {
     queueMicrotask(load);
@@ -49,6 +62,10 @@ export default function GameDetailScreen() {
   useEffect(() => {
     queueMicrotask(loadGuides);
   }, [loadGuides]);
+
+  useEffect(() => {
+    queueMicrotask(loadPackage);
+  }, [loadPackage]);
 
   return (
     <View style={styles.container}>
@@ -138,9 +155,10 @@ export default function GameDetailScreen() {
             </View>
           ) : null}
 
-          {game.play_url || game.download_url || game.store_link ? (
+          {game.play_url || game.download_url || game.store_link || pkg?.downloadable ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>入口</Text>
+              {pkg?.downloadable ? <PackageDownload gameId={id!} pkg={pkg} /> : null}
               <View style={styles.entryRow}>
                 {game.play_url ? (
                   <Pressable style={styles.entryBtn} onPress={() => Linking.openURL(game.play_url!)}>

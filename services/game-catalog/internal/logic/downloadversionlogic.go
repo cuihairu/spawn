@@ -1,0 +1,88 @@
+package logic
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/tappi/tappi/services/game-catalog/internal/store"
+	"github.com/tappi/tappi/services/game-catalog/internal/svc"
+	"github.com/tappi/tappi/services/game-catalog/model"
+
+	"github.com/zeromicro/go-zero/core/logx"
+)
+
+// DownloadResult 受控下载的已校验产物：版本记录 + 已打开的包体只读句柄。
+// 文件句柄由 handler 层负责关闭（defer File.Close）。
+type DownloadResult struct {
+	Version *model.GameVersion
+	File    *os.File
+	Size    int64
+	Ext     string
+	ModTime time.Time
+}
+
+type DownloadVersionLogic struct {
+	logx.Logger
+	ctx    context.Context
+	svcCtx *svc.ServiceContext
+}
+
+func NewDownloadVersionLogic(ctx context.Context, svcCtx *svc.ServiceContext) *DownloadVersionLogic {
+	return &DownloadVersionLogic{
+		Logger: logx.WithContext(ctx),
+		ctx:    ctx,
+		svcCtx: svcCtx,
+	}
+}
+
+// Download GP-105 受控下载读取侧：只放行「游戏匹配 + 已发布 + 平台托管」的
+// 版本；不存在/未发布/跨游戏一律 404，不泄露版本存在性。包体未托管在平台
+// （合作方只登记了外部 storage_url）返回 409，客户端改走商店链接（F08）。
+func (l *DownloadVersionLogic) Download(gameId, versionId string) (*DownloadResult, error) {
+	if l.svcCtx.PackageStore == nil {
+		return nil, newAPIError(http.StatusInternalServerError, "包体存储未配置")
+	}
+	v, err := l.svcCtx.AdminRepository.GetVersion(versionId)
+	if errors.Is(err, model.ErrVersionNotFound) {
+		return nil, newAPIError(http.StatusNotFound, "版本不存在或未发布")
+	}
+	if err != nil {
+		l.Errorf("get version failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询版本失败")
+	}
+	if v.GameId != gameId || v.Status != model.VersionStatusPublished {
+		return nil, newAPIError(http.StatusNotFound, "版本不存在或未发布")
+	}
+	if !strings.HasPrefix(v.StorageUrl, store.PackageURLScheme) {
+		return nil, newAPIError(http.StatusConflict, "包体未托管在平台，请使用存储地址或商店链接")
+	}
+	f, size, err := l.svcCtx.PackageStore.Open(v.Id)
+	if errors.Is(err, store.ErrPackageNotFound) {
+		l.Errorf("package file missing for %s (storage_url=%s)", v.Id, v.StorageUrl)
+		return nil, newAPIError(http.StatusInternalServerError, "包体文件缺失")
+	}
+	if err != nil {
+		l.Errorf("open package failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "读取包体失败")
+	}
+	// handler 关闭句柄前先解析扩展名/时间戳，避免用后读
+	ext := strings.TrimPrefix(strings.TrimPrefix(v.StorageUrl, store.PackageURLScheme), v.Id)
+	if !strings.HasPrefix(ext, ".") {
+		ext = ".bin"
+	}
+	var modTime time.Time
+	if t, err := time.Parse(time.RFC3339, v.CreatedAt); err == nil {
+		modTime = t
+	}
+	return &DownloadResult{
+		Version: v,
+		File:    f,
+		Size:    size,
+		Ext:     ext,
+		ModTime: modTime,
+	}, nil
+}

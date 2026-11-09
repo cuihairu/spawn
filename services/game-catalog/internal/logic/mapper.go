@@ -1,6 +1,9 @@
 package logic
 
 import (
+	"strings"
+
+	"github.com/tappi/tappi/services/game-catalog/internal/store"
 	"github.com/tappi/tappi/services/game-catalog/internal/types"
 	"github.com/tappi/tappi/services/game-catalog/model"
 )
@@ -81,6 +84,8 @@ func toVersion(v *model.GameVersion) *types.GameVersion {
 		PackageName: v.PackageName, VersionCode: v.VersionCode, SignFingerprint: v.SignFingerprint,
 		SizeBytes: v.SizeBytes, Hash: v.Hash, StorageUrl: v.StorageUrl,
 		Status: v.Status, ReviewReason: v.ReviewReason, CreatedAt: v.CreatedAt,
+		// GP-105：包体托管在平台（package:// 协议）才可受控下载
+		Downloadable: strings.HasPrefix(v.StorageUrl, store.PackageURLScheme),
 	}
 }
 

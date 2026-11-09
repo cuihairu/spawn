@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/tappi/tappi/services/game-catalog/internal/config"
+	"github.com/tappi/tappi/services/game-catalog/internal/store"
 	"github.com/tappi/tappi/services/game-catalog/model"
 	"github.com/tappi/tappi/services/game-catalog/utils"
 
@@ -24,6 +25,7 @@ type ServiceContext struct {
 	Config          config.Config
 	GameRepository  model.GameStore
 	AdminRepository model.AdminStore
+	PackageStore    *store.LocalPackageStore
 	Auth            *utils.Auth
 }
 
@@ -83,10 +85,22 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		}
 	}
 
+	// 包体存储（GP-105）：目录未配置（测试装配）时保持 nil，
+	// 上传/下载端点以「包体存储未配置」拒绝，不 panic。
+	var packageStore *store.LocalPackageStore
+	if c.Package.Dir != "" {
+		ps, err := store.NewLocalPackageStore(c.Package.Dir)
+		if err != nil {
+			panic(fmt.Sprintf("初始化包体存储失败: %v", err))
+		}
+		packageStore = ps
+	}
+
 	return &ServiceContext{
 		Config:          c,
 		GameRepository:  gameModel,
 		AdminRepository: adminModel,
+		PackageStore:    packageStore,
 		Auth:            utils.NewAuth(c.Auth.JWTSecret),
 	}
 }

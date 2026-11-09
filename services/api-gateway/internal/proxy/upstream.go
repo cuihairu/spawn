@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,6 +15,9 @@ import (
 type Upstream struct {
 	baseURL *url.URL
 	client  *http.Client
+	// streamClient 无整体超时（拨号/握手/TLS 各自限时）：GB 级包体传输
+	// 不能受 JSON 反代的整体 Timeout 约束（GP-105 包体通道）。
+	streamClient *http.Client
 }
 
 func NewUpstream(baseURL string, timeout time.Duration) (*Upstream, error) {
@@ -30,9 +34,16 @@ func NewUpstream(baseURL string, timeout time.Duration) (*Upstream, error) {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	transport := &http.Transport{
+		DialContext:           dialer.DialContext,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+	}
 	return &Upstream{
-		baseURL: u,
-		client:  &http.Client{Timeout: timeout},
+		baseURL:      u,
+		client:       &http.Client{Timeout: timeout},
+		streamClient: &http.Client{Transport: transport},
 	}, nil
 }
 
@@ -40,6 +51,45 @@ func (u *Upstream) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u.serveHTTP(w, r)
 	}
+}
+
+// StreamingHandler GP-105 包体通道（合作方上传/玩家受控下载）：不缓冲请求体、
+// 不设整体超时，流式透传——受 1 MiB 缓冲与整体超时约束的 JSON 反代承载不了
+// GB 级包体。大小上限（2 GiB）与鉴权由 game-catalog 侧强制；请求体定长优先
+// （ContentLength 透传），长度未知时由 Go 降级 chunked（game-catalog 的
+// multipart 解析按流处理，不依赖定长）。
+func (u *Upstream) StreamingHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u.serveHTTPStreaming(w, r)
+	}
+}
+
+func (u *Upstream) serveHTTPStreaming(w http.ResponseWriter, r *http.Request) {
+	upstreamURL := *u.baseURL
+	upstreamURL.Path = strings.TrimRight(u.baseURL.Path, "/") + r.URL.Path
+	upstreamURL.RawQuery = r.URL.RawQuery
+
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL.String(), r.Body)
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, "bad gateway")
+		return
+	}
+	req.Header = cloneHeader(r.Header)
+	if r.ContentLength >= 0 {
+		req.ContentLength = r.ContentLength
+	}
+	req.Host = u.baseURL.Host
+
+	resp, err := u.streamClient.Do(req)
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, "upstream unavailable")
+		return
+	}
+	defer resp.Body.Close()
+
+	copyHeader(w.Header(), resp.Header)
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 // maxProxyBody 反代请求体上限：移动端请求都是小 JSON，缓冲后以定长

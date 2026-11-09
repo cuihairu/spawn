@@ -33,6 +33,12 @@ services:
   game-catalog:
     build:
       context: ./services/game-catalog
+    environment:
+      # GP-105 包体托管目录：持久卷，受控下载/合作方上传共用；
+      # 生产纳入备份（接入设计 §4）。
+      PACKAGE_DIR: /app/data/packages
+    volumes:
+      - game-packages:/app/data/packages
     ports:
       - "8890:8890"
       - "9092:9092" # /metrics（deploy/ 观测栈抓取）
@@ -126,3 +132,4 @@ services:
 
 volumes:
   uploads:
+  game-packages:

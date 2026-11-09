@@ -3,9 +3,11 @@ package logic
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
+	"github.com/tappi/tappi/services/game-catalog/internal/store"
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 	"github.com/tappi/tappi/services/game-catalog/internal/types"
 	"github.com/tappi/tappi/services/game-catalog/model"
@@ -180,6 +182,55 @@ func (l *PartnerLogic) CreateVersion(req *types.CreateVersionRequest) (*types.Ga
 	}
 	l.audit("version_create", "version", v.Id, "", toJSON(toVersion(v)))
 	return toVersion(v), nil
+}
+
+// UploadPackage 合作方为自有游戏版本上传平台托管包体（GP-105，multipart）。
+// 流式落盘不整体驻留内存；大小/哈希以服务端实测为准，覆盖客户端自报值。
+// 仅 draft/pending/rejected 允许换包（模型层 UpdateVersionPackage 再校验，
+// 兜底并发审核的竞态；预检避免白写文件），审核/发布后不得掉包。
+func (l *PartnerLogic) UploadPackage(gameId, versionId, fileName string, r io.Reader) (*types.GameVersion, error) {
+	partnerID := l.partnerID()
+	if partnerID <= 0 {
+		return nil, newAPIError(http.StatusForbidden, "当前账号未绑定合作方")
+	}
+	if err := l.ownGame(partnerID, gameId); err != nil {
+		return nil, err
+	}
+	if l.svcCtx.PackageStore == nil {
+		return nil, newAPIError(http.StatusInternalServerError, "包体存储未配置")
+	}
+	v, err := l.svcCtx.AdminRepository.GetVersion(versionId)
+	if errors.Is(err, model.ErrVersionNotFound) || (err == nil && v.GameId != gameId) {
+		return nil, newAPIError(http.StatusNotFound, "版本不存在")
+	}
+	if err != nil {
+		l.Errorf("get version failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询版本失败")
+	}
+	switch v.Status {
+	case model.VersionStatusDraft, model.VersionStatusPending, model.VersionStatusRejected:
+	default:
+		return nil, newAPIError(http.StatusConflict, "当前版本状态不允许替换包体")
+	}
+	size, hash, ext, err := l.svcCtx.PackageStore.Save(versionId, fileName, r)
+	if errors.Is(err, store.ErrPackageTooLarge) {
+		return nil, newAPIError(http.StatusRequestEntityTooLarge, "包体超过大小上限")
+	}
+	if err != nil {
+		l.Errorf("save package failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "保存包体失败")
+	}
+	storageUrl := store.PackageURLScheme + versionId + ext
+	updated, err := l.svcCtx.AdminRepository.UpdateVersionPackage(versionId, "sha256:"+hash, size, storageUrl)
+	if errors.Is(err, model.ErrVersionPackageLocked) {
+		return nil, newAPIError(http.StatusConflict, "当前版本状态不允许替换包体")
+	}
+	if err != nil {
+		l.Errorf("update version package failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "更新版本失败")
+	}
+	l.audit("version_package_upload", "version", versionId, toJSON(toVersion(v)), toJSON(toVersion(updated)))
+	return toVersion(updated), nil
 }
 
 // ListVersions 查看自有游戏的版本列表。
