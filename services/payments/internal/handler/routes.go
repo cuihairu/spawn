@@ -24,15 +24,16 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodGet, Path: "/healthz", Handler: HealthHandler()},
 	})
 
-	// 玩家面：下单/订单查询/可购 SKU（Bearer 透传 Courier，归属在 Courier 侧）
+	// 玩家面：下单/订单查询/我的订单/可购 SKU（Bearer 透传 Courier，归属在 Courier 侧）
 	playerRoutes := []rest.Route{
 		{Method: http.MethodPost, Path: "/games/:gameId/orders", Handler: CreateOrderHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/games/:gameId/orders/:orderId", Handler: GetOrderHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/games/:gameId/orders", Handler: ListMyOrdersHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/games/:gameId/skus", Handler: ListSkusHandler(svcCtx)},
 	}
 	server.AddRoutes(rest.WithMiddleware(auth, playerRoutes...))
 
-	// 管理面：商品配置 + 发货接口/补单（platform_admin/operator）
+	// 管理面：商品配置 + 发货接口/补单 + 订单投影检索/审计/退款适配（platform_admin/operator）
 	adminRoutes := []rest.Route{
 		{Method: http.MethodPost, Path: "/admin/products/:id", Handler: CreateProductHandler(svcCtx)},
 		{Method: http.MethodPatch, Path: "/admin/products/:id/enabled", Handler: SetProductEnabledHandler(svcCtx)},
@@ -42,6 +43,11 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodGet, Path: "/admin/deliveries", Handler: ListDeliveriesHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/admin/deliveries/:orderId/redeliver", Handler: RedeliverHandler(svcCtx)},
 		{Method: http.MethodPatch, Path: "/admin/deliveries/:orderId/target", Handler: BackfillTargetHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/orders", Handler: AdminListOrdersHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/orders/:orderId", Handler: AdminGetOrderHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/admin/orders/:orderId/refund", Handler: CreateRefundHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/refunds", Handler: ListRefundsHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/audit", Handler: ListAuditHandler(svcCtx)},
 	}
 	server.AddRoutes(rest.WithMiddleware(auth, adminRoutes...))
 
@@ -336,5 +342,101 @@ func BackfillTargetHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 		httpx.OkJsonCtx(r.Context(), w, struct{}{})
+	}
+}
+
+func ListMyOrdersHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.OrderListRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewOrderLogic(r.Context(), svcCtx).ListMyOrders(req.GameId, req.Env, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func AdminListOrdersHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.AdminOrderQueryRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewAdminOrderLogic(r.Context(), svcCtx).ListOrders(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func AdminGetOrderHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.OrderPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewAdminOrderLogic(r.Context(), svcCtx).GetOrder(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func CreateRefundHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.CreateRefundRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewAdminOrderLogic(r.Context(), svcCtx).CreateRefund(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func ListRefundsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.RefundListRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewAdminOrderLogic(r.Context(), svcCtx).ListRefunds(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func ListAuditHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.AuditListRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewAdminOrderLogic(r.Context(), svcCtx).ListAudit(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
 	}
 }

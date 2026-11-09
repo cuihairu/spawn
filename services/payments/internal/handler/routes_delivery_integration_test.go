@@ -42,6 +42,8 @@ type testDeliveryEnv struct {
 	sign       func(claims utils.JWTClaims) string
 	gameServer *deliveryGameStub
 	orderSeq   int64
+	orderMu    sync.Mutex
+	orders     []map[string]any
 }
 
 // deliveryGameStub 游戏服发货接口存根（可翻转失败；记录调用/载荷/签名）。
@@ -94,7 +96,7 @@ func newDeliveryServer(t *testing.T) *testDeliveryEnv {
 	}))
 	t.Cleanup(catalog.Close)
 
-	// Courier 存根：唯一订单号 order_<sku>-<seq>
+	// Courier 存根：唯一订单号 order_<sku>-<seq>；记录已建订单供列表查询
 	courier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/payments/orders" {
 			var body struct {
@@ -102,11 +104,28 @@ func newDeliveryServer(t *testing.T) *testDeliveryEnv {
 			}
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			seq := atomic.AddInt64(&env.orderSeq, 1)
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			order := map[string]any{
 				"id": fmt.Sprintf("order_%s-%d", body.SkuId, seq), "status": "CREATED",
 				"skuId": body.SkuId, "amountCents": 1000, "currency": "CNY",
 				"payToken": "pay_" + body.SkuId, "createdAt": "2026-11-09T12:00:00.000Z",
-			}})
+				"updatedAt": "2026-11-09T12:00:00.000Z",
+			}
+			env.orderMu.Lock()
+			env.orders = append(env.orders, order)
+			env.orderMu.Unlock()
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": order})
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/payments/orders" {
+			env.orderMu.Lock()
+			items := make([]map[string]any, len(env.orders))
+			copy(items, env.orders)
+			env.orderMu.Unlock()
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"items": items, "nextCursor": ""}})
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/payments/callback" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"accepted": true}})
 			return
 		}
 		http.NotFound(w, r)

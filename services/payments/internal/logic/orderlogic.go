@@ -124,6 +124,16 @@ func (l *OrderLogic) CreateOrder(req *types.CreateOrderRequest, bearer string) (
 		l.Errorf("record delivery target failed: order=%s err=%v", order.Id, err)
 		return nil, newAPIError(http.StatusInternalServerError, "落发货目标失败，请重试")
 	}
+	// 订单只读投影（事实副本）：CREATED 快照；状态后续由回调（PAID）与
+	// 投递面（DELIVERED）上报，本服务不推进状态机
+	if err := l.svcCtx.ProjectionDB.UpsertFromOrder(&model.OrderProjection{
+		OrderId: order.Id, GameId: product.GameId, AccountId: fmt.Sprintf("%d", userID),
+		SkuId: req.SkuId, ProductId: product.ProductId, Form: product.Form,
+		AmountCents: product.AmountCents, Currency: product.Currency, Status: order.Status,
+	}); err != nil {
+		l.Errorf("project order failed: order=%s err=%v", order.Id, err)
+		return nil, newAPIError(http.StatusInternalServerError, "投影订单失败，请重试")
+	}
 	return &types.OrderResponse{Order: toTypesOrder(order)}, nil
 }
 
@@ -138,6 +148,23 @@ func (l *OrderLogic) GetOrder(req *types.OrderQueryRequest, bearer string) (*typ
 		return nil, courierError(err)
 	}
 	return &types.OrderResponse{Order: toTypesOrder(order)}, nil
+}
+
+// ListMyOrders 玩家我的订单（Courier 只读投影，updatedAt 降序）。
+func (l *OrderLogic) ListMyOrders(gameID, env, bearer string) (*types.OrderListResponse, error) {
+	userID, _ := l.ctx.Value("user_id").(int64)
+	if userID <= 0 {
+		return nil, newAPIError(http.StatusUnauthorized, "未登录")
+	}
+	orders, err := l.svcCtx.Courier.ListOrders(gameID, envOr(env), bearer)
+	if err != nil {
+		return nil, courierError(err)
+	}
+	items := make([]types.Order, 0, len(orders))
+	for _, o := range orders {
+		items = append(items, toTypesOrder(&o))
+	}
+	return &types.OrderListResponse{Items: items, NextCursor: ""}, nil
 }
 
 // ListSkus 玩家可购 SKU 列表（scope=path gameId，仅启用商品）。

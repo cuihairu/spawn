@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -57,7 +58,25 @@ func (l *CallbackLogic) Handle(channelName string, rawBody []byte, signature str
 		l.Errorf("forward callback to courier failed: %v", err)
 		return newAPIError(http.StatusBadGateway, "转发支付回调失败")
 	}
+	// 订单投影 PAID（事实副本；状态值来自 Courier 接受回调后，非本服务推进）
+	l.projectPaid(rawBody)
 	return nil
+}
+
+// projectPaid 从回调体解析 orderId 并投影 PAID（解析失败仅记日志，不影响
+// 回调结果——回调已幂等接受）。
+func (l *CallbackLogic) projectPaid(rawBody []byte) {
+	var body struct {
+		OrderId string `json:"orderId"`
+		PaidAt  string `json:"paidAt"`
+	}
+	if err := json.Unmarshal(rawBody, &body); err != nil || body.OrderId == "" {
+		l.Errorf("parse callback for projection failed: %s", rawBody)
+		return
+	}
+	if err := l.svcCtx.ProjectionDB.MarkPaid(body.OrderId, body.PaidAt); err != nil {
+		l.Errorf("project paid order=%s failed: %v", body.OrderId, err)
+	}
 }
 
 // hmacCourier 计算 Courier 渠道密钥的 HMAC-SHA256（沙箱共享密钥）。

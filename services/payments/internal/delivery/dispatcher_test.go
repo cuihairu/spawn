@@ -105,7 +105,7 @@ func newStack(t *testing.T, dsn string, gameURL string, backoff time.Duration) (
 	}); err != nil && !errors.Is(err, model.ErrProductExists) {
 		t.Fatalf("create product: %v", err)
 	}
-	dispatcher := NewDispatcher(deliveries, products, 2000, backoff)
+	dispatcher := NewDispatcher(deliveries, products, 2000, backoff, nil)
 	t.Cleanup(func() { _ = db.Close() })
 	return db, deliveries, products, dispatcher
 }

@@ -15,14 +15,15 @@ import (
 )
 
 type ServiceContext struct {
-	Config     config.Config
-	Auth       *utils.Auth
-	ProductDB  *model.ProductModel
-	DeliveryDB *model.DeliveryModel
-	Courier    *courier.Client
-	Sandbox    *channel.SandboxHMAC
-	Real       *channel.RealChannel
-	Dispatcher *delivery.Dispatcher
+	Config       config.Config
+	Auth         *utils.Auth
+	ProductDB    *model.ProductModel
+	DeliveryDB   *model.DeliveryModel
+	ProjectionDB *model.OrderProjectionModel
+	Courier      *courier.Client
+	Sandbox      *channel.SandboxHMAC
+	Real         *channel.RealChannel
+	Dispatcher   *delivery.Dispatcher
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -56,20 +57,27 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := deliveryDB.CreateTables(); err != nil {
 		panic(fmt.Sprintf("create delivery tables: %v", err))
 	}
+	projectionDB := model.NewOrderProjectionModel(db)
+	if err := projectionDB.CreateTables(); err != nil {
+		panic(fmt.Sprintf("create order projection tables: %v", err))
+	}
 
 	timeout := time.Millisecond * time.Duration(c.Courier.Timeout)
 	courierClient := courier.NewClient(c.Courier.BaseURL, timeout)
+	// 投递成功 → 订单投影 DELIVERED（只读事实副本，状态值来自投递面）
 	dispatcher := delivery.NewDispatcher(deliveryDB, productDB, c.Delivery.TimeoutMs,
-		time.Second*time.Duration(c.Delivery.RetryIntervalSeconds))
+		time.Second*time.Duration(c.Delivery.RetryIntervalSeconds),
+		func(orderID string) { _ = projectionDB.MarkDelivered(orderID, time.Now().UTC().Format(time.RFC3339)) })
 
 	return &ServiceContext{
-		Config:     c,
-		Auth:       utils.NewAuth(c.Auth.JWTSecret),
-		ProductDB:  productDB,
-		DeliveryDB: deliveryDB,
-		Courier:    courierClient,
-		Sandbox:    &channel.SandboxHMAC{Secret: []byte(c.Channel.SandboxSecret)},
-		Real:       channel.NewRealChannel("real-channel"),
-		Dispatcher: dispatcher,
+		Config:       c,
+		Auth:         utils.NewAuth(c.Auth.JWTSecret),
+		ProductDB:    productDB,
+		DeliveryDB:   deliveryDB,
+		ProjectionDB: projectionDB,
+		Courier:      courierClient,
+		Sandbox:      &channel.SandboxHMAC{Secret: []byte(c.Channel.SandboxSecret)},
+		Real:         channel.NewRealChannel("real-channel"),
+		Dispatcher:   dispatcher,
 	}
 }

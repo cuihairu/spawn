@@ -45,16 +45,18 @@ const gameSignatureHeader = "X-Game-Delivery-Signature"
 
 // Dispatcher 发货分发器：核验归属/金额 → 调游戏服发货接口 → 账本记账。
 type Dispatcher struct {
-	db       *model.DeliveryModel
-	products *model.ProductModel
-	hc       *http.Client
-	backoff  time.Duration
-	locks    sync.Map // order id -> *sync.Mutex（进程内并发同订单串行化）
+	db          *model.DeliveryModel
+	products    *model.ProductModel
+	hc          *http.Client
+	backoff     time.Duration
+	onDelivered func(orderID string) // 投递成功回调（订单投影 DELIVERED；nil 安全）
+	locks       sync.Map             // order id -> *sync.Mutex（进程内并发同订单串行化）
 }
 
 // NewDispatcher 构造分发器；baseBackoff 为失败重投基础间隔（恢复面按
-// attempts 指数退避，封顶 6 倍）。
-func NewDispatcher(db *model.DeliveryModel, products *model.ProductModel, timeoutMs int64, baseBackoff time.Duration) *Dispatcher {
+// attempts 指数退避，封顶 6 倍）；onDelivered 为投递成功钩子（订单只读
+// 投影，nil 安全）。
+func NewDispatcher(db *model.DeliveryModel, products *model.ProductModel, timeoutMs int64, baseBackoff time.Duration, onDelivered func(orderID string)) *Dispatcher {
 	if timeoutMs <= 0 {
 		timeoutMs = 5000
 	}
@@ -62,10 +64,11 @@ func NewDispatcher(db *model.DeliveryModel, products *model.ProductModel, timeou
 		baseBackoff = time.Minute
 	}
 	return &Dispatcher{
-		db:       db,
-		products: products,
-		hc:       &http.Client{Timeout: time.Millisecond * time.Duration(timeoutMs)},
-		backoff:  baseBackoff,
+		db:          db,
+		products:    products,
+		hc:          &http.Client{Timeout: time.Millisecond * time.Duration(timeoutMs)},
+		backoff:     baseBackoff,
+		onDelivered: onDelivered,
 	}
 }
 
@@ -156,6 +159,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, in Instruction) error {
 	}
 	if err := d.db.MarkDelivered(in.OrderId); err != nil {
 		return fmt.Errorf("记发货成功失败: %w", err)
+	}
+	if d.onDelivered != nil {
+		d.onDelivered(in.OrderId)
 	}
 	return nil
 }

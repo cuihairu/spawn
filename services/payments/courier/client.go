@@ -108,6 +108,19 @@ func (c *Client) GetOrder(gameID, env, bearer, orderID string) (*Order, error) {
 	return &out, nil
 }
 
+// ListOrders GET /v1/payments/orders（我的订单，updatedAt 降序；契约无分页
+// 查询参数，响应 {items, nextCursor}）。
+func (c *Client) ListOrders(gameID, env, bearer string) ([]Order, error) {
+	var page struct {
+		Items      []Order `json:"items"`
+		NextCursor string  `json:"nextCursor"`
+	}
+	if err := c.call(http.MethodGet, c.baseURL+"/v1/payments/orders", gameID, env, bearer, nil, &page); err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
 // ForwardCallback POST /v1/payments/callback（S2S，无 Bearer）：以 X-Payment-
 // Signature（HMAC-SHA256 十六进制）转发渠道回调 raw body。验签由本服务
 // 先做（原生渠道签名），这里构造 Courier 期望的 HMAC。

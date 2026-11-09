@@ -40,6 +40,13 @@ func RegisterPaymentsRoutes(server *rest.Server, serverCtx *svc.ServiceContext) 
 		{Method: http.MethodGet, Path: "/admin/deliveries", Handler: h},
 		{Method: http.MethodPost, Path: "/admin/deliveries/:orderId/redeliver", Handler: h},
 		{Method: http.MethodPatch, Path: "/admin/deliveries/:orderId/target", Handler: h},
+		// GP-204 订单面：玩家我的订单列表 + 运营订单投影检索/详情/退款/审计。
+		{Method: http.MethodGet, Path: "/games/:gameId/orders", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/orders", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/orders/:orderId", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/orders/:orderId/refund", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/refunds", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/audit", Handler: h},
 		{Method: http.MethodPost, Path: "/callback/:channel", Handler: h},
 	})
 }
