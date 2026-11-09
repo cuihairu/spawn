@@ -30,6 +30,8 @@
 ### M2：复用 Courier 完成交易与发货
 
 - [ ] GP-201 按 GP-001/002 接通平台账号与 Courier 游戏登录/验票/角色映射；补区服及充值目标关联，保留冻结契约，确需扩展时回 Courier 提案（F13/F14）。
+  - 代码完成（e4b436e + 8b6bd98）：新增 courier-adapter 服务（模块 go.work 注册；courier_game_mapping 映射/能力表 + platform_courier_binding 一对一绑定表 + adapter_audit_logs；Courier 冻结契约只读复用：/v1/identity/register|login|delete|delete/cancel，scope=game_id+env 仅请求头传递并测试违规拦截，信封 data/error+traceID，env 注册表可扩展；网关 :8800 反代 + compose 接线 + topology.md 落档）。平台侧：映射管理面（GET/PUT /admin/games/:id/mapping，能力 login/payment/download，角色经 game-catalog /me 权威判定）、代登录（POST /games/:id/session → 一次性短期启动票据，注册/登录会话复用避免双调，随机密码 AES-GCM 落库）、验票（POST /session/redeem 一次性兑换）、注销同步（POST /games/:id/account/delete 与 /cancel，PENDING_DELETE 宽限 + cancelToken）、审计列表（GET /admin/audit）；集成测试 TestRoutes_CourierAdapterFlow 覆盖匿名 401/未映射 404/禁登录 403/自动绑定注册/一次性票据/绑定复用（注册 1 登录 1）/删除 PENDING_DELETE→取消→即时删/scope 越权拦截，courier/ticket/model 单测；go test -race 全绿。game-catalog 增区服目录（game_servers 表 + /partner/games/:id/servers 增改列 + 公开 GET /games/:id/servers 只对已上架游戏、隐藏 closed；充值目标即 game_id+server_id，审计 game_server_create/update）；集成测试 TestRoutes_GameServers（公开空列表/合作方建区服默认 open/跨合作方 403/合作方全状态可见/关闭后玩家侧隐藏/匿名 401/审计含两类动作）；go test -race 全绿。
+  - 未完，保持未勾：跨仓沙箱联调与真机验收未做（归 GP-206）；Courier 侧未提供 F13/F14 扩展契约（区服/角色映射与充值目标在平台侧建表，扩展确需回 Courier 提案）；payment/download 能力仅登记未实现，Courier 无对应端点前不标可用。
 - [ ] GP-202 复用 teller/选定 PaymentsProvider，补服务端商品配置、真实支付渠道适配及订单金额/币种/商户归属核验；验证原生渠道签名，不拿沙箱 HMAC 代替支付机构验签（F15）。
 - [ ] GP-203 接真实游戏服幂等发货，落订单→区服/角色/商品关联；提供有权限的补单入口和定时恢复，验证重复回调、发货失败及重启恢复；生产不得沿用 nil Deliver 的沙箱成功行为（F16）。
 - [ ] GP-204 实现玩家订单入口及运营订单查询/检索/审计，建立退款/冲正管理适配与状态映射；不假设 Courier 已有退款端点或全局 HTTP 管理 API（F15/F16/F26）。
