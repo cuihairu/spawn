@@ -31,4 +31,10 @@ type Config struct {
 		Url           string `json:",env=REALTIME_HUB_URL,optional"`
 		InternalToken string `json:",env=REALTIME_INTERNAL_TOKEN,optional"`
 	}
+
+	// 内部通知端点（GP-306 业务触发）：token 空 = /internal/* 恒 403
+	//（默认拒绝，与 realtime-hub 同款 fail-closed）。
+	Internal struct {
+		Token string `json:",env=INTERNAL_TOKEN,optional"`
+	}
 }

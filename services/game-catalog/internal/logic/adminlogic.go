@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/tappi/tappi/services/game-catalog/internal/notify"
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 	"github.com/tappi/tappi/services/game-catalog/internal/types"
 	"github.com/tappi/tappi/services/game-catalog/model"
@@ -278,7 +279,30 @@ func (l *AdminLogic) PublishVersion(gameID, versionID string) (*types.GameVersio
 		return nil, newAPIError(http.StatusInternalServerError, "发布版本失败")
 	}
 	l.audit("version_publish", "version", versionID, toJSON(toVersion(before)), toJSON(toVersion(v)))
+	// GP-306 版本通知：向该游戏预约人群扇出新版本通知（community 落库 +
+	// realtime-hub 远程推送）；通知失败仅记日志，不影响发布结果。
+	l.notifyGameVersion(gameID, v)
 	return toVersion(v), nil
+}
+
+// notifyGameVersion GP-306 版本通知：预约过该游戏任意区服的用户为受众。
+// community 未配置时跳过（Enabled=false 不做无谓人群查询）。
+func (l *AdminLogic) notifyGameVersion(gameID string, v *model.GameVersion) {
+	if !l.svcCtx.Notify.Enabled() {
+		return
+	}
+	users, err := l.svcCtx.AdminRepository.ListReservationUsersByGame(gameID, 10000)
+	if err != nil {
+		l.Errorf("list reservation users for game %s failed: %v", gameID, err)
+		return
+	}
+	if len(users) == 0 {
+		return
+	}
+	l.svcCtx.Notify.Publish(notify.Notification{
+		UserIds: users, Type: "game_version", TargetId: 0,
+		Content: "您预约的游戏发布了新版本 " + v.Version + "，欢迎更新体验",
+	})
 }
 
 // RevokeVersion 撤回渠道包（GP-104）。

@@ -74,6 +74,21 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		rest.Route{Method: http.MethodGet, Path: "/games/:id/versions/:versionId/download", Handler: DownloadVersionHandler(serverCtx)},
 	))
 
+	// GP-306 开服计划与预约（F21）：玩家预约/取消/我的预约（player 即可；
+	// 已开服 409、重复预约幂等返回既有）。开服提醒在区服 open 过渡时触发
+	//（PartnerUpdateServer），版本通知在版本发布时触发（AdminLogic）。
+	server.AddRoutes(rest.WithMiddleware(auth,
+		rest.Route{Method: http.MethodPost, Path: "/games/:id/servers/:serverId/reserve", Handler: ReserveServerHandler(serverCtx)},
+		rest.Route{Method: http.MethodDelete, Path: "/games/:id/servers/:serverId/reserve", Handler: CancelReservationHandler(serverCtx)},
+		rest.Route{Method: http.MethodGet, Path: "/games/:id/reservations/me", Handler: MyReservationsHandler(serverCtx)},
+	))
+
+	// GP-306 S2S：游戏维度去重预约人群（promotions 活动通知受众）。
+	// X-Internal-Token 校验在 handler 内先于 body 解析；S2S 专用不进网关。
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/internal/games/:id/reservation-users", Handler: InternalReservationUsersHandler(serverCtx)},
+	})
+
 	// 运营后台（GP-103）：platform_admin/operator 方可访问；
 	// 角色授予收紧为 platform_admin（最小权限）。
 	adminRoutes := rest.WithMiddleware(middleware.RequireRole(model.RolePlatformAdmin),

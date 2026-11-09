@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tappi/tappi/services/game-catalog/internal/notify"
 	"github.com/tappi/tappi/services/game-catalog/internal/store"
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 	"github.com/tappi/tappi/services/game-catalog/internal/types"
@@ -282,6 +283,7 @@ func (l *PartnerLogic) CreateServer(req *types.CreateServerRequest) (*types.Game
 	}
 	s, err := l.svcCtx.AdminRepository.CreateGameServer(req.Id, &model.GameServer{
 		Name: strings.TrimSpace(req.Name), Region: req.Region, Status: req.Status, Sort: req.Sort,
+		PlannedOpenAt: req.PlannedOpenAt,
 	})
 	if err != nil {
 		l.Errorf("create game server failed: %v", err)
@@ -308,6 +310,7 @@ func (l *PartnerLogic) UpdateServer(req *types.UpdateServerRequest) (*types.Game
 		l.Errorf("get game server failed: %v", err)
 		return nil, newAPIError(http.StatusInternalServerError, "查询区服失败")
 	}
+	beforeStatus := current.Status
 	if req.Status != "" {
 		if !validServerStatus(req.Status) {
 			return nil, newAPIError(http.StatusBadRequest, "非法区服状态")
@@ -323,6 +326,9 @@ func (l *PartnerLogic) UpdateServer(req *types.UpdateServerRequest) (*types.Game
 	if req.Sort > 0 {
 		current.Sort = req.Sort
 	}
+	if strings.TrimSpace(req.PlannedOpenAt) != "" {
+		current.PlannedOpenAt = strings.TrimSpace(req.PlannedOpenAt)
+	}
 	updated, err := l.svcCtx.AdminRepository.UpdateGameServer(current)
 	if errors.Is(err, model.ErrServerNotFound) {
 		return nil, newAPIError(http.StatusNotFound, "区服不存在")
@@ -331,8 +337,40 @@ func (l *PartnerLogic) UpdateServer(req *types.UpdateServerRequest) (*types.Game
 		l.Errorf("update game server failed: %v", err)
 		return nil, newAPIError(http.StatusInternalServerError, "更新区服失败")
 	}
+	// GP-306 开服提醒：非 open → open 过渡触发预约人群通知（只发一次，
+	// notified_at 置位）；通知失败仅记日志，不影响状态变更本身。
+	if beforeStatus != model.ServerStatusOpen && updated.Status == model.ServerStatusOpen {
+		l.notifyServerOpen(updated)
+	}
 	l.audit("game_server_update", "game_server", strconvFormatInt(updated.Id), toJSON(toTypesServer(current)), toJSON(toTypesServer(updated)))
 	return toTypesServer(updated), nil
+}
+
+// notifyServerOpen GP-306 开服提醒：拉该服未提醒预约 → community 扇出
+// （站内信 + realtime-hub 远程推送）→ 置已提醒。community 未配置时跳过。
+func (l *PartnerLogic) notifyServerOpen(s *model.GameServer) {
+	if !l.svcCtx.Notify.Enabled() {
+		return
+	}
+	reservations, err := l.svcCtx.AdminRepository.ListUnnotifiedReservations(s.Id)
+	if err != nil {
+		l.Errorf("list reservations for server %d failed: %v", s.Id, err)
+		return
+	}
+	if len(reservations) == 0 {
+		return
+	}
+	ids := make([]int64, 0, len(reservations))
+	for _, r := range reservations {
+		ids = append(ids, r.UserId)
+	}
+	l.svcCtx.Notify.Publish(notify.Notification{
+		UserIds: ids, Type: "server_open", TargetId: s.Id,
+		Content: "您预约的区服「" + s.Name + "」已开服，欢迎进入游戏",
+	})
+	if err := l.svcCtx.AdminRepository.MarkReservationsNotified(s.Id); err != nil {
+		l.Errorf("mark reservations notified server %d failed: %v", s.Id, err)
+	}
 }
 
 // ListPartnerServers 合作方视角区服列表：全部状态可见（closed 保留对账）。

@@ -278,36 +278,74 @@ type MeResponse struct {
 
 // GP-201 区服目录/充值目标：合作方维护区服，玩家公开读开放区服。
 type GameServer struct {
-	Id        int64  `json:"id"`
-	GameId    string `json:"game_id"`
-	Name      string `json:"name"`
-	Region    string `json:"region"`
-	Status    string `json:"status"`
-	Sort      int64  `json:"sort"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	Id     int64  `json:"id"`
+	GameId string `json:"game_id"`
+	Name   string `json:"name"`
+	Region string `json:"region"`
+	Status string `json:"status"`
+	Sort   int64  `json:"sort"`
+	// GP-306 开服计划：排期开服时间（RFC3339；空 = 未排期），开服表展示。
+	PlannedOpenAt string `json:"planned_open_at"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
 // CreateServerRequest 新建区服（path id = game id）；status 缺省 open，
-// 可选 open/maintenance/closed。
+// 可选 open/maintenance/closed；planned_open_at 为开服计划（可选）。
 type CreateServerRequest struct {
-	Id     string `path:"id"`
-	Name   string `json:"name"`
-	Region string `json:"region,optional"`
-	Status string `json:"status,optional"`
-	Sort   int64  `json:"sort,optional"`
+	Id            string `path:"id"`
+	Name          string `json:"name"`
+	Region        string `json:"region,optional"`
+	Status        string `json:"status,optional"`
+	Sort          int64  `json:"sort,optional"`
+	PlannedOpenAt string `json:"planned_open_at,optional"`
 }
 
-// UpdateServerRequest 更新区服（改名/迁移/状态变更）；空字段保持原值。
+// UpdateServerRequest 更新区服（改名/迁移/状态变更/开服排期）；空字段保持原值。
 type UpdateServerRequest struct {
-	Id       string `path:"id"`
-	ServerId int64  `path:"serverId"`
-	Name     string `json:"name,optional"`
-	Region   string `json:"region,optional"`
-	Status   string `json:"status,optional"`
-	Sort     int64  `json:"sort,optional"`
+	Id            string `path:"id"`
+	ServerId      int64  `path:"serverId"`
+	Name          string `json:"name,optional"`
+	Region        string `json:"region,optional"`
+	Status        string `json:"status,optional"`
+	Sort          int64  `json:"sort,optional"`
+	PlannedOpenAt string `json:"planned_open_at,optional"`
 }
 
 type ServerListResponse struct {
 	Items []GameServer `json:"items"`
+}
+
+// GP-306 开服预约：玩家对未开服区服预约，开服时收到提醒（只发一次）。
+type ServerPathRequest struct {
+	Id       string `path:"id"`
+	ServerId int64  `path:"serverId"`
+}
+
+type ReserveServerResponse struct {
+	ServerId      int64  `json:"server_id"`
+	GameId        string `json:"game_id"`
+	Status        string `json:"status"`
+	PlannedOpenAt string `json:"planned_open_at"`
+	Created       bool   `json:"created"`
+}
+
+type MyReservationView struct {
+	GameId        string `json:"game_id"`
+	ServerId      int64  `json:"server_id"`
+	ServerName    string `json:"server_name"`
+	ServerStatus  string `json:"server_status"`
+	PlannedOpenAt string `json:"planned_open_at"`
+	NotifiedAt    string `json:"notified_at"`
+	CreatedAt     string `json:"created_at"`
+}
+
+type MyReservationsResponse struct {
+	Items []MyReservationView `json:"items"`
+}
+
+// InternalReservationUsersResponse S2S：游戏维度去重预约人群（活动通知受众）。
+type InternalReservationUsersResponse struct {
+	GameId  string  `json:"game_id"`
+	UserIds []int64 `json:"user_ids"`
 }

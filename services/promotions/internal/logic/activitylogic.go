@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/tappi/tappi/services/promotions/internal/notify"
 	"github.com/tappi/tappi/services/promotions/internal/svc"
 	"github.com/tappi/tappi/services/promotions/internal/types"
 	"github.com/tappi/tappi/services/promotions/model"
@@ -230,7 +231,32 @@ func (l *ActivityLogic) Publish(req *types.ActivityPathRequest, authHeader strin
 	}
 	got, _ := l.svcCtx.ActivityDB.Get(req.Id)
 	l.audit(req.Id, userID, role, "activity_publish", ip, map[string]any{"version": version})
+	// GP-306 活动消息触发：发布后向该游戏预约人群扇出通知。fire-and-forget
+	// （通知失败仅记日志，不影响发布结果）；受众/投递未配置时整体跳过。
+	l.notifyActivityPublished(got)
 	return &types.ActivityResponse{Activity: toView(got)}, nil
+}
+
+// notifyActivityPublished GP-306 活动消息：受众 = game-catalog 预约人群
+// （单一预约体系同时供开服提醒/版本通知/活动消息）；0 人或查询失败静默降级。
+func (l *ActivityLogic) notifyActivityPublished(a *model.Activity) {
+	if !l.svcCtx.Notify.Enabled() || a == nil || a.GameId == "" {
+		return
+	}
+	userIDs, err := l.svcCtx.Notify.ReservationUsers(a.GameId)
+	if err != nil {
+		l.Errorf("reservation users for game %s failed: %v", a.GameId, err)
+		return
+	}
+	if len(userIDs) == 0 {
+		return
+	}
+	l.svcCtx.Notify.Publish(notify.Notification{
+		UserIds:  userIDs,
+		Type:     "game_activity",
+		TargetId: a.Id,
+		Content:  "您预约的游戏有新活动「" + a.Name + "」，快来参与吧",
+	})
 }
 
 // Disable 停用（仅已发布）。

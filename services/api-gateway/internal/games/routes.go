@@ -50,6 +50,11 @@ func RegisterGameProxyRoutes(server *rest.Server, serverCtx *svc.ServiceContext)
 		{Method: http.MethodPost, Path: "/partner/games/:id/servers", Handler: h},
 		{Method: http.MethodGet, Path: "/partner/games/:id/servers", Handler: h},
 		{Method: http.MethodPatch, Path: "/partner/games/:id/servers/:serverId", Handler: h},
+		// GP-306 开服预约：玩家预约/取消/我的预约（Authorization 头透传，
+		// 登录与角色在 game-catalog 侧；S2S /internal/* 不经网关暴露）
+		{Method: http.MethodPost, Path: "/games/:id/servers/:serverId/reserve", Handler: h},
+		{Method: http.MethodDelete, Path: "/games/:id/servers/:serverId/reserve", Handler: h},
+		{Method: http.MethodGet, Path: "/games/:id/reservations/me", Handler: h},
 	})
 
 	// GP-105 包体通道：latest 元数据是小 JSON，走普通反代；上传/下载为

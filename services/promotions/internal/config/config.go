@@ -25,4 +25,14 @@ type Config struct {
 	Reward struct {
 		Secret string `json:",env=PROMOTIONS_REWARD_SECRET,optional"`
 	}
+
+	// GP-306 活动消息触发：受众拉自 game-catalog 预约人群，投递走 community
+	// 站内通知（realtime-hub 远程推送在 community 侧）；CommunityUrl 空 = 不
+	// 投递，CatalogUrl 空 = 不拉受众（活动发布本身不受影响，本地开发零依赖）；
+	// Token 须与两侧 INTERNAL_TOKEN 一致。
+	Notify struct {
+		CommunityUrl string `json:",env=COMMUNITY_URL,optional"`
+		CatalogUrl   string `json:",env=GAMECATALOG_BASE_URL,optional"`
+		Token        string `json:",env=INTERNAL_TOKEN,optional"`
+	}
 }

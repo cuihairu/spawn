@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/tappi/tappi/services/game-catalog/internal/config"
+	"github.com/tappi/tappi/services/game-catalog/internal/notify"
 	"github.com/tappi/tappi/services/game-catalog/internal/store"
 	"github.com/tappi/tappi/services/game-catalog/model"
 	"github.com/tappi/tappi/services/game-catalog/utils"
@@ -27,6 +28,9 @@ type ServiceContext struct {
 	AdminRepository model.AdminStore
 	PackageStore    *store.LocalPackageStore
 	Auth            *utils.Auth
+	// Notify GP-306 业务通知发布口（community /internal/notifications）；
+	// COMMUNITY_URL 未配置时为 no-op。
+	Notify notify.Publisher
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -102,6 +106,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		AdminRepository: adminModel,
 		PackageStore:    packageStore,
 		Auth:            utils.NewAuth(c.Auth.JWTSecret),
+		Notify:          notify.NewPublisher(c.Notify.Url, c.Notify.Token),
 	}
 }
 

@@ -29,4 +29,18 @@ type Config struct {
 		// 启动时写入 platform_roles 作为 platform_admin（幂等；首个管理员引导）。
 		AdminUserIds []string `json:",env=ADMIN_USER_IDS,optional"`
 	}
+
+	// GP-306 开服提醒/版本通知：经 community /internal/notifications 扇出
+	//（站内信 + realtime-hub 远程推送）。Url 空则 no-op（通知不落库不推送，
+	// 主操作不受影响）；Token 须与 community INTERNAL_TOKEN 一致。
+	Notify struct {
+		Url   string `json:",env=COMMUNITY_URL,optional"`
+		Token string `json:",env=INTERNAL_TOKEN,optional"`
+	}
+
+	// Internal 本服务 S2S 端点守卫（/internal/games/:id/reservation-users，
+	// 供 promotions 拉活动通知受众）；Token 空 = 恒 403（fail-closed）。
+	Internal struct {
+		Token string `json:",env=INTERNAL_TOKEN,optional"`
+	}
 }

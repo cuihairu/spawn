@@ -106,6 +106,7 @@ func toTypesServer(s *model.GameServer) *types.GameServer {
 	}
 	return &types.GameServer{
 		Id: s.Id, GameId: s.GameId, Name: s.Name, Region: s.Region,
-		Status: s.Status, Sort: s.Sort, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
+		Status: s.Status, Sort: s.Sort, PlannedOpenAt: s.PlannedOpenAt,
+		CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
 	}
 }

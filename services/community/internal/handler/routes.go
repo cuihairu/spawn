@@ -256,4 +256,14 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		},
 		rest.WithPrefix("/api/v1"),
 	)
+
+	// GP-306 内部通知端点（S2S 专用不进网关）：X-Internal-Token 校验在
+	// handler 内先于 body 解析；令牌未配置恒 403。
+	server.AddRoutes([]rest.Route{
+		{
+			Method:  http.MethodPost,
+			Path:    "/internal/notifications",
+			Handler: InternalNotificationsHandler(serverCtx),
+		},
+	})
 }

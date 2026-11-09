@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/tappi/tappi/services/promotions/internal/config"
+	"github.com/tappi/tappi/services/promotions/internal/notify"
 	"github.com/tappi/tappi/services/promotions/model"
 	"github.com/tappi/tappi/services/promotions/utils"
 
@@ -16,6 +17,7 @@ type ServiceContext struct {
 	ActivityDB *model.ActivityModel
 	RewardDB   *model.RewardGrantModel
 	GiftPackDB *model.GiftPackModel
+	Notify     *notify.Client
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -49,5 +51,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		ActivityDB: activityDB,
 		RewardDB:   rewardDB,
 		GiftPackDB: giftPackDB,
+		Notify:     notify.New(c.Notify.CommunityUrl, c.Notify.CatalogUrl, c.Notify.Token),
 	}
 }
