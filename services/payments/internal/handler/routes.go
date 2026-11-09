@@ -1,0 +1,234 @@
+package handler
+
+import (
+	"context"
+	"io"
+	"net"
+	"net/http"
+	"strings"
+
+	"github.com/tappi/tappi/services/payments/internal/logic"
+	"github.com/tappi/tappi/services/payments/internal/svc"
+	"github.com/tappi/tappi/services/payments/internal/types"
+
+	"github.com/zeromicro/go-zero/rest"
+	"github.com/zeromicro/go-zero/rest/httpx"
+)
+
+// RegisterHandlers 路由装配：玩家支付面（平台 JWT，scope=path gameId）、
+// 商品配置管理面（角色经 game-catalog /me）、渠道 S2S 回调（验签接缝）。
+func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
+	auth := AuthMiddleware(svcCtx)
+
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/healthz", Handler: HealthHandler()},
+	})
+
+	// 玩家面：下单/订单查询/可购 SKU（Bearer 透传 Courier，归属在 Courier 侧）
+	playerRoutes := []rest.Route{
+		{Method: http.MethodPost, Path: "/games/:gameId/orders", Handler: CreateOrderHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/games/:gameId/orders/:orderId", Handler: GetOrderHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/games/:gameId/skus", Handler: ListSkusHandler(svcCtx)},
+	}
+	server.AddRoutes(rest.WithMiddleware(auth, playerRoutes...))
+
+	// 管理面：商品配置（platform_admin/operator）
+	adminRoutes := []rest.Route{
+		{Method: http.MethodPost, Path: "/admin/products/:id", Handler: CreateProductHandler(svcCtx)},
+		{Method: http.MethodPatch, Path: "/admin/products/:id/enabled", Handler: SetProductEnabledHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/games/:gameId/products", Handler: ListProductsHandler(svcCtx)},
+	}
+	server.AddRoutes(rest.WithMiddleware(auth, adminRoutes...))
+
+	// 渠道 S2S 回调：验签先于 body 解析（payment.md 安全边界 2），无 Bearer
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodPost, Path: "/callback/:channel", Handler: CallbackHandler(svcCtx)},
+	})
+}
+
+// AuthMiddleware 平台 JWT 认证（user-service 签发，本服务仅校验；注入原始
+// Authorization 头供角色 /me 查询透传）。
+func AuthMiddleware(svcCtx *svc.ServiceContext) rest.Middleware {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if !strings.HasPrefix(authHeader, "Bearer ") {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"code":401,"message":"缺少认证令牌"}`))
+				return
+			}
+			token := strings.TrimSpace(authHeader[len("Bearer "):])
+			if token == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"code":401,"message":"令牌不能为空"}`))
+				return
+			}
+			claims, err := svcCtx.Auth.ParseToken(token)
+			if err != nil {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"code":401,"message":"无效的令牌"}`))
+				return
+			}
+			ctx := context.WithValue(r.Context(), "user_id", claims.UserId)
+			ctx = context.WithValue(ctx, "username", claims.Username)
+			ctx = context.WithValue(ctx, "auth_header", authHeader)
+			ctx = context.WithValue(ctx, "client_ip", clientIP(r))
+			next(w, r.WithContext(ctx))
+		}
+	}
+}
+
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if idx := strings.IndexByte(xff, ','); idx > 0 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+func authHeaderFrom(r *http.Request) string {
+	if v, ok := r.Context().Value("auth_header").(string); ok {
+		return v
+	}
+	return ""
+}
+
+func HealthHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}
+}
+
+func CreateOrderHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.CreateOrderRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewOrderLogic(r.Context(), svcCtx).CreateOrder(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func GetOrderHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.OrderQueryRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewOrderLogic(r.Context(), svcCtx).GetOrder(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func ListSkusHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.GamePathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewOrderLogic(r.Context(), svcCtx).ListSkus(req.GameId)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func CreateProductHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.CreateProductRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewProductLogic(r.Context(), svcCtx).Create(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func SetProductEnabledHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.SetProductEnabledRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewProductLogic(r.Context(), svcCtx).SetEnabled(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func ListProductsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.GamePathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewProductLogic(r.Context(), svcCtx).ListByGame(req.GameId, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// CallbackHandler 渠道 S2S 回调：原生验签接缝（sandbox HMAC / real 占位）。
+// 验签先于解析，签名缺失/不匹配一律 403（payment.md 安全边界 2）。
+func CallbackHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.ChannelPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		rawBody, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		signature := r.Header.Get("X-Payment-Signature")
+		if signature == "" {
+			httpx.ErrorCtx(r.Context(), w, logic.NewAPIError(http.StatusForbidden, "回调签名缺失"))
+			return
+		}
+		meta := map[string]string{
+			"timestamp": r.Header.Get("X-Payment-Timestamp"),
+			"nonce":     r.Header.Get("X-Payment-Nonce"),
+		}
+		if err := logic.NewCallbackLogic(r.Context(), svcCtx).Handle(req.Channel, rawBody, signature, meta); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, struct{}{})
+	}
+}

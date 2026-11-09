@@ -9,6 +9,7 @@ use (
 	./services/courier-adapter
 	./services/data-panel
 	./services/game-catalog
+	./services/payments
 	./services/realtime-hub
 	./services/user-service
 	./services/user-service-rpc

@@ -15,6 +15,7 @@ import (
 	"github.com/tappi/tappi/services/api-gateway/internal/datapanel"
 	"github.com/tappi/tappi/services/api-gateway/internal/games"
 	"github.com/tappi/tappi/services/api-gateway/internal/handler"
+	"github.com/tappi/tappi/services/api-gateway/internal/payments"
 	"github.com/tappi/tappi/services/api-gateway/internal/realtime"
 	"github.com/tappi/tappi/services/api-gateway/internal/svc"
 	"github.com/tappi/tappi/services/api-gateway/internal/users"
@@ -53,6 +54,7 @@ func run() error {
 	games.RegisterGameProxyRoutes(server, ctx)
 	datapanel.RegisterDataPanelProxyRoutes(server, ctx)
 	adapter.RegisterCourierAdapterRoutes(server, ctx)
+	payments.RegisterPaymentsRoutes(server, ctx)
 	realtime.RegisterRealtimeTunnelRoutes(server, ctx)
 
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)

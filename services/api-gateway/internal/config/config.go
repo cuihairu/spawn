@@ -51,5 +51,10 @@ type Config struct {
 			BaseURL string `json:",env=COURIER_ADAPTER_URL,optional"`
 			Timeout int64  `json:",default=5000"`
 		}
+		// GP-202 支付接入服务：商品配置/下单/回调验签接缝。
+		Payments struct {
+			BaseURL string `json:",env=PAYMENTS_URL,optional"`
+			Timeout int64  `json:",default=5000"`
+		}
 	}
 }

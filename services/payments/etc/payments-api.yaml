@@ -1,0 +1,39 @@
+Name: payments-api
+Host: 0.0.0.0
+Port: 8898
+
+# 接入域数据库：DSN 含 file:/.db 走 SQLite（默认本地文件，零配置），
+# 生产用 MySQL 连接串 + DATASOURCE 环境变量覆盖（与 game-catalog 同款探测）。
+MySQL:
+  DataSource: "file:data/payments.db"
+
+# 平台 JWT 校验密钥（与 user-service 共享；生产环境用 JWT_SECRET 覆盖）
+Auth:
+  JWTSecret: "tappi-user-service-jwt-secret-key-2024"
+
+# Courier 支付网关（契约 Frozen payment v1.1：/v1/payments/*，只读不 fork；
+# GP-005 联合沙箱接线）。订单/金额事实源在 Courier，本服务不复制状态机。
+Courier:
+  BaseURL: "http://localhost:8080"
+  Timeout: 5000
+
+# 平台角色权威（读 /me 判定 product 配置管理面）
+GameCatalog:
+  BaseURL: "http://localhost:8890"
+  Timeout: 5000
+
+# 渠道适配：Sandbox 为开发/沙箱专用（HMAC-SHA256 回调，非真实渠道验签）；
+# 真实渠道（WeChat Pay v3 / Alipay 等）需实现 ChannelAdapter 且签名密钥经
+# 环境变量注入，不得用沙箱 HMAC 冒充支付机构验签（payment.md 安全边界 2）。
+Channel:
+  SandboxSecret: "tappi-payments-sandbox-channel-secret-2026"
+
+Prometheus:
+  Host: 0.0.0.0
+  Port: 9099
+
+Log:
+  ServiceName: payments-api
+  Mode: console
+  Encoding: json
+  Level: info

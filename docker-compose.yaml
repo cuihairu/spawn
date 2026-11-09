@@ -18,6 +18,8 @@ services:
       REALTIME_HUB_URL: http://realtime-hub:8893
       # GP-201 Courier 适配服务（游戏会话票据/绑定/映射管理面）
       COURIER_ADAPTER_URL: http://courier-adapter:8897
+      # GP-202 支付接入服务（商品配置/下单/订单查询/回调验签接缝）
+      PAYMENTS_URL: http://payments:8898
     volumes:
       - uploads:/app/uploads
     depends_on:
@@ -28,6 +30,7 @@ services:
       - data-panel
       - realtime-hub
       - courier-adapter
+      - payments
     ports:
       - "8800:8800"
       - "9095:9095" # /metrics（deploy/ 观测栈抓取）
@@ -133,6 +136,26 @@ services:
     ports:
       - "8897:8897"
       - "9098:9098" # /metrics（deploy/ 观测栈抓取）
+    restart: unless-stopped
+
+  # GP-202 支付接入服务：商品配置（服务端定价）/下单/订单查询/渠道回调验签
+  # 接缝。订单事实源在 Courier teller（冻结契约只读），本服务不复制状态机；
+  # 沙箱渠道为开发/沙箱专用，真实渠道需 ChannelAdapter + 渠道密钥注入。
+  payments:
+    build:
+      context: ./services/payments
+    environment:
+      JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
+      COURIER_GATEWAY_URL: "${COURIER_GATEWAY_URL:-http://courier-gateway:8080}"
+      GAMECATALOG_BASE_URL: http://game-catalog:8890
+      # 沙箱渠道 HMAC 密钥（仅开发/沙箱；真实渠道不得使用且须覆盖）
+      PAYMENTS_SANDBOX_SECRET: "${PAYMENTS_SANDBOX_SECRET:-tappi-payments-sandbox-channel-secret-2026}"
+    depends_on:
+      - user-service
+      - game-catalog
+    ports:
+      - "8898:8898"
+      - "9099:9099" # /metrics（deploy/ 观测栈抓取）
     restart: unless-stopped
 
   web-client:

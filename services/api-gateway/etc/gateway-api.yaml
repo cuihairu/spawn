@@ -37,6 +37,11 @@ Upstreams:
   CourierAdapter:
     BaseURL: "http://localhost:8897"
     Timeout: 5000
+  # GP-202 支付接入服务：商品配置/下单/订单查询/回调验签接缝
+  # （未配置则网关不注册该组路由）。
+  Payments:
+    BaseURL: "http://localhost:8898"
+    Timeout: 5000
 
 # Prometheus 指标端点（go-zero agent 自动暴露 /metrics）
 Prometheus:
