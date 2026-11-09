@@ -46,5 +46,10 @@ type Config struct {
 			BaseURL string `json:",env=REALTIME_HUB_URL,optional"`
 			Timeout int64  `json:",default=5000"`
 		}
+		// GP-201 Courier 适配服务：游戏会话票据/绑定/注销同步/映射管理面。
+		CourierAdapter struct {
+			BaseURL string `json:",env=COURIER_ADAPTER_URL,optional"`
+			Timeout int64  `json:",default=5000"`
+		}
 	}
 }

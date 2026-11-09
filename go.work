@@ -6,6 +6,7 @@ use (
 	./services/api-gateway
 	./services/community
 	./services/content-service
+	./services/courier-adapter
 	./services/data-panel
 	./services/game-catalog
 	./services/realtime-hub

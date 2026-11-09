@@ -13,6 +13,7 @@
 | content-service | Go / go-zero | 8891 | 9093 | 攻略 CRUD/发布/点赞、评论（含嵌套回复） | SQLite（默认 `file:data/content.db`）或 MySQL |
 | community | Go / go-zero | 8892 | 9094 | 帖子流/热榜/关键词搜索、话题圈子、关注关系（话题/用户）、点赞/分享计数、关注流、我的点赞、站内通知（点赞/评论/回复/关注四类，唯一键去重）、私信、举报审核 | SQLite/MySQL（post_likes、notifications 关系表等启动建表） |
 | data-panel | Go / go-zero | 8896 | 9097 | 战绩摄入（JWT 保护，单调增量 upsert）与玩家战绩查询（公开，win_rate/kd 读侧 4 位小数） | SQLite/MySQL + TTL/LRU 缓存 |
+| courier-adapter | Go / go-zero | 8897 | 9098 | GP-201 平台账号 ↔ Courier 适配：courier_game_mapping（GP-002 映射/能力）、platform_courier_binding（GP-001 一对一绑定，代登录随机密码 AES-GCM 密文落库）、游戏启动票据（一次性/短期/不落盘）、注销同步；管理面角色经 game-catalog /me 权威判定 | SQLite（默认 `file:data/adapter.db`）或 MySQL；绑定/映射/审计三表 + adapter_audit_logs |
 | api-gateway | Go / go-zero | 8800 | 9095 | BFF：自有聚合 handler + 五路反代（见 §3）+ 统一图片上传入口（见 §3.1） | uploads 卷（图片本地盘存储，选型方案 A） |
 | user-service-rpc | Go / gRPC | 8080 (gRPC) | 9096 | 内网 gRPC 通道（手机/Web 均不直连；protoc 生成代码缺口保留原样） | — |
 
@@ -51,7 +52,7 @@ web-client 直连拓扑保持不变，网关路由扩容不要求 web 迁移。
 | POST /upload | 统一图片上传入口（2026-10-08 方案 A 落地）：Bearer JWT 本地校验（HS256 与 user-service 同密钥）、512 字节魔数嗅探白名单 png/jpeg/webp/gif、10MB 上限、随机文件名 `O_EXCL` 落 uploads 卷，返回 `/uploads/<hash>.<ext>`；业务服务只存 URL 不碰文件 | 本地盘（uploads 卷） |
 | GET /uploads/:file | 已上传图片静态托管：文件名正则白名单（`^[0-9a-f]{32}\.(png\|jpg\|webp\|gif)$`）防路径遍历后 `ServeContent` 回读 | 本地盘（uploads 卷） |
 
-### 3.2 反代路由（internal/{users,games,community,content,datapanel,realtime}；users/games/community/content/data-panel 为 proxy.NewUpstream passthrough，realtime 为 /ws 隧道）
+### 3.2 反代路由（internal/{users,games,community,content,datapanel,adapter,realtime}；users/games/community/content/data-panel 为 proxy.NewUpstream passthrough，realtime 为 /ws 隧道）
 
 | 前缀 | 路由 | 上游 |
 |------|------|------|
@@ -60,6 +61,7 @@ web-client 直连拓扑保持不变，网关路由扩容不要求 web 迁移。
 | community | `/api/v1/topics**`、`/api/v1/posts**`（含 /posts/search 与 :id/comments）、`/api/v1/users/{following,likes}`、`/api/v1/users/:user_id/follow`、`/api/v1/notifications**`、`/api/v1/messages**`、`/api/v1/moderation**` 等 M1–M3 全量调用面 | community |
 | content | `/api/v1/guides**`、`/api/v1/comments**` | content-service |
 | data-panel | `/api/v1/stats/users/:user_id/summary`、`/api/v1/stats/users/:user_id/games`、`/api/v1/stats/users/:user_id/games/:game_id`、POST `/api/v1/stats/records` | data-panel |
+| adapter | POST /games/:id/session、POST /session/redeem、POST /games/:id/account/delete(+ /cancel)、GET/PUT /admin/games/:id/mapping、GET /admin/audit（GP-201；CourierAdapter.BaseURL 为空时不注册） | courier-adapter |
 | realtime | GET /ws（WebSocket 隧道：Hijack + 双向 splice，Hijack 前 502；RealtimeHub.BaseURL 为空时不注册） | realtime-hub |
 
 反代语义：path+query 透传、hop-by-hop 头剥离、请求体缓冲定长转发（1 MiB 上限，超限 413。缓冲是为绕开 go-zero 上游不解析 chunked 请求体的缺陷）、状态码/响应体原样回传（匿名 401 等语义保持）。

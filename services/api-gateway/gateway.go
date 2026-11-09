@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/tappi/tappi/services/api-gateway/internal/adapter"
 	"github.com/tappi/tappi/services/api-gateway/internal/community"
 	"github.com/tappi/tappi/services/api-gateway/internal/config"
 	"github.com/tappi/tappi/services/api-gateway/internal/content"
@@ -51,6 +52,7 @@ func run() error {
 	users.RegisterUserProxyRoutes(server, ctx)
 	games.RegisterGameProxyRoutes(server, ctx)
 	datapanel.RegisterDataPanelProxyRoutes(server, ctx)
+	adapter.RegisterCourierAdapterRoutes(server, ctx)
 	realtime.RegisterRealtimeTunnelRoutes(server, ctx)
 
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)

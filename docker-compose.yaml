@@ -16,6 +16,8 @@ services:
       JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
       # realtime-hub WS 隧道：/ws 原始透传（未配置则网关不注册 /ws）。
       REALTIME_HUB_URL: http://realtime-hub:8893
+      # GP-201 Courier 适配服务（游戏会话票据/绑定/映射管理面）
+      COURIER_ADAPTER_URL: http://courier-adapter:8897
     volumes:
       - uploads:/app/uploads
     depends_on:
@@ -25,6 +27,7 @@ services:
       - community
       - data-panel
       - realtime-hub
+      - courier-adapter
     ports:
       - "8800:8800"
       - "9095:9095" # /metrics（deploy/ 观测栈抓取）
@@ -107,6 +110,29 @@ services:
       REALTIME_INTERNAL_TOKEN: "${REALTIME_INTERNAL_TOKEN:-tappi-realtime-internal-token-2024}"
     ports:
       - "8893:8893"
+    restart: unless-stopped
+
+  # GP-201 Courier 适配服务：平台账号 ↔ Courier 游戏会话（绑定/代登录/
+  # 启动票据/注销同步）+ courier_game_mapping 管理面。Courier 网关本身
+  # 属另一仓（GP-005 联合沙箱接线），未就绪时本服务可启动，游戏会话端点
+  # 以 502 呈现上游不可达。
+  courier-adapter:
+    build:
+      context: ./services/courier-adapter
+    environment:
+      # 与 user-service 的 Auth.JWTSecret 同值：平台 JWT 校验。
+      JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
+      # 代登录随机密码加密密钥：生产必须覆盖（内置演示值启动期大声告警）。
+      CREDENTIAL_KEY: "${CREDENTIAL_KEY:-tappi-courier-adapter-credential-key-2026}"
+      COURIER_GATEWAY_URL: "${COURIER_GATEWAY_URL:-http://courier-gateway:8080}"
+      GAMECATALOG_BASE_URL: http://game-catalog:8890
+      USER_SERVICE_URL: http://user-service:8888
+    depends_on:
+      - user-service
+      - game-catalog
+    ports:
+      - "8897:8897"
+      - "9098:9098" # /metrics（deploy/ 观测栈抓取）
     restart: unless-stopped
 
   web-client:
