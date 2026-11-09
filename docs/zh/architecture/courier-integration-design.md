@@ -128,6 +128,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_mapping_scope ON courier_game_mapping (cour
 
 - **最小权限/审计模型（设计）**：角色 `platform_admin / operator / partner / player`；资源=游戏/版本/活动/订单；游戏归属（partner 只达自有游戏）；审计表（actor_id、actor_role、action、resource_type、resource_id、before_json、after_json、ip、created_at）。**最小实现归 GP-103**（运营后台）与 Courier 管理适配（GP-204）；本设计定模型与写入点（绑定/映射/能力变更均写审计）。
 - **存储与备份**：Spawn 数据按各服务现有持久化；包体存储与受控下载方案归 GP-105；Courier OrderStore/StateFile 为可选快照接缝——**生产必须接持久存储**，默认内存不用于生产（调研 §4 F77），具体部署与备份恢复随 GP-105 / GP-206 验收。
+- **持久化与备份恢复方案（GP-004）**：以各服务「存储现状」（`topology.md` §1 列）为基线：
+  - *存储形态*：user-service 用 MySQL；game-catalog / content-service / community / data-panel 默认 SQLite 文件（`file:data/*.db`，生产以 `DATASOURCE` 指向 MySQL）；api-gateway 图片走本地 uploads 卷；realtime-hub 可选 Redis（跨实例 pub/sub）。无外部托管数据库依赖（除部署者自管 MySQL）。
+  - *备份策略*：SQLite 用 `VACUUM INTO` 在线快照（或停机文件拷贝）；MySQL 用 `mysqldump --single-transaction` 逻辑备份；uploads 卷用 rsync/restic 增量到异机/对象存储；Redis 开 RDB+AOF。备份任务以 cron/systemd timer 每日低峰执行。
+  - *恢复与验证*：恢复 = 还原备份到空库 → 启动烟测（关键表 `SELECT COUNT(*)` + `GET /games`、`GET /api/v1/posts` 冒烟）→ 通过后切流。季度性恢复演练记录结果。
+  - *目标（未验收前为设计目标，不虚标完成）*：RPO ≤ 24h（每日备份）、RTO ≤ 1h（含恢复+冒烟）；演练实际达标并记录在案方算「已验证」。
+  - *生产接入要求（F28）*：`JWT_SECRET` 环境变量覆盖（禁用内置演示密钥，启动命中大声告警）；生产 `DATASOURCE` 走 MySQL（SQLite 仅限本地开发/测试）；uploads 挂持久卷；备份目标置于异机/对象存储。
 - **联合沙箱（GP-005）**：清单——Spawn + Courier 联合 docker compose 部署、两仓 commit 版本钉定、一款示例游戏（Courier `examples/` 引擎样本 + 游戏服发货 stub）、真实依赖记录（支付商户凭据、游戏服发货/退款接口、授权与素材、Android 真机）。**实际搭建与跨仓回归归 GP-005 / GP-206**。
 
 ## 5. 里程碑映射与后续
