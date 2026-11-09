@@ -33,4 +33,13 @@ type Config struct {
 	Channel struct {
 		SandboxSecret string `json:",env=PAYMENTS_SANDBOX_SECRET"`
 	}
+
+	// Delivery 发货接缝（GP-203）：teller Deliver 钩子（进程内）的生产落地
+	// 面为签名 webhook。Secret 未配置 = 分发 fail-closed 全部 403（与
+	// teller 空 ChannelSecret 同语义），生产必须注入。
+	Delivery struct {
+		Secret               string `json:",env=PAYMENTS_DELIVERY_SECRET"`
+		RetryIntervalSeconds int64  `json:",default=60,env=PAYMENTS_DELIVERY_RETRY_SECONDS"`
+		TimeoutMs            int64  `json:",default=5000,env=PAYMENTS_DELIVERY_TIMEOUT"`
+	}
 }

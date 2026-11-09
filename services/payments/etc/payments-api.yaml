@@ -28,6 +28,14 @@ GameCatalog:
 Channel:
   SandboxSecret: "tappi-payments-sandbox-channel-secret-2026"
 
+# GP-203 发货接缝：teller Deliver 钩子（进程内）的签名 webhook 落地面。
+# Secret 未配置 = 分发 fail-closed（全部 403，无演示默认值）；生产经
+# PAYMENTS_DELIVERY_SECRET 注入。重投间隔/超时为恢复面参数。
+Delivery:
+  Secret: ""
+  RetryIntervalSeconds: 60
+  TimeoutMs: 5000
+
 Prometheus:
   Host: 0.0.0.0
   Port: 9099

@@ -59,11 +59,14 @@ type ProductListResponse struct {
 }
 
 // CreateOrderRequest 玩家下单：scope = path gameId；请求体仅 skuId（服务端
-// 定价，payment.md 安全边界 1）；env 缺省 prod。
+// 定价，payment.md 安全边界 1）；env 缺省 prod。server_id/role_id 为充值
+// 目标（GP-201 区服目录；服务端校验区服归属与开放状态，不下发可信金额）。
 type CreateOrderRequest struct {
-	GameId string `path:"gameId"`
-	SkuId  string `json:"sku_id"`
-	Env    string `json:"env,optional"`
+	GameId   string `path:"gameId"`
+	SkuId    string `json:"sku_id"`
+	ServerId int64  `json:"server_id,optional"`
+	RoleId   string `json:"role_id,optional"`
+	Env      string `json:"env,optional"`
 }
 
 // OrderQueryRequest 玩家订单查询：scope = path gameId。
@@ -92,4 +95,74 @@ type GamePathRequest struct {
 // ChannelPathRequest path channel（渠道适配名：sandbox / real）。
 type ChannelPathRequest struct {
 	Channel string `path:"channel"`
+}
+
+// SetDeliveryEndpointRequest 配置游戏服发货接口（GP-203；管理面）。secret 为
+// 本平台对游戏服签名发货请求的 HMAC 密钥（X-Game-Delivery-Signature）。
+type SetDeliveryEndpointRequest struct {
+	GameId   string `path:"gameId"`
+	Endpoint string `json:"endpoint"`
+	Secret   string `json:"secret"`
+	Enabled  *bool  `json:"enabled,optional"`
+}
+
+// DeliveryEndpointPathRequest path gameId。
+type DeliveryEndpointPathRequest struct {
+	GameId string `path:"gameId"`
+}
+
+// DeliveryEndpointView 发货接口配置视图（密钥只回是否已设置，不下发明文）。
+type DeliveryEndpointView struct {
+	GameId    string `json:"game_id"`
+	Endpoint  string `json:"endpoint"`
+	SecretSet bool   `json:"secret_set"`
+	Enabled   bool   `json:"enabled"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+type DeliveryEndpointResponse struct {
+	Endpoint DeliveryEndpointView `json:"endpoint"`
+}
+
+// DeliveryListRequest 管理面投递列表筛选（query 可选）。
+type DeliveryListRequest struct {
+	GameId string `form:"game_id,optional"`
+	Status string `form:"status,optional"`
+}
+
+// DeliveryOrderPathRequest path orderId（发货账本键）。
+type DeliveryOrderPathRequest struct {
+	OrderId string `path:"orderId"`
+}
+
+// BackfillTargetRequest 补单回填充值目标（区服/角色）。
+type BackfillTargetRequest struct {
+	OrderId  string `path:"orderId"`
+	ServerId int64  `json:"server_id"`
+	RoleId   string `json:"role_id,optional"`
+}
+
+// DeliveryOrderView 发货账本视图（投递执行事实，非订单状态机）。
+type DeliveryOrderView struct {
+	OrderId     string `json:"order_id"`
+	GameId      string `json:"game_id"`
+	ServerId    int64  `json:"server_id"`
+	RoleId      string `json:"role_id"`
+	AccountId   string `json:"account_id"`
+	SkuId       string `json:"sku_id"`
+	ProductId   string `json:"product_id"`
+	Form        string `json:"form"`
+	AmountCents int64  `json:"amount_cents"`
+	Currency    string `json:"currency"`
+	Status      string `json:"status"`
+	Attempts    int    `json:"attempts"`
+	LastError   string `json:"last_error"`
+	NextRetryAt string `json:"next_retry_at"`
+	DeliveredAt string `json:"delivered_at"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+type DeliveryListResponse struct {
+	Items []DeliveryOrderView `json:"items"`
 }

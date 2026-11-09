@@ -3,11 +3,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/tappi/tappi/services/payments/internal/config"
+	"github.com/tappi/tappi/services/payments/internal/delivery"
 	"github.com/tappi/tappi/services/payments/internal/handler"
 	"github.com/tappi/tappi/services/payments/internal/logic"
 	"github.com/tappi/tappi/services/payments/internal/svc"
@@ -44,6 +49,14 @@ func run() error {
 
 	ctx := svc.NewServiceContext(c)
 	handler.RegisterHandlers(server, ctx)
+
+	// GP-203 定时恢复：账本持久化在 DB，重启后新实例继续扫（重启恢复），
+	// ctx 取消即退出。
+	recoveryCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	recovery := delivery.NewRecovery(ctx.DeliveryDB, ctx.Dispatcher,
+		time.Second*time.Duration(c.Delivery.RetryIntervalSeconds))
+	go recovery.Run(recoveryCtx)
 
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()

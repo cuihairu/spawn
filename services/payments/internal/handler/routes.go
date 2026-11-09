@@ -32,17 +32,28 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 	}
 	server.AddRoutes(rest.WithMiddleware(auth, playerRoutes...))
 
-	// 管理面：商品配置（platform_admin/operator）
+	// 管理面：商品配置 + 发货接口/补单（platform_admin/operator）
 	adminRoutes := []rest.Route{
 		{Method: http.MethodPost, Path: "/admin/products/:id", Handler: CreateProductHandler(svcCtx)},
 		{Method: http.MethodPatch, Path: "/admin/products/:id/enabled", Handler: SetProductEnabledHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/games/:gameId/products", Handler: ListProductsHandler(svcCtx)},
+		{Method: http.MethodPut, Path: "/admin/games/:gameId/delivery", Handler: SetDeliveryEndpointHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/games/:gameId/delivery", Handler: GetDeliveryEndpointHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/deliveries", Handler: ListDeliveriesHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/admin/deliveries/:orderId/redeliver", Handler: RedeliverHandler(svcCtx)},
+		{Method: http.MethodPatch, Path: "/admin/deliveries/:orderId/target", Handler: BackfillTargetHandler(svcCtx)},
 	}
 	server.AddRoutes(rest.WithMiddleware(auth, adminRoutes...))
 
 	// 渠道 S2S 回调：验签先于 body 解析（payment.md 安全边界 2），无 Bearer
 	server.AddRoutes([]rest.Route{
 		{Method: http.MethodPost, Path: "/callback/:channel", Handler: CallbackHandler(svcCtx)},
+	})
+
+	// 发货分发 webhook（GP-203）：teller Deliver 钩子的签名落地面，S2S
+	// 专用，不进网关反代；验签先于 body 解析。
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodPost, Path: "/internal/deliveries", Handler: DispatchHandler(svcCtx)},
 	})
 }
 
@@ -226,6 +237,101 @@ func CallbackHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			"nonce":     r.Header.Get("X-Payment-Nonce"),
 		}
 		if err := logic.NewCallbackLogic(r.Context(), svcCtx).Handle(req.Channel, rawBody, signature, meta); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, struct{}{})
+	}
+}
+
+// DispatchHandler 发货分发 webhook（GP-203）：验签先于 body 解析，签名
+// 缺失/不匹配一律 403；投递失败 502（teller Deliver 钩子据此停单 PAID）。
+func DispatchHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rawBody, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		if err := logic.NewDeliveryLogic(r.Context(), svcCtx).Dispatch(rawBody, r.Header.Get("X-Delivery-Signature")); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, struct{}{})
+	}
+}
+
+func SetDeliveryEndpointHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.SetDeliveryEndpointRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewDeliveryLogic(r.Context(), svcCtx).ConfigureEndpoint(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func GetDeliveryEndpointHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.DeliveryEndpointPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewDeliveryLogic(r.Context(), svcCtx).GetEndpoint(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func ListDeliveriesHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.DeliveryListRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewDeliveryLogic(r.Context(), svcCtx).ListDeliveries(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func RedeliverHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.DeliveryOrderPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		if err := logic.NewDeliveryLogic(r.Context(), svcCtx).Redeliver(&req, authHeaderFrom(r)); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, struct{}{})
+	}
+}
+
+func BackfillTargetHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.BackfillTargetRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		if err := logic.NewDeliveryLogic(r.Context(), svcCtx).BackfillTarget(&req, authHeaderFrom(r)); err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}

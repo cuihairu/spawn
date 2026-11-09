@@ -2,6 +2,8 @@ package logic
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -63,6 +65,8 @@ func courierError(err error) error {
 // CreateOrder 玩家下单：scope=path gameId，先核验商品归属（商品必须属于该
 // 游戏且启用——跨游戏越权 404，不泄露存在性），再转发 Courier 下单，最后
 // 核验返回订单的金额/币种与服务端配置一致（防配置漂移/客户端报价）。
+// GP-203：带充值目标时核验区服归属与开放状态，并把 订单→区服/角色/商品
+// 关联落发货账本（投递事实，非订单状态机）。
 func (l *OrderLogic) CreateOrder(req *types.CreateOrderRequest, bearer string) (*types.OrderResponse, error) {
 	userID, _ := l.ctx.Value("user_id").(int64)
 	if userID <= 0 {
@@ -79,6 +83,17 @@ func (l *OrderLogic) CreateOrder(req *types.CreateOrderRequest, bearer string) (
 	if !product.Enabled || product.GameId != req.GameId {
 		return nil, newAPIError(http.StatusNotFound, "商品不存在或不可购")
 	}
+	// 充值目标核验：区服必须属于该游戏且开放（GP-201 区服目录为权威）
+	if req.ServerId > 0 {
+		open, err := catalogServerOpen(l.ctx, l.svcCtx, product.GameId, req.ServerId)
+		if err != nil {
+			l.Errorf("check server %d of game %s failed: %v", req.ServerId, product.GameId, err)
+			return nil, newAPIError(http.StatusBadGateway, "区服服务不可用")
+		}
+		if !open {
+			return nil, newAPIError(http.StatusNotFound, "区服不存在或未开放")
+		}
+	}
 	env := envOr(req.Env)
 	order, err := l.svcCtx.Courier.CreateOrder(product.GameId, env, bearer, req.SkuId)
 	if err != nil {
@@ -89,6 +104,25 @@ func (l *OrderLogic) CreateOrder(req *types.CreateOrderRequest, bearer string) (
 		l.Errorf("order amount/currency mismatch: sku=%s configured=%d%s courier=%d%s",
 			req.SkuId, product.AmountCents, product.Currency, order.AmountCents, order.Currency)
 		return nil, newAPIError(http.StatusConflict, "订单金额与商品配置不一致")
+	}
+	// 发货账本：订单 → 充值目标/商品快照（投递事实；teller Deliver 钩子的
+	// webhook 面凭它定位区服）。落账失败即拒绝下单——没有目标的订单必然
+	// 断单，宁可让玩家重试也不造断单。
+	target := &model.DeliveryOrder{
+		OrderId:     order.Id,
+		GameId:      product.GameId,
+		ServerId:    req.ServerId,
+		RoleId:      req.RoleId,
+		AccountId:   fmt.Sprintf("%d", userID),
+		SkuId:       req.SkuId,
+		ProductId:   product.ProductId,
+		Form:        product.Form,
+		AmountCents: product.AmountCents,
+		Currency:    product.Currency,
+	}
+	if err := l.svcCtx.DeliveryDB.CreateTarget(target); err != nil && !errors.Is(err, model.ErrDeliveryOrderExists) {
+		l.Errorf("record delivery target failed: order=%s err=%v", order.Id, err)
+		return nil, newAPIError(http.StatusInternalServerError, "落发货目标失败，请重试")
 	}
 	return &types.OrderResponse{Order: toTypesOrder(order)}, nil
 }

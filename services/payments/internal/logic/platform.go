@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -71,4 +72,43 @@ func requireAdminRole(ctx context.Context, svcCtx *svc.ServiceContext, authHeade
 		return newAPIError(http.StatusForbidden, "无权限执行该操作")
 	}
 	return nil
+}
+
+// catalogServerOpen 校验充值目标：serverId 必须出现在 game-catalog 该游戏的
+// 公开区服列表（公开列表只对已上架游戏开放且隐藏 closed，见 GP-201 口径），
+// 且状态为 open（maintenance/closed 不可充值）。目录不可达时 fail-closed
+// ——无法核验充值目标就不该让可发货订单成立。
+func catalogServerOpen(ctx context.Context, svcCtx *svc.ServiceContext, gameID string, serverID int64) (bool, error) {
+	c := catalogClient(svcCtx)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/games/"+url.PathEscape(gameID)+"/servers", nil)
+	if err != nil {
+		return false, err
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("game-catalog unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("game-catalog servers status %d", resp.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return false, err
+	}
+	var list struct {
+		Items []struct {
+			Id     int64  `json:"id"`
+			Status string `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return false, fmt.Errorf("decode servers: %w", err)
+	}
+	for _, s := range list.Items {
+		if s.Id == serverID {
+			return s.Status == "open", nil
+		}
+	}
+	return false, nil
 }

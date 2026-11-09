@@ -150,6 +150,9 @@ services:
       GAMECATALOG_BASE_URL: http://game-catalog:8890
       # 沙箱渠道 HMAC 密钥（仅开发/沙箱；真实渠道不得使用且须覆盖）
       PAYMENTS_SANDBOX_SECRET: "${PAYMENTS_SANDBOX_SECRET:-tappi-payments-sandbox-channel-secret-2026}"
+      # GP-203 发货接缝密钥：teller Deliver 钩子（进程内）的签名 webhook
+      # 落地面。未配置 = 分发 fail-closed（全部 403）；生产必须注入。
+      PAYMENTS_DELIVERY_SECRET: "${PAYMENTS_DELIVERY_SECRET:-}"
     depends_on:
       - user-service
       - game-catalog

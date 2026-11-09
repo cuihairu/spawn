@@ -32,6 +32,14 @@ func RegisterPaymentsRoutes(server *rest.Server, serverCtx *svc.ServiceContext) 
 		{Method: http.MethodPost, Path: "/admin/products/:id", Handler: h},
 		{Method: http.MethodPatch, Path: "/admin/products/:id/enabled", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/games/:gameId/products", Handler: h},
+		// GP-203 发货面：游戏服发货接口配置 + 投递列表/补单（管理面角色守卫
+		// 在 payments 侧经 game-catalog /me 权威判定）。/internal/deliveries
+		// 为 S2S 专用，**不进网关**（只配密钥的进程内 Deliver 钩子调用）。
+		{Method: http.MethodPut, Path: "/admin/games/:gameId/delivery", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/games/:gameId/delivery", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/deliveries", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/deliveries/:orderId/redeliver", Handler: h},
+		{Method: http.MethodPatch, Path: "/admin/deliveries/:orderId/target", Handler: h},
 		{Method: http.MethodPost, Path: "/callback/:channel", Handler: h},
 	})
 }
