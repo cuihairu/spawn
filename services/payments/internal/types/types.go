@@ -192,6 +192,7 @@ type AdminOrderQueryRequest struct {
 type OrderProjectionView struct {
 	OrderId     string `json:"order_id"`
 	GameId      string `json:"game_id"`
+	PartnerId   int64  `json:"partner_id"`
 	AccountId   string `json:"account_id"`
 	SkuId       string `json:"sku_id"`
 	ProductId   string `json:"product_id"`
@@ -267,4 +268,63 @@ type AuditView struct {
 
 type AuditListResponse struct {
 	Items []AuditView `json:"items"`
+}
+
+// ---- GP-205 厂商对账单 ----
+
+// GenerateStatementRequest 生成对账单（一厂商+一商户+一周期；split_rate_bp
+// 为合同分成比例基点，如 7000 = 70%）。
+type GenerateStatementRequest struct {
+	Vendor      string `json:"vendor"`
+	PartnerId   int64  `json:"partner_id"`
+	PeriodStart string `json:"period_start"`
+	PeriodEnd   string `json:"period_end"`
+	SplitRateBp int64  `json:"split_rate_bp"`
+}
+
+type StatementPathRequest struct {
+	Id int64 `path:"id"`
+}
+
+type StatementListRequest struct {
+	Vendor    string `form:"vendor,optional"`
+	PartnerId int64  `form:"partner_id,optional"`
+	Status    string `form:"status,optional"`
+}
+
+type UpdateSettlementRequest struct {
+	Id         int64 `path:"id"`
+	Settlement int64 `json:"settlement"`
+}
+
+// StatementView 对账单快照（实付/优惠承担/退款冲减/分成基数与金额/差异）。
+type StatementView struct {
+	Id            int64  `json:"id"`
+	Vendor        string `json:"vendor"`
+	PartnerId     int64  `json:"partner_id"`
+	PeriodStart   string `json:"period_start"`
+	PeriodEnd     string `json:"period_end"`
+	PaidTotal     int64  `json:"paid_total"`
+	DiscountTotal int64  `json:"discount_total"`
+	RefundTotal   int64  `json:"refund_total"`
+	SplitBase     int64  `json:"split_base"`
+	SplitRateBp   int64  `json:"split_rate_bp"`
+	SplitAmount   int64  `json:"split_amount"`
+	Settlement    int64  `json:"settlement"`
+	Diff          int64  `json:"diff"`
+	OrderCount    int    `json:"order_count"`
+	Status        string `json:"status"`
+	ConfirmedBy   int64  `json:"confirmed_by"`
+	ConfirmedAt   string `json:"confirmed_at"`
+	CreatedBy     int64  `json:"created_by"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
+type StatementResponse struct {
+	Statement StatementView `json:"statement"`
+}
+
+type StatementListResponse struct {
+	Items []StatementView `json:"items"`
 }

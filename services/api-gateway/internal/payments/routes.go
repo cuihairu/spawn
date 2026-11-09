@@ -47,6 +47,13 @@ func RegisterPaymentsRoutes(server *rest.Server, serverCtx *svc.ServiceContext) 
 		{Method: http.MethodPost, Path: "/admin/orders/:orderId/refund", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/refunds", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/audit", Handler: h},
+		// GP-205 厂商对账单：生成/列表/详情/结算单录入/确认/导出。
+		{Method: http.MethodPost, Path: "/admin/statements", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/statements", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/statements/:id", Handler: h},
+		{Method: http.MethodPut, Path: "/admin/statements/:id/settlement", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/statements/:id/confirm", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/statements/:id/export", Handler: h},
 		{Method: http.MethodPost, Path: "/callback/:channel", Handler: h},
 	})
 }

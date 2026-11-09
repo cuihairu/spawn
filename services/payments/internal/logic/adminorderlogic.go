@@ -197,7 +197,13 @@ func (l *AdminOrderLogic) ListAudit(req *types.AuditListRequest, authHeader stri
 
 // adminRole 管理面角色守卫（platform_admin/operator），返回角色供审计。
 func (l *AdminOrderLogic) adminRole(authHeader string) (string, error) {
-	role, _, err := platformRole(l.ctx, l.svcCtx, authHeader)
+	return requireAdmin(l.ctx, l.svcCtx, authHeader)
+}
+
+// requireAdmin 管理面角色守卫（platform_admin/operator），返回角色供审计。
+// game-catalog /me 权威判定角色，不信任客户端声明。
+func requireAdmin(ctx context.Context, svcCtx *svc.ServiceContext, authHeader string) (string, error) {
+	role, _, err := platformRole(ctx, svcCtx, authHeader)
 	if err != nil {
 		return "", newAPIError(http.StatusBadGateway, "角色服务不可用")
 	}
@@ -209,7 +215,7 @@ func (l *AdminOrderLogic) adminRole(authHeader string) (string, error) {
 
 func toProjectionView(p *model.OrderProjection) types.OrderProjectionView {
 	return types.OrderProjectionView{
-		OrderId: p.OrderId, GameId: p.GameId, AccountId: p.AccountId, SkuId: p.SkuId,
+		OrderId: p.OrderId, GameId: p.GameId, PartnerId: p.PartnerId, AccountId: p.AccountId, SkuId: p.SkuId,
 		ProductId: p.ProductId, Form: p.Form, AmountCents: p.AmountCents, Currency: p.Currency,
 		Status: p.Status, PaidAt: p.PaidAt, DeliveredAt: p.DeliveredAt,
 		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,

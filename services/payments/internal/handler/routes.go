@@ -48,6 +48,13 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodPost, Path: "/admin/orders/:orderId/refund", Handler: CreateRefundHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/refunds", Handler: ListRefundsHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/audit", Handler: ListAuditHandler(svcCtx)},
+		// GP-205 厂商对账单：生成/列表/详情/结算单录入/确认/导出（先确认不自动打款）
+		{Method: http.MethodPost, Path: "/admin/statements", Handler: GenerateStatementHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/statements", Handler: ListStatementsHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/statements/:id", Handler: GetStatementHandler(svcCtx)},
+		{Method: http.MethodPut, Path: "/admin/statements/:id/settlement", Handler: UpdateSettlementHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/admin/statements/:id/confirm", Handler: ConfirmStatementHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/statements/:id/export", Handler: ExportStatementHandler(svcCtx)},
 	}
 	server.AddRoutes(rest.WithMiddleware(auth, adminRoutes...))
 
@@ -438,5 +445,105 @@ func ListAuditHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func GenerateStatementHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.GenerateStatementRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewStatementLogic(r.Context(), svcCtx).Generate(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func ListStatementsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.StatementListRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewStatementLogic(r.Context(), svcCtx).List(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func GetStatementHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.StatementPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewStatementLogic(r.Context(), svcCtx).Get(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func UpdateSettlementHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.UpdateSettlementRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewStatementLogic(r.Context(), svcCtx).UpdateSettlement(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+func ConfirmStatementHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.StatementPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewStatementLogic(r.Context(), svcCtx).Confirm(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// ExportStatementHandler 导出对账单 CSV（text/csv 下载；内容型响应，非 JSON）。
+func ExportStatementHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.StatementPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		filename, data, err := logic.NewStatementLogic(r.Context(), svcCtx).Export(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
 	}
 }

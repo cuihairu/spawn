@@ -20,6 +20,7 @@ type ServiceContext struct {
 	ProductDB    *model.ProductModel
 	DeliveryDB   *model.DeliveryModel
 	ProjectionDB *model.OrderProjectionModel
+	StatementDB  *model.StatementModel
 	Courier      *courier.Client
 	Sandbox      *channel.SandboxHMAC
 	Real         *channel.RealChannel
@@ -61,6 +62,10 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := projectionDB.CreateTables(); err != nil {
 		panic(fmt.Sprintf("create order projection tables: %v", err))
 	}
+	statementDB := model.NewStatementModel(db)
+	if err := statementDB.CreateTables(); err != nil {
+		panic(fmt.Sprintf("create statement tables: %v", err))
+	}
 
 	timeout := time.Millisecond * time.Duration(c.Courier.Timeout)
 	courierClient := courier.NewClient(c.Courier.BaseURL, timeout)
@@ -75,6 +80,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		ProductDB:    productDB,
 		DeliveryDB:   deliveryDB,
 		ProjectionDB: projectionDB,
+		StatementDB:  statementDB,
 		Courier:      courierClient,
 		Sandbox:      &channel.SandboxHMAC{Secret: []byte(c.Channel.SandboxSecret)},
 		Real:         channel.NewRealChannel("real-channel"),

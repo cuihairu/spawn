@@ -22,9 +22,11 @@ var (
 )
 
 // OrderProjection 订单事实副本（状态= Courier 上报值，非本服务推进）。
+// PartnerId 为商户归属（下单时从服务端商品快照落定，对账按商户维度聚合）。
 type OrderProjection struct {
 	OrderId     string `json:"order_id"`
 	GameId      string `json:"game_id"`
+	PartnerId   int64  `json:"partner_id"`
 	AccountId   string `json:"account_id"`
 	SkuId       string `json:"sku_id"`
 	ProductId   string `json:"product_id"`
@@ -74,10 +76,10 @@ const (
 	RefundActionCorrect  = "CORRECTION"
 )
 
-const projectionColumns = "order_id, game_id, account_id, sku_id, product_id, form, amount_cents, currency, status, paid_at, delivered_at, created_at, updated_at"
+const projectionColumns = "order_id, game_id, partner_id, account_id, sku_id, product_id, form, amount_cents, currency, status, paid_at, delivered_at, created_at, updated_at"
 
 func scanProjection(p *OrderProjection) []any {
-	return []any{&p.OrderId, &p.GameId, &p.AccountId, &p.SkuId, &p.ProductId, &p.Form,
+	return []any{&p.OrderId, &p.GameId, &p.PartnerId, &p.AccountId, &p.SkuId, &p.ProductId, &p.Form,
 		&p.AmountCents, &p.Currency, &p.Status, &p.PaidAt, &p.DeliveredAt, &p.CreatedAt, &p.UpdatedAt}
 }
 
@@ -96,6 +98,7 @@ func (m *OrderProjectionModel) CreateTables() error {
 			`CREATE TABLE IF NOT EXISTS order_projection (
 				order_id VARCHAR(128) PRIMARY KEY,
 				game_id VARCHAR(64) NOT NULL,
+				partner_id INTEGER NOT NULL DEFAULT 0,
 				account_id VARCHAR(128) NOT NULL DEFAULT '',
 				sku_id VARCHAR(64) NOT NULL DEFAULT '',
 				product_id VARCHAR(128) NOT NULL DEFAULT '',
@@ -111,6 +114,7 @@ func (m *OrderProjectionModel) CreateTables() error {
 			`CREATE TABLE IF NOT EXISTS order_projection (
 				order_id VARCHAR(128) PRIMARY KEY,
 				game_id VARCHAR(64) NOT NULL,
+				partner_id BIGINT NOT NULL DEFAULT 0,
 				account_id VARCHAR(128) NOT NULL DEFAULT '',
 				sku_id VARCHAR(64) NOT NULL DEFAULT '',
 				product_id VARCHAR(128) NOT NULL DEFAULT '',
@@ -196,20 +200,20 @@ func (m *OrderProjectionModel) UpsertFromOrder(p *OrderProjection) error {
 	}
 	p.UpdatedAt = now
 	_, err := m.db.Exec(
-		`INSERT INTO order_projection (order_id, game_id, account_id, sku_id, product_id, form, amount_cents, currency, status, paid_at, delivered_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO order_projection (order_id, game_id, partner_id, account_id, sku_id, product_id, form, amount_cents, currency, status, paid_at, delivered_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(order_id) DO UPDATE SET status = excluded.status, paid_at = excluded.paid_at, delivered_at = excluded.delivered_at, updated_at = excluded.updated_at`,
-		p.OrderId, p.GameId, p.AccountId, p.SkuId, p.ProductId, p.Form, p.AmountCents,
+		p.OrderId, p.GameId, p.PartnerId, p.AccountId, p.SkuId, p.ProductId, p.Form, p.AmountCents,
 		p.Currency, p.Status, p.PaidAt, p.DeliveredAt, p.CreatedAt, p.UpdatedAt,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "syntax") || strings.Contains(err.Error(), "near") {
 			// MySQL 回退（ON CONFLICT 为 SQLite 语法）
 			_, err2 := m.db.Exec(
-				`INSERT INTO order_projection (order_id, game_id, account_id, sku_id, product_id, form, amount_cents, currency, status, paid_at, delivered_at, created_at, updated_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				`INSERT INTO order_projection (order_id, game_id, partner_id, account_id, sku_id, product_id, form, amount_cents, currency, status, paid_at, delivered_at, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				 ON DUPLICATE KEY UPDATE status = VALUES(status), paid_at = VALUES(paid_at), delivered_at = VALUES(delivered_at), updated_at = VALUES(updated_at)`,
-				p.OrderId, p.GameId, p.AccountId, p.SkuId, p.ProductId, p.Form, p.AmountCents,
+				p.OrderId, p.GameId, p.PartnerId, p.AccountId, p.SkuId, p.ProductId, p.Form, p.AmountCents,
 				p.Currency, p.Status, p.PaidAt, p.DeliveredAt, p.CreatedAt, p.UpdatedAt,
 			)
 			return err2
@@ -334,6 +338,16 @@ func (m *OrderProjectionModel) CreateRefund(r *RefundRequest) error {
 		`INSERT INTO refund_requests (order_id, action, amount_cents, reason, status, note, created_by, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.OrderId, r.Action, r.AmountCents, r.Reason, r.Status, r.Note, r.CreatedBy, now, now,
+	)
+	return err
+}
+
+// MarkRefundExecuted 退款执行器置 EXECUTED（Courier 退款端点接入后由执行
+// 器调用；现登记保持 PENDING 不伪造成功）。
+func (m *OrderProjectionModel) MarkRefundExecuted(orderId, action string) error {
+	_, err := m.db.Exec(
+		`UPDATE refund_requests SET status = 'EXECUTED', note = ?, updated_at = ? WHERE order_id = ? AND action = ?`,
+		"执行完成", nowUTC(), orderId, action,
 	)
 	return err
 }
