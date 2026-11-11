@@ -38,6 +38,18 @@ func NewStore(ttl time.Duration) *Store {
 	return &Store{ttl: ttl, items: make(map[string]*Ticket)}
 }
 
+// sweepLocked 移除已过期票据（调用方持锁）。惰性清扫：签发时顺带跑一轮，
+// 避免「过期但从未 Redeem」的票据永久驻留 map（P1-1 修复——原实现只在
+// Redeem 命中时删除单条，泄漏全部过期未兑票据）。票据短期一次性、量小，
+// O(n) 扫描可接受。
+func (s *Store) sweepLocked(now time.Time) {
+	for k, t := range s.items {
+		if now.After(t.ExpiresAt) {
+			delete(s.items, k)
+		}
+	}
+}
+
 // Issue 签发一张票据（32B 随机 hex）。
 func (s *Store) Issue(spawnUserID int64, courierGameID, env string, sess *courier.Session) (*Ticket, error) {
 	buf := make([]byte, 32)
@@ -53,6 +65,7 @@ func (s *Store) Issue(spawnUserID int64, courierGameID, env string, sess *courie
 		ExpiresAt:     time.Now().Add(s.ttl),
 	}
 	s.mu.Lock()
+	s.sweepLocked(time.Now())
 	s.items[t.Token] = t
 	s.mu.Unlock()
 	return t, nil

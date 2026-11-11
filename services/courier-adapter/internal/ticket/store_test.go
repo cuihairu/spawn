@@ -44,3 +44,24 @@ func TestTicketExpiry(t *testing.T) {
 		t.Fatalf("expired redeem err = %v, want ErrTicketNotFound", err)
 	}
 }
+
+func TestIssueSweepsExpired(t *testing.T) {
+	// P1-1 回归：过期未兑票据在下次签发时被清扫（原实现永久驻留 map）。
+	s := NewStore(10 * time.Millisecond)
+	for i := 0; i < 3; i++ {
+		if _, err := s.Issue(int64(i), "cg", "dev", &courier.Session{}); err != nil {
+			t.Fatalf("issue[%d]: %v", i, err)
+		}
+	}
+	if len(s.items) != 3 {
+		t.Fatalf("items after 3 issues = %d, want 3", len(s.items))
+	}
+	time.Sleep(30 * time.Millisecond)
+	// 签发第 4 张触发惰性清扫：3 张过期全清，仅新票留存。
+	if _, err := s.Issue(9, "cg", "dev", &courier.Session{}); err != nil {
+		t.Fatalf("issue trigger: %v", err)
+	}
+	if len(s.items) != 1 {
+		t.Fatalf("items after sweep = %d, want 1（过期票据应被清扫）", len(s.items))
+	}
+}
