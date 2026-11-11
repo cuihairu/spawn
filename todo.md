@@ -142,6 +142,22 @@
   - 证据：sha `18487a6`（fix: release locked coupons on order failure and timeout）；测试 model 3 项 PASS（ReleaseExpiredLocked 到期/未到期/空 locked_at/幂等，used 不受影响，CountUserCouponClaimed 仅计 claimed）couponmodel_release_test.go:29,80,106；handler 集成 3 项 PASS（CreateTarget 失败回滚、UpsertFromOrder 失败回滚、ReleaseOnce 超时释放）+ 防回归 TestRoutes_Coupons（GP-305）routes_p0coupon_integration_test.go:77,95,117；`go test ./... -count=1 -race` 全绿 + gofmt/vet 干净。
   - 备注：audit 第三子项（LinkOrderCoupon 失败仅日志 → 券停 locked）经排查为误报——MarkCouponUsedByOrder 按 locked_order_id 核销（couponmodel.go:510-515），不依赖 coupon_order_links（links 仅记折扣快照供对账单聚合）；已核销券 used 态不受释放扫描影响（条件 status=locked）。
 
+- [x] **P1-1 票据仓无过期清扫**（courier-adapter internal/ticket/store.go:56-73）
+  - 完成：Issue 签发时惰性清扫过期未兑票据（sweepLocked，store.go:44-52），原实现在 Redeem 命中才删单条，过期未兑永久驻留 map。
+  - 证据：sha `37c7d7a`（fix: sweep expired tickets on issue）；测试 TestIssueSweepsExpired（store_test.go:49）3 张过期签发第 4 张触发清扫剩 1；`go test ./internal/ticket/ -race` 全绿 + courier-adapter 全模块 `go test ./... -race` 全绿。
+
+- [x] **P1-2 发货分发器 locks sync.Map 永不删除**（payments internal/delivery/dispatcher.go:53,81）
+  - 完成：locksEntry 引用计数（refs）+ locksMu 保护 entry 生命周期，Dispatch 完毕计数归零即 Delete（dispatcher.go:53-62,81-94,99-110），原实现 LoadOrStore 只存不删每订单一个 Mutex 永久驻留。
+  - 证据：sha `ba8d0b7`（fix: release dispatcher locks after use）；测试 TestDispatch_LocksMapCleanedAfterUse（dispatcher_test.go:263）5 单 dispatch 后 locks 空；并发同订单单次命中防回归 TestDispatch_ConcurrentSameOrderSingleHit 仍过；`go test ./internal/delivery/ -race` 全绿。
+
+- [x] **P1-3 SQLite 无单连接限制**（payments/promotions/courier-adapter/game-catalog 四处 db open）
+  - 完成：SQLite 路径统一 SetMaxOpenConns(1)（单写者串行化，防并发写 SQLITE_BUSY）；MySQL 连接池不变。db.go:payments/promotions Open + courier-adapter Open + game-catalog svc.NewServiceContext。
+  - 证据：sha `6488866`（fix: limit sqlite to single connection）；4 服务 `go test ./... -count=1` 全绿 + gofmt/vet/build 干净。
+
+- [x] **P1-4 mobile resume() 假恢复**（apps/mobile-app/src/lib/downloads.ts:128-133,144）
+  - 完成：resume() 改调 task.resumeAsync()（expo-file-system v57：返回 Promise<File|null> 本身 await 完成），抽 onFinished 与 start 共用完成处理（截断校验/落 done）；原实现误调 run() 重开新任务丢进度。
+  - 证据：sha `a11cd76`（fix: resume download with native resumeAsync）；mobile `tsc --noEmit` + `eslint .` 全绿（AGENTS.md 门禁）。
+
 ## 漏洞扫描遗留（2026-11-03 全舰队扫描，源 scratch/vuln-scan-*.md）
 
 - [x] VULN-SPAWN-001 [高危·GHSA-mrhx-c7xc-m3w5] zod 3.25.76（另有 4.4.3 实例）→≥4.6.6【跨大版本需改代码】：@expo/cli 依赖 zod3（终扫残留 1）；验收：pnpm audit --audit-level=high 中 zod 不再命中；该仓无 test 脚本，audit-only
