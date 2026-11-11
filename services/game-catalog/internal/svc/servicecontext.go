@@ -52,6 +52,11 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if strings.Contains(dataSource, "file:") || strings.Contains(dataSource, ".db") {
 		dataSource = ensureSQLiteDir(dataSource)
 		db, err = sql.Open("sqlite3", dataSource)
+		// SQLite 单写者：限制单连接串行化全部访问，防并发写触发
+		// SQLITE_BUSY（P1-3 修复）；MySQL 由连接池并发（InnoDB 行锁）。
+		if err == nil {
+			db.SetMaxOpenConns(1)
+		}
 	} else {
 		db, err = sql.Open("mysql", dataSource)
 	}

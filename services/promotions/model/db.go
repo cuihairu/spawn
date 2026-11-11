@@ -23,6 +23,11 @@ func Open(dataSource string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	// SQLite 单写者：限制单连接串行化全部访问，防并发写触发 SQLITE_BUSY
+	//（P1-3 修复）；MySQL 由连接池并发（InnoDB 行锁）。
+	if driver == "sqlite3" {
+		db.SetMaxOpenConns(1)
+	}
 	if err := db.Ping(); err != nil {
 		return nil, err
 	}

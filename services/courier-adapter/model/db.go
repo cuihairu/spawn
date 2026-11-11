@@ -22,7 +22,14 @@ func Open(dataSource string) (*sql.DB, error) {
 		if err := ensureSQLiteDir(dataSource); err != nil {
 			return nil, err
 		}
-		return sql.Open("sqlite3", dataSource)
+		db, err := sql.Open("sqlite3", dataSource)
+		if err != nil {
+			return nil, err
+		}
+		// SQLite 单写者：限制单连接串行化全部访问，防并发写触发
+		// SQLITE_BUSY（P1-3 修复）；MySQL 由连接池并发（InnoDB 行锁）。
+		db.SetMaxOpenConns(1)
+		return db, nil
 	}
 	return sql.Open("mysql", dataSource)
 }
