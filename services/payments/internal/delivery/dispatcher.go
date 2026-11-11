@@ -43,6 +43,14 @@ type Instruction struct {
 // hex(HMAC-SHA256(endpointSecret, rawBody))；游戏服侧验签先于解析。
 const gameSignatureHeader = "X-Game-Delivery-Signature"
 
+// locksEntry 同订单进程内串行化条目：mu 串行化同订单分发；refs 为并发持有
+// 者计数（受 Dispatcher.locksMu 保护），归零即从 map 删除（P1-2：防
+// sync.Map 无限增长——原实现只存不删，每订单一个 Mutex 永久驻留）。
+type locksEntry struct {
+	mu   sync.Mutex
+	refs int
+}
+
 // Dispatcher 发货分发器：核验归属/金额 → 调游戏服发货接口 → 账本记账。
 type Dispatcher struct {
 	db          *model.DeliveryModel
@@ -50,7 +58,8 @@ type Dispatcher struct {
 	hc          *http.Client
 	backoff     time.Duration
 	onDelivered func(orderID string) // 投递成功回调（订单投影 DELIVERED；nil 安全）
-	locks       sync.Map             // order id -> *sync.Mutex（进程内并发同订单串行化）
+	locks       sync.Map             // order id -> *locksEntry
+	locksMu     sync.Mutex           // 保护 entry 生命周期（创建/refs/删除），不持业务锁
 }
 
 // NewDispatcher 构造分发器；baseBackoff 为失败重投基础间隔（恢复面按
@@ -72,16 +81,44 @@ func NewDispatcher(db *model.DeliveryModel, products *model.ProductModel, timeou
 	}
 }
 
+// acquire 取（或建）订单串行化条目并递增引用计数；调用方负责 mu.Lock 后
+// 配对 release（mu.Unlock + 计数递减/按需删除）。
+func (d *Dispatcher) acquire(orderID string) *locksEntry {
+	d.locksMu.Lock()
+	defer d.locksMu.Unlock()
+	v, ok := d.locks.Load(orderID)
+	if !ok {
+		e := &locksEntry{}
+		d.locks.Store(orderID, e)
+		v = e
+	}
+	e := v.(*locksEntry)
+	e.refs++
+	return e
+}
+
+// release 递减引用计数；归零删除 map 条目（无并发持有者，删除安全）。
+func (d *Dispatcher) release(orderID string, e *locksEntry) {
+	d.locksMu.Lock()
+	defer d.locksMu.Unlock()
+	e.refs--
+	if e.refs == 0 {
+		d.locks.Delete(orderID)
+	}
+}
+
 // Dispatch 投递一笔发货指令。成功返回 nil（账本 delivered）；失败返回错误
 // （账本 failed，调用方据此向 teller Deliver 钩子返回非 nil 使订单停 PAID）。
 func (d *Dispatcher) Dispatch(ctx context.Context, in Instruction) error {
 	if strings.TrimSpace(in.OrderId) == "" {
 		return errors.New("发货指令缺少订单号")
 	}
-	lockAny, _ := d.locks.LoadOrStore(in.OrderId, &sync.Mutex{})
-	lock := lockAny.(*sync.Mutex)
-	lock.Lock()
-	defer lock.Unlock()
+	entry := d.acquire(in.OrderId)
+	entry.mu.Lock()
+	defer func() {
+		entry.mu.Unlock()
+		d.release(in.OrderId, entry)
+	}()
 
 	row, err := d.db.Get(in.OrderId)
 	if errors.Is(err, model.ErrDeliveryOrderNotFound) {

@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -257,6 +258,26 @@ func TestDispatch_GuardRejections(t *testing.T) {
 	}
 	if g.Hits() != 0 {
 		t.Fatalf("game hits = %d, want 0 (被拒指令不得触达游戏服)", g.Hits())
+	}
+}
+
+func TestDispatch_LocksMapCleanedAfterUse(t *testing.T) {
+	// P1-2 回归：原实现 locks sync.Map 只存不删，每订单一个 Mutex 永久驻留；
+	// 修复后引用计数归零即删除，dispatch 完成 map 应为空。
+	g := newGameStub(t, "gs-secret")
+	_, deliveries, _, d := newStack(t, "file:"+t.TempDir()+"/d.db", g.srv.URL, time.Minute)
+	ctx := context.Background()
+	for i := 0; i < 5; i++ {
+		order := fmt.Sprintf("order_%d", i)
+		seedTarget(t, deliveries, order)
+		if err := d.Dispatch(ctx, instruct(order)); err != nil {
+			t.Fatalf("dispatch %s = %v", order, err)
+		}
+	}
+	n := 0
+	d.locks.Range(func(_, _ any) bool { n++; return true })
+	if n != 0 {
+		t.Fatalf("locks entries after dispatch = %d, want 0（防 sync.Map 无限增长）", n)
 	}
 }
 
