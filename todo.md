@@ -137,7 +137,8 @@
 
 ## 漏洞扫描遗留（2026-11-03 全舰队扫描，源 scratch/vuln-scan-*.md）
 
-- [ ] VULN-SPAWN-001 [高危·GHSA-mrhx-c7xc-m3w5] zod 3.25.76（另有 4.4.3 实例）→≥4.6.6【跨大版本需改代码】：@expo/cli 依赖 zod3（终扫残留 1）；验收：pnpm audit --audit-level=high 中 zod 不再命中；该仓无 test 脚本，audit-only
+- [x] VULN-SPAWN-001 [高危·GHSA-mrhx-c7xc-m3w5] zod 3.25.76（另有 4.4.3 实例）→≥4.6.6【跨大版本需改代码】：@expo/cli 依赖 zod3（终扫残留 1）；验收：pnpm audit --audit-level=high 中 zod 不再命中；该仓无 test 脚本，audit-only
+  - 完成：根 package.json overrides 合并为 `zod@<4.6.6: 4.6.6`（覆盖 @expo/cli 的 zod3 传递依赖；漏洞区间 <4.6.6 无干净 3.x）；pnpm install 重建 lockfile（zod@3.25.76 清零）；pnpm audit --audit-level=high zod 不再命中（余 2 low | 7 moderate 均低于门槛）；门禁：mobile tsc/eslint + web tsc/eslint 绿，expo export --platform android 成功（@expo/cli 在 zod4 下运行时验证）。
 
 ## 源码分层分析 2026-11-07
 
