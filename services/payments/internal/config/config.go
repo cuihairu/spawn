@@ -52,4 +52,12 @@ type Config struct {
 		Timeout  int64  `json:",default=5000,env=PROMOTIONS_TIMEOUT"`
 		Interval int64  `json:",default=60,env=PROMOTIONS_EVAL_INTERVAL_SECONDS"`
 	}
+
+	// Coupon 优惠券域（GP-305）：锁券 TTL 与超时释放扫描间隔。下单后久未
+	// PAID 的锁券（locked_at 早于 now-TTL）由释放扫描退回 claimed，避免券
+	// 永久卡死；释放为幂等条件 UPDATE，进程重启恢复不重复释放。
+	Coupon struct {
+		LockTtlSeconds         int64 `json:",default=3600,env=PAYMENTS_COUPON_LOCK_TTL_SECONDS"`
+		ReleaseIntervalSeconds int64 `json:",default=300,env=PAYMENTS_COUPON_RELEASE_INTERVAL_SECONDS"`
+	}
 }

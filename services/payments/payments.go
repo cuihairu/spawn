@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tappi/tappi/services/payments/internal/config"
+	"github.com/tappi/tappi/services/payments/internal/couponrec"
 	"github.com/tappi/tappi/services/payments/internal/delivery"
 	"github.com/tappi/tappi/services/payments/internal/handler"
 	"github.com/tappi/tappi/services/payments/internal/logic"
@@ -62,6 +63,13 @@ func run() error {
 	// 与发货恢复共用同一 ctx（进程信号面）。
 	go ctx.PromotionBridge.Scan(recoveryCtx,
 		time.Second*time.Duration(c.Promotions.Interval))
+
+	// GP-305 超时释放扫描：locked 且下单后久未 PAID 的券退回 claimed（P0
+	// 修复），与发货恢复共用同一 ctx（进程信号面）。
+	release := couponrec.NewRelease(ctx.CouponDB,
+		time.Second*time.Duration(c.Coupon.LockTtlSeconds),
+		time.Second*time.Duration(c.Coupon.ReleaseIntervalSeconds))
+	go release.Run(recoveryCtx)
 
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()

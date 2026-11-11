@@ -257,7 +257,9 @@ func (l *CouponLogic) Claim(req *types.ClaimCouponRequest) (*types.ClaimCouponRe
 }
 
 func (l *CouponLogic) ensureClaimLimit(c *model.Coupon, userID int64) error {
-	n, err := l.svcCtx.CouponDB.CountUserCouponClaims(c.Id, userID)
+	// 名额仅计 claimed（P0 修复）：locked 是下单占位瞬时态（超时释放回
+	// claimed 仍受约束），锁券不新增持有，计入会让占位吃掉领取名额。
+	n, err := l.svcCtx.CouponDB.CountUserCouponClaimed(c.Id, userID)
 	if err != nil {
 		return newAPIError(http.StatusInternalServerError, "限领查询失败")
 	}

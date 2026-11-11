@@ -151,6 +151,7 @@ func (m *CouponModel) CreateTables() error {
 				status VARCHAR(16) NOT NULL DEFAULT 'claimed',
 				claimed_at VARCHAR(32) NOT NULL,
 				locked_order_id VARCHAR(128) NOT NULL DEFAULT '',
+				locked_at VARCHAR(32) NOT NULL DEFAULT '',
 				used_order_id VARCHAR(128) NOT NULL DEFAULT '',
 				used_at VARCHAR(32) NOT NULL DEFAULT '',
 				UNIQUE (coupon_id, user_id, request_id)
@@ -163,6 +164,7 @@ func (m *CouponModel) CreateTables() error {
 				status VARCHAR(16) NOT NULL DEFAULT 'claimed',
 				claimed_at VARCHAR(32) NOT NULL,
 				locked_order_id VARCHAR(128) NOT NULL DEFAULT '',
+				locked_at VARCHAR(32) NOT NULL DEFAULT '',
 				used_order_id VARCHAR(128) NOT NULL DEFAULT '',
 				used_at VARCHAR(32) NOT NULL DEFAULT '',
 				UNIQUE KEY uk_user_coupon_request (coupon_id, user_id, request_id),
@@ -200,7 +202,30 @@ func (m *CouponModel) CreateTables() error {
 			}
 		}
 	}
-	return nil
+	// locked_at（P0 修复）：锁券时间戳，超时释放扫描（locked 且下单后久未
+	// PAID 的券释放回 claimed）依赖它判到期。存量库补列（双方言，已存在即
+	// 跳过），老行无值保持 '' 不参与释放。
+	return m.migrateCouponColumns()
+}
+
+// migrateCouponColumns 存量库补列（SQLite/MySQL 双方言；列已存在视为成功，
+// 与 community migratePostColumns 同款口径）。
+func (m *CouponModel) migrateCouponColumns() error {
+	alterSQLite := `ALTER TABLE user_coupons ADD COLUMN locked_at VARCHAR(32) NOT NULL DEFAULT ''`
+	alterMySQL := `ALTER TABLE user_coupons ADD COLUMN locked_at VARCHAR(32) NOT NULL DEFAULT ''`
+	lastErr := error(nil)
+	for _, stmt := range []string{alterSQLite, alterMySQL} {
+		if _, err := m.db.Exec(stmt); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+	}
+	msg := lastErr.Error()
+	if strings.Contains(msg, "duplicate column") || strings.Contains(msg, "exists") {
+		return nil // 已补过列
+	}
+	return lastErr
 }
 
 const couponColumns = "id, code, name, game_id, sku_id, threshold_cents, discount_type, discount_value, stackable, per_user_limit, total_count, start_at, end_at, status, created_by, created_at, updated_at"
@@ -386,9 +411,23 @@ func (m *CouponModel) GetUserCouponByRequest(couponID, userID int64, requestID s
 	return &u, nil
 }
 
+// CountUserCouponClaims 券持有实例全状态计数（领取/核销占用判定：有实例但
+// 无可锁（claimed）实例 → 409「已被占用或已使用」，零实例 → 400「未领取」）。
 func (m *CouponModel) CountUserCouponClaims(couponID, userID int64) (int64, error) {
 	var n int64
 	err := m.db.QueryRow(`SELECT COUNT(*) FROM user_coupons WHERE coupon_id=? AND user_id=?`, couponID, userID).Scan(&n)
+	return n, err
+}
+
+// CountUserCouponClaimed 仅计 claimed（已领未锁）实例。限领名额按本计数
+// 收口（P0 修复）：locked 是下单占位的瞬时态，不计入名额；超时释放后回到
+// claimed 仍受约束——锁券不新增持有，故 locked 永远 ≤ claimed，限额不会被
+// 下单动作绕过；把 locked 计入会放走「锁了不付」的额度占用。
+func (m *CouponModel) CountUserCouponClaimed(couponID, userID int64) (int64, error) {
+	var n int64
+	err := m.db.QueryRow(
+		`SELECT COUNT(*) FROM user_coupons WHERE coupon_id=? AND user_id=? AND status=?`,
+		couponID, userID, UserCouponStatusClaimed).Scan(&n)
 	return n, err
 }
 
@@ -398,11 +437,12 @@ func (m *CouponModel) CountCouponUsed(couponID int64) (int64, error) {
 	return n, err
 }
 
-// LockUserCoupon 下单占位：claimed → locked（并发安全：条件 UPDATE）。
+// LockUserCoupon 下单占位：claimed → locked（并发安全：条件 UPDATE；落
+// locked_at 供超时释放扫描判到期）。
 func (m *CouponModel) LockUserCoupon(userCouponID int64, orderID string) error {
 	res, err := m.db.Exec(
-		`UPDATE user_coupons SET status=?, locked_order_id=?, used_at='' WHERE id=? AND status=?`,
-		UserCouponStatusLocked, orderID, userCouponID, UserCouponStatusClaimed)
+		`UPDATE user_coupons SET status=?, locked_order_id=?, locked_at=?, used_at='' WHERE id=? AND status=?`,
+		UserCouponStatusLocked, orderID, nowUTC(), userCouponID, UserCouponStatusClaimed)
 	if err != nil {
 		return err
 	}
@@ -410,6 +450,52 @@ func (m *CouponModel) LockUserCoupon(userCouponID int64, orderID string) error {
 		return ErrCouponStateConflict
 	}
 	return nil
+}
+
+// ReleaseExpiredLocked 超时释放（P0 修复）：locked_at 早于 olderThan 的锁券
+// 释放回 claimed（locked_order_id/locked_at 清空，幂等条件 UPDATE）。订单是否
+// 已付由调用方判：已付（PAID）不会被本方法命中——释放只针对久未支付的孤儿
+// 锁。返回释放的锁券数量与其订单号（审计用），供释放日志对账。
+func (m *CouponModel) ReleaseExpiredLocked(olderThan string) (int, []string, error) {
+	rows, err := m.db.Query(
+		`SELECT id, locked_order_id FROM user_coupons WHERE status=? AND locked_at != '' AND locked_at < ?`,
+		UserCouponStatusLocked, olderThan)
+	if err != nil {
+		return 0, nil, err
+	}
+	type rel struct {
+		id      int64
+		orderID string
+	}
+	var targets []rel
+	for rows.Next() {
+		var r rel
+		if err := rows.Scan(&r.id, &r.orderID); err != nil {
+			_ = rows.Close()
+			return 0, nil, err
+		}
+		targets = append(targets, r)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return 0, nil, err
+	}
+	_ = rows.Close()
+	released := 0
+	var orderIDs []string
+	for _, r := range targets {
+		res, err := m.db.Exec(
+			`UPDATE user_coupons SET status=?, locked_order_id='', locked_at='' WHERE id=? AND status=? AND locked_at < ?`,
+			UserCouponStatusClaimed, r.id, UserCouponStatusLocked, olderThan)
+		if err != nil {
+			return released, orderIDs, err
+		}
+		if n, _ := res.RowsAffected(); n == 1 {
+			released++
+			orderIDs = append(orderIDs, r.orderID)
+		}
+	}
+	return released, orderIDs, nil
 }
 
 // UnlockUserCoupon 下单失败回滚：locked → claimed。

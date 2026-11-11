@@ -38,6 +38,7 @@ const testDeliverySecret = "payments-delivery-test-secret"
 
 type testDeliveryEnv struct {
 	base       string
+	dsn        string
 	svcCtx     *svc.ServiceContext
 	sign       func(claims utils.JWTClaims) string
 	gameServer *deliveryGameStub
@@ -226,6 +227,7 @@ func newDeliveryServer(t *testing.T) *testDeliveryEnv {
 	}
 
 	env.base = base
+	env.dsn = c.MySQL.DataSource
 	env.svcCtx = svcCtx
 	env.sign = func(claims utils.JWTClaims) string {
 		tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

@@ -130,6 +130,9 @@ func (l *OrderLogic) CreateOrder(req *types.CreateOrderRequest, bearer string) (
 	}
 	if err := l.svcCtx.DeliveryDB.CreateTarget(target); err != nil && !errors.Is(err, model.ErrDeliveryOrderExists) {
 		l.Errorf("record delivery target failed: order=%s err=%v", order.Id, err)
+		// P0 修复：下单后半程失败回滚锁券（无券订单空跑），释放失败仅记
+		// 日志不掩盖原错误，残留锁由超时释放扫描兜底。
+		l.releaseOrderCoupons(order.Id, req.CouponIds)
 		return nil, newAPIError(http.StatusInternalServerError, "落发货目标失败，请重试")
 	}
 	// 订单只读投影（事实副本）：CREATED 快照；状态后续由回调（PAID）与
@@ -143,6 +146,8 @@ func (l *OrderLogic) CreateOrder(req *types.CreateOrderRequest, bearer string) (
 		Currency: product.Currency, Status: order.Status,
 	}); err != nil {
 		l.Errorf("project order failed: order=%s err=%v", order.Id, err)
+		// P0 修复：同 CreateTarget 失败口径，回滚锁券再拒绝。
+		l.releaseOrderCoupons(order.Id, req.CouponIds)
 		return nil, newAPIError(http.StatusInternalServerError, "投影订单失败，请重试")
 	}
 	resp := &types.OrderResponse{Order: toTypesOrder(order)}
@@ -152,6 +157,18 @@ func (l *OrderLogic) CreateOrder(req *types.CreateOrderRequest, bearer string) (
 		resp.Coupons = applied
 	}
 	return resp, nil
+}
+
+// releaseOrderCoupons 下单失败回滚锁券：把锁到 orderID 的券释放回 claimed
+// （P0 修复）。有 coupon_ids 才可能有锁（无券下单空跑）；释放失败仅记日志
+// 不掩盖原错误，残留锁由超时释放扫描兜底。
+func (l *OrderLogic) releaseOrderCoupons(orderID string, couponIDs []int64) {
+	if len(couponIDs) == 0 {
+		return
+	}
+	if err := l.svcCtx.CouponDB.ReturnCouponsByOrder(orderID); err != nil {
+		l.Errorf("release locked coupons for failed order=%s err=%v", orderID, err)
+	}
 }
 
 // GetOrder 玩家查询订单（scope=path gameId；Courier 归属校验：非本人 404）。
