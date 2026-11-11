@@ -129,7 +129,11 @@ class PackageDownload implements PackageDownloadHandle {
     if (this.task && this.phase === 'paused') {
       this.phase = 'downloading';
       this.emit();
-      await this.run(this.file!, /* resumed */ true);
+      // 真恢复：native 断点续传（原实现误调 run() 重开新任务，丢进度；
+      // P1-4 修复）。resumeAsync 本身 await 完成（完成解析为 File，
+      // 再暂停解析 null），完成后的校验/落库与 start 共用 onFinished。
+      const result = await this.task.resumeAsync();
+      await this.onFinished(result);
     }
   }
 
@@ -141,7 +145,7 @@ class PackageDownload implements PackageDownloadHandle {
     this.emit();
   }
 
-  private async run(dest: File, resumed = false): Promise<void> {
+  private async run(dest: File): Promise<void> {
     const options: DownloadTaskOptions = {
       headers: this.opts.headers,
       onProgress: (p) => {
@@ -158,30 +162,7 @@ class PackageDownload implements PackageDownloadHandle {
     this.task = File.createDownloadTask(this.opts.url, dest, options);
     try {
       const result = await this.task.downloadAsync();
-      if (result === null) {
-        // 被暂停：downloadAsync 返回 null，phase 由 pause() 置为 paused
-        return;
-      }
-      this.phase = 'verifying';
-      this.emit();
-      // 截断校验：字节数必须等于服务端登记的 size_bytes（GP-104 登记值）
-      const actual = result.size;
-      if (typeof this.opts.expectedSize === 'number' && this.opts.expectedSize > 0 && actual !== this.opts.expectedSize) {
-        this.error = `包体大小校验失败（${actual} ≠ ${this.opts.expectedSize} 字节）`;
-        this.phase = 'error';
-        try {
-          result.delete();
-        } catch {
-          // 清理失败不阻断错误上报
-        }
-        this.emit();
-        return;
-      }
-      this.bytesWritten = actual ?? 0;
-      this.totalBytes = actual ?? 0;
-      this.file = result;
-      this.phase = 'done';
-      this.emit();
+      await this.onFinished(result);
     } catch (err) {
       // 主动取消不进入 error（cancel() 已复位 phase）
       if (this.cancelled) {
@@ -191,6 +172,34 @@ class PackageDownload implements PackageDownloadHandle {
       this.phase = 'error';
       this.emit();
     }
+  }
+
+  // onFinished 处理下载完成结果：null = 被暂停（phase 由 pause() 置
+  // paused）；否则截断校验 + 落 done。start 与 resume 共用（P1-4）。
+  private async onFinished(result: File | null): Promise<void> {
+    if (result === null) {
+      return;
+    }
+    this.phase = 'verifying';
+    this.emit();
+    // 截断校验：字节数必须等于服务端登记的 size_bytes（GP-104 登记值）
+    const actual = result.size;
+    if (typeof this.opts.expectedSize === 'number' && this.opts.expectedSize > 0 && actual !== this.opts.expectedSize) {
+      this.error = `包体大小校验失败（${actual} ≠ ${this.opts.expectedSize} 字节）`;
+      this.phase = 'error';
+      try {
+        result.delete();
+      } catch {
+        // 清理失败不阻断错误上报
+      }
+      this.emit();
+      return;
+    }
+    this.bytesWritten = actual ?? 0;
+    this.totalBytes = actual ?? 0;
+    this.file = result;
+    this.phase = 'done';
+    this.emit();
   }
 
   async install(): Promise<void> {
