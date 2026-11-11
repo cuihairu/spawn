@@ -135,6 +135,13 @@
   - 验收:清单内每个开关都有 off/on+GIF;流水线可重跑(配置变更随时再生成);兼作配置效果回归测试。
   - 参考:kode todo C-24 同款流水线模式(2026-11-01 用户令全舰队推广)。
 
+## 审核修复批（2026-11-11 audit-batch2-6repos，spawn 节 P0/P1）
+
+- [x] **P0-1 优惠券锁定后无失败回滚与超时释放**（audit 原文：券永久卡死在 locked 态）
+  - 完成：下单后半程失败回滚（CreateTarget / UpsertFromOrder 失败路径调用 ReturnCouponsByOrder 解锁，orderlogic.go:131-135,145-151 + releaseOrderCoupons helper）；锁券时间戳 locked_at（双方言建表 + migrateCouponColumns 存量补列，couponmodel.go:206-208,440-453）；超时释放 ReleaseExpiredLocked（couponmodel.go:455-499）+ 定时扫描组件 couponrec/release.go（Run ticker + ReleaseOnce，对齐 delivery.Recovery 模式）+ 接线 payments.go:66-71 + 配置 Coupon.LockTtlSeconds/ReleaseIntervalSeconds（config.go:56-62）；限领名额改 claimed-only 计数（CountUserCouponClaimed，couponmodel.go:422-432 + couponlogic.go:259-268 换用，全状态 CountUserCouponClaims 保留作占用判定）。
+  - 证据：sha `18487a6`（fix: release locked coupons on order failure and timeout）；测试 model 3 项 PASS（ReleaseExpiredLocked 到期/未到期/空 locked_at/幂等，used 不受影响，CountUserCouponClaimed 仅计 claimed）couponmodel_release_test.go:29,80,106；handler 集成 3 项 PASS（CreateTarget 失败回滚、UpsertFromOrder 失败回滚、ReleaseOnce 超时释放）+ 防回归 TestRoutes_Coupons（GP-305）routes_p0coupon_integration_test.go:77,95,117；`go test ./... -count=1 -race` 全绿 + gofmt/vet 干净。
+  - 备注：audit 第三子项（LinkOrderCoupon 失败仅日志 → 券停 locked）经排查为误报——MarkCouponUsedByOrder 按 locked_order_id 核销（couponmodel.go:510-515），不依赖 coupon_order_links（links 仅记折扣快照供对账单聚合）；已核销券 used 态不受释放扫描影响（条件 status=locked）。
+
 ## 漏洞扫描遗留（2026-11-03 全舰队扫描，源 scratch/vuln-scan-*.md）
 
 - [x] VULN-SPAWN-001 [高危·GHSA-mrhx-c7xc-m3w5] zod 3.25.76（另有 4.4.3 实例）→≥4.6.6【跨大版本需改代码】：@expo/cli 依赖 zod3（终扫残留 1）；验收：pnpm audit --audit-level=high 中 zod 不再命中；该仓无 test 脚本，audit-only
