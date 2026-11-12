@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/tappi/tappi/services/payments/internal/analytics"
 	"github.com/tappi/tappi/services/payments/internal/channel"
 	"github.com/tappi/tappi/services/payments/internal/promotion"
 	"github.com/tappi/tappi/services/payments/internal/svc"
@@ -61,6 +62,8 @@ func (l *CallbackLogic) Handle(channelName string, rawBody []byte, signature str
 	}
 	// 订单投影 PAID（事实副本；状态值来自 Courier 接受回调后，非本服务推进）
 	l.projectPaid(rawBody)
+	// GP-402 经营分析：order_paid 事实事件（event_id 由订单号派生，重放幂等）
+	l.emitOrderPaid(rawBody)
 	// GP-305 券核销：订单关联的 locked 券 → used（幂等，无关联即 no-op）
 	l.redeemOrderCoupons(rawBody)
 	// GP-302 活动奖励评估入队（促销服务未部署时行为不变）
@@ -96,6 +99,36 @@ func (l *CallbackLogic) projectPaid(rawBody []byte) {
 	if err := l.svcCtx.ProjectionDB.MarkPaid(body.OrderId, body.PaidAt); err != nil {
 		l.Errorf("project paid order=%s failed: %v", body.OrderId, err)
 	}
+}
+
+// emitOrderPaid GP-402/F24：PAID 后向数据面板投 order_paid 事实事件。
+// 金额/游戏/账号一律取订单投影（交易事实），不由回调体携带；event_id 由
+// 订单号派生（"order_paid:<orderId>"），回调重放时数据面板按 UNIQUE 忽略。
+// 失败仅记日志（fire-and-forget，数据面板未部署时 Enabled=false 不拼装）。
+func (l *CallbackLogic) emitOrderPaid(rawBody []byte) {
+	if !l.svcCtx.AnalyticsSvc.Enabled() {
+		return
+	}
+	var body struct {
+		OrderId string `json:"orderId"`
+	}
+	if err := json.Unmarshal(rawBody, &body); err != nil || body.OrderId == "" {
+		return
+	}
+	proj, err := l.svcCtx.ProjectionDB.Get(body.OrderId)
+	if err != nil {
+		l.Errorf("load projection for analytics order=%s failed: %v", body.OrderId, err)
+		return
+	}
+	l.svcCtx.AnalyticsSvc.Emit(analytics.Event{
+		EventId:     "order_paid:" + proj.OrderId,
+		EventType:   analytics.EventOrderPaid,
+		UserId:      analytics.UserIDOf(proj.AccountId),
+		GameId:      proj.GameId,
+		OrderId:     proj.OrderId,
+		AmountCents: proj.AmountCents,
+		OccurredAt:  proj.PaidAt,
+	})
 }
 
 // enqueueRewardEvaluation GP-302：PAID 后按投影+发货账本事实入队（基础量

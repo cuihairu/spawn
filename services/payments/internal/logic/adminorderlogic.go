@@ -17,7 +17,9 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/tappi/tappi/services/payments/internal/analytics"
 	"github.com/tappi/tappi/services/payments/internal/svc"
 	"github.com/tappi/tappi/services/payments/internal/types"
 	"github.com/tappi/tappi/services/payments/model"
@@ -147,8 +149,29 @@ func (l *AdminOrderLogic) CreateRefund(req *types.CreateRefundRequest, authHeade
 	_ = l.svcCtx.ProjectionDB.LogAudit(&model.OrderAuditLog{
 		OrderId: req.OrderId, ActorId: userID, ActorRole: role, Action: "refund_request", Detail: string(detail), Ip: ip,
 	})
+	// GP-402/F24：退款请求事实事件（口径=请求事实，非执行结果；执行器未
+	// 接入，EXECUTED 口径事件待 Courier 退款端点后补）
+	l.emitRefundRequested(row, action, amount)
 	got, _ := l.svcCtx.ProjectionDB.GetRefund(req.OrderId, action)
 	return &types.RefundResponse{Refund: toRefundView(got), Execution: "pending-courier-refund-endpoint"}, nil
+}
+
+// emitRefundRequested 投 refund_requested 事实事件。event_id 由
+// 订单号+动作派生（与 CreateRefund 的 UNIQUE(order,action) 幂等口径一致），
+// 金额取本次登记金额（部分退款按登记值，非订单原价）。fire-and-forget。
+func (l *AdminOrderLogic) emitRefundRequested(row *model.OrderProjection, action string, amount int64) {
+	if !l.svcCtx.AnalyticsSvc.Enabled() {
+		return
+	}
+	l.svcCtx.AnalyticsSvc.Emit(analytics.Event{
+		EventId:     "refund_requested:" + row.OrderId + ":" + action,
+		EventType:   analytics.EventRefundRequested,
+		UserId:      analytics.UserIDOf(row.AccountId),
+		GameId:      row.GameId,
+		OrderId:     row.OrderId,
+		AmountCents: amount,
+		OccurredAt:  time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 // ListRefunds 退款/冲正意图列表（状态可筛）。

@@ -13,9 +13,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/tappi/tappi/services/promotions/internal/analytics"
 	"github.com/tappi/tappi/services/promotions/internal/svc"
 	"github.com/tappi/tappi/services/promotions/internal/types"
 	"github.com/tappi/tappi/services/promotions/model"
@@ -271,6 +273,10 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 		}
 		if created {
 			resp.Grants = append(resp.Grants, toGrantView(g))
+			// GP-402/F24：发奖事实事件（活动效果聚合键）。event_id 由
+			// 订单+活动派生，评估重放只算一次；金额取订单事实（PaidCents），
+			// 故活动效果口径 = 该活动发放所对应订单实付合计（带动 GMV）。
+			l.emitRewardGranted(req, g)
 		} else if w.Milestone == 0 {
 			// 并发同订单重放：返回已落库事实（幂等）
 			row, err := l.svcCtx.RewardDB.GetGrant(req.OrderId, w.ActivityId)
@@ -303,6 +309,26 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 		"first_purchase": req.FirstPurchase, "cumulative_cents": req.CumulativeCents,
 	})
 	return resp, nil
+}
+
+// emitRewardGranted GP-402/F24：向数据面板投 reward_granted 事实事件。
+// activity_id 是活动效果聚合键，金额取订单事实（req.PaidCents）：活动效果
+// = 该活动发放所对应订单实付合计（带动 GMV）。AccountId 为字符串，非数字
+// 账号按匿名处理（不影响活动效果笔数与 GMV）。fire-and-forget。
+func (l *RewardLogic) emitRewardGranted(req types.RewardEvaluateRequest, g *model.RewardGrant) {
+	if l.svcCtx.AnalyticsSvc == nil || !l.svcCtx.AnalyticsSvc.Enabled() {
+		return
+	}
+	l.svcCtx.AnalyticsSvc.Emit(analytics.Event{
+		EventId:     "reward_granted:" + req.OrderId + ":" + strconv.FormatInt(g.ActivityId, 10),
+		EventType:   analytics.EventRewardGranted,
+		UserId:      analytics.UserIDOf(req.AccountId),
+		GameId:      req.GameId,
+		ActivityId:  g.ActivityId,
+		OrderId:     req.OrderId,
+		AmountCents: req.PaidCents,
+		OccurredAt:  g.GrantedAt,
+	})
 }
 
 // revokeBelowThresholds GP-303 退款撤销：遍历该游戏全部已发布累充活动

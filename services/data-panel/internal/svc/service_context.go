@@ -25,7 +25,8 @@ type ServiceContext struct {
 	Auth   rest.Middleware
 	Jwt    *utils.Auth
 
-	StatsRepo model.PlayerStatsStore
+	StatsRepo    model.PlayerStatsStore
+	AnalyticsSvc model.AnalyticsStore
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -62,12 +63,30 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		panic(fmt.Sprintf("初始化战绩种子数据失败: %v", err))
 	}
 
-	return &ServiceContext{
-		Config:    c,
-		Auth:      middleware.NewAuthMiddleware(jwtTool).Handle,
-		Jwt:       jwtTool,
-		StatsRepo: statsModel,
+	// GP-402 经营分析事件域：建 platform_events 表（幂等）
+	analyticsModel := model.NewAnalyticsEventsModel(db)
+	if err := analyticsModel.CreateAnalyticsTable(); err != nil {
+		panic(fmt.Sprintf("创建平台事件表失败: %v", err))
 	}
+
+	return &ServiceContext{
+		Config:       c,
+		Auth:         middleware.NewAuthMiddleware(jwtTool).Handle,
+		Jwt:          jwtTool,
+		StatsRepo:    statsModel,
+		AnalyticsSvc: analyticsModel,
+	}
+}
+
+// IsAnalyticsAdmin GP-402 经营分析查询权限：AdminUserIds 名单内才可查
+// 漏斗/留存/活动效果/账单核对（名单为空即全关，fail-closed）。
+func (sc *ServiceContext) IsAnalyticsAdmin(userID string) bool {
+	for _, id := range sc.Config.Analytics.AdminUserIds {
+		if id == userID {
+			return true
+		}
+	}
+	return false
 }
 
 // ensureSQLiteDir 为 SQLite 文件 DSN 预创建父目录；内存库与无路径 DSN 原样返回。

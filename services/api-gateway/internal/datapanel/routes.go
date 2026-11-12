@@ -26,5 +26,13 @@ func RegisterDataPanelProxyRoutes(server *rest.Server, serverCtx *svc.ServiceCon
 		{Method: http.MethodGet, Path: "/api/v1/stats/users/:user_id/games", Handler: h},
 		{Method: http.MethodGet, Path: "/api/v1/stats/users/:user_id/games/:game_id", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/stats/records", Handler: h},
+		// GP-402 经营分析查询（F24）：漏斗/留存/活动效果/账单核对。
+		// Authorization 头透传，登录与 AdminUserIds 名单鉴权在 data-panel 侧；
+		// S2S 摄入口 /internal/events 不经网关暴露。
+		{Method: http.MethodGet, Path: "/api/v1/analytics/overview", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/analytics/funnel", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/analytics/retention", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/analytics/activities/:id/effect", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/analytics/reconciliation", Handler: h},
 	})
 }

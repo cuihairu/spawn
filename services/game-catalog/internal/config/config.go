@@ -43,4 +43,13 @@ type Config struct {
 	Internal struct {
 		Token string `json:",env=INTERNAL_TOKEN,optional"`
 	}
+
+	// GP-402 经营分析事实投递（F24）：download 事实事件 → data-panel
+	// /internal/events（X-Internal-Token）。BaseURL 未配置 = no-op，
+	// 部署面未带数据面板时行为不变；fire-and-forget 不影响下载主流程。
+	Analytics struct {
+		BaseURL string `json:",env=DATA_PANEL_URL,optional"`
+		Token   string `json:",env=DATA_PANEL_INTERNAL_TOKEN,optional"`
+		Timeout int64  `json:",default=3000,env=DATA_PANEL_TIMEOUT"`
+	}
 }

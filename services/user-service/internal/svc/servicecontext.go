@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tappi/tappi/services/user-service/internal/analytics"
 	"github.com/tappi/tappi/services/user-service/internal/config"
 	"github.com/tappi/tappi/services/user-service/internal/integration"
 	"github.com/tappi/tappi/services/user-service/model"
@@ -25,6 +26,9 @@ type ServiceContext struct {
 	UserModel         model.UserStore
 	Auth              *utils.Auth
 	GameCatalogClient *integration.GameCatalogClient
+	// AnalyticsSvc GP-402 经营分析事实投递口（data-panel /internal/events）；
+	// DATA_PANEL_URL 未配置时为 no-op。
+	AnalyticsSvc analytics.Client
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -79,5 +83,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		UserModel:         userModel,
 		Auth:              auth,
 		GameCatalogClient: gameClient,
+		AnalyticsSvc:      analytics.NewClient(c.Analytics.BaseURL, c.Analytics.Token, c.Analytics.Timeout),
 	}
 }

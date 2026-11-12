@@ -2,12 +2,15 @@ package logic
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/tappi/tappi/services/game-catalog/internal/analytics"
 	"github.com/tappi/tappi/services/game-catalog/internal/store"
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 	"github.com/tappi/tappi/services/game-catalog/model"
@@ -78,6 +81,7 @@ func (l *DownloadVersionLogic) Download(gameId, versionId string) (*DownloadResu
 	if t, err := time.Parse(time.RFC3339, v.CreatedAt); err == nil {
 		modTime = t
 	}
+	l.emitDownload(gameId)
 	return &DownloadResult{
 		Version: v,
 		File:    f,
@@ -85,4 +89,30 @@ func (l *DownloadVersionLogic) Download(gameId, versionId string) (*DownloadResu
 		Ext:     ext,
 		ModTime: modTime,
 	}, nil
+}
+
+// emitDownload GP-402/F24：包体下载事实事件（漏斗阶段）。每次成功开启
+// 下载记一条（下载可重复，故 event_id 用随机事实 ID 而非派生键）；
+// fire-and-forget，不阻塞流式响应。
+func (l *DownloadVersionLogic) emitDownload(gameId string) {
+	if l.svcCtx.AnalyticsSvc == nil || !l.svcCtx.AnalyticsSvc.Enabled() {
+		return
+	}
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return
+	}
+	l.svcCtx.AnalyticsSvc.Emit(analytics.Event{
+		EventId:   "download:" + hex.EncodeToString(buf),
+		EventType: analytics.EventDownload,
+		UserId:    l.userID(),
+		GameId:    gameId,
+	})
+}
+
+func (l *DownloadVersionLogic) userID() int64 {
+	if id, ok := l.ctx.Value("user_id").(int64); ok {
+		return id
+	}
+	return 0
 }

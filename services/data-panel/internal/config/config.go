@@ -18,4 +18,17 @@ type Config struct {
 	Auth struct {
 		JWTSecret string `json:",env=JWT_SECRET"`
 	}
+
+	// Internal S2S 摄入口令（GP-402）：/internal/events 事件摄入按
+	// X-Internal-Token 严格比对，空令牌（含未配置）时摄入端点整体
+	// 拒绝（fail-closed，不留默认口令）。
+	Internal struct {
+		Token string `json:",env=INTERNAL_TOKEN,optional"`
+	}
+
+	// Analytics 经营分析查询权限（GP-402）：漏斗/留存/活动效果/账单核对
+	// 仅对 AdminUserIds 名单内的用户开放（社区 Moderation.AdminUserIds 同款）。
+	Analytics struct {
+		AdminUserIds []string `json:",optional"`
+	}
 }

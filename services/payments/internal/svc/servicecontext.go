@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/tappi/tappi/services/payments/courier"
+	"github.com/tappi/tappi/services/payments/internal/analytics"
 	"github.com/tappi/tappi/services/payments/internal/channel"
 	"github.com/tappi/tappi/services/payments/internal/config"
 	"github.com/tappi/tappi/services/payments/internal/delivery"
@@ -29,6 +30,7 @@ type ServiceContext struct {
 	Real            *channel.RealChannel
 	Dispatcher      *delivery.Dispatcher
 	PromotionBridge *promotion.Bridge
+	AnalyticsSvc    analytics.Client
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -81,6 +83,8 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	// GP-302 奖励评估桥（PROMOTIONS_URL 未配置 = 不入队不分发）
 	bridge := promotion.NewBridge(evalDB, c.Promotions.BaseURL, c.Promotions.Secret,
 		c.Promotions.Timeout)
+	// GP-402 经营分析事实投递（DATA_PANEL_URL 未配置 = no-op）
+	analyticsClient := analytics.NewClient(c.Analytics.BaseURL, c.Analytics.Token, c.Analytics.Timeout)
 
 	timeout := time.Millisecond * time.Duration(c.Courier.Timeout)
 	courierClient := courier.NewClient(c.Courier.BaseURL, timeout)
@@ -103,5 +107,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		Real:            channel.NewRealChannel("real-channel"),
 		Dispatcher:      dispatcher,
 		PromotionBridge: bridge,
+		AnalyticsSvc:    analyticsClient,
 	}
 }

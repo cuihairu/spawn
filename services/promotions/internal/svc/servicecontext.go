@@ -3,6 +3,7 @@ package svc
 import (
 	"fmt"
 
+	"github.com/tappi/tappi/services/promotions/internal/analytics"
 	"github.com/tappi/tappi/services/promotions/internal/config"
 	"github.com/tappi/tappi/services/promotions/internal/notify"
 	"github.com/tappi/tappi/services/promotions/model"
@@ -18,6 +19,9 @@ type ServiceContext struct {
 	RewardDB   *model.RewardGrantModel
 	GiftPackDB *model.GiftPackModel
 	Notify     *notify.Client
+	// AnalyticsSvc GP-402 经营分析事实投递口（data-panel /internal/events）；
+	// DATA_PANEL_URL 未配置时为 no-op。
+	AnalyticsSvc analytics.Client
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -46,11 +50,12 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	}
 
 	return &ServiceContext{
-		Config:     c,
-		Auth:       utils.NewAuth(c.Auth.JWTSecret),
-		ActivityDB: activityDB,
-		RewardDB:   rewardDB,
-		GiftPackDB: giftPackDB,
-		Notify:     notify.New(c.Notify.CommunityUrl, c.Notify.CatalogUrl, c.Notify.Token),
+		Config:       c,
+		Auth:         utils.NewAuth(c.Auth.JWTSecret),
+		ActivityDB:   activityDB,
+		RewardDB:     rewardDB,
+		GiftPackDB:   giftPackDB,
+		Notify:       notify.New(c.Notify.CommunityUrl, c.Notify.CatalogUrl, c.Notify.Token),
+		AnalyticsSvc: analytics.NewClient(c.Analytics.BaseURL, c.Analytics.Token, c.Analytics.Timeout),
 	}
 }

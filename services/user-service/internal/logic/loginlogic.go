@@ -5,7 +5,10 @@ package logic
 
 import (
 	"context"
+	"strconv"
+	"time"
 
+	"github.com/tappi/tappi/services/user-service/internal/analytics"
 	"github.com/tappi/tappi/services/user-service/internal/httperr"
 	"github.com/tappi/tappi/services/user-service/internal/svc"
 	"github.com/tappi/tappi/services/user-service/internal/types"
@@ -67,6 +70,19 @@ func (l *LoginLogic) Login(req *types.LoginRequest) (resp *types.ApiResponse, er
 	}
 
 	l.Infow("用户登录成功", logx.Field("username", req.Username), logx.Field("user_id", user.Id))
+
+	// GP-402/F24：活跃事实事件（登录即活跃心跳）。event_id 含日期，同一
+	// 用户当日重复登录只算一次活跃（留存口径）；异步投递，data-panel 慢/
+	// 挂时不拖慢登录响应。
+	if l.svcCtx.AnalyticsSvc != nil && l.svcCtx.AnalyticsSvc.Enabled() {
+		now := time.Now().UTC()
+		l.svcCtx.AnalyticsSvc.EmitAsync(analytics.Event{
+			EventId:    "login:" + strconv.FormatInt(user.Id, 10) + ":" + now.Format("20060102"),
+			EventType:  analytics.EventLogin,
+			UserId:     user.Id,
+			OccurredAt: now.Format(time.RFC3339),
+		})
+	}
 
 	// 与 register 同款业务信封：data 内保持 token + user_info 结构
 	return &types.ApiResponse{

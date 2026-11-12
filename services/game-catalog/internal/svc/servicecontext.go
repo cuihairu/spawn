@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tappi/tappi/services/game-catalog/internal/analytics"
 	"github.com/tappi/tappi/services/game-catalog/internal/config"
 	"github.com/tappi/tappi/services/game-catalog/internal/notify"
 	"github.com/tappi/tappi/services/game-catalog/internal/store"
@@ -31,6 +32,9 @@ type ServiceContext struct {
 	// Notify GP-306 业务通知发布口（community /internal/notifications）；
 	// COMMUNITY_URL 未配置时为 no-op。
 	Notify notify.Publisher
+	// AnalyticsSvc GP-402 经营分析事实投递口（data-panel /internal/events）；
+	// DATA_PANEL_URL 未配置时为 no-op。
+	AnalyticsSvc analytics.Client
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -112,6 +116,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		PackageStore:    packageStore,
 		Auth:            utils.NewAuth(c.Auth.JWTSecret),
 		Notify:          notify.NewPublisher(c.Notify.Url, c.Notify.Token),
+		AnalyticsSvc:    analytics.NewClient(c.Analytics.BaseURL, c.Analytics.Token, c.Analytics.Timeout),
 	}
 }
 

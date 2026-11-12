@@ -5,7 +5,10 @@ package logic
 
 import (
 	"context"
+	"strconv"
+	"time"
 
+	"github.com/tappi/tappi/services/user-service/internal/analytics"
 	"github.com/tappi/tappi/services/user-service/internal/svc"
 	"github.com/tappi/tappi/services/user-service/internal/types"
 	"github.com/tappi/tappi/services/user-service/model"
@@ -117,6 +120,17 @@ func (l *RegisterLogic) Register(req *types.RegisterRequest) (resp *types.ApiRes
 	}
 
 	l.Infow("用户注册成功", logx.Field("username", req.Username), logx.Field("user_id", user.Id))
+
+	// GP-402/F24：注册事实事件（漏斗首阶段）。event_id 由用户 ID 派生，
+	// 同一用户重放只算一次注册；fire-and-forget 不影响注册结果。
+	if l.svcCtx.AnalyticsSvc != nil && l.svcCtx.AnalyticsSvc.Enabled() {
+		l.svcCtx.AnalyticsSvc.Emit(analytics.Event{
+			EventId:    "register:" + strconv.FormatInt(user.Id, 10),
+			EventType:  analytics.EventRegister,
+			UserId:     user.Id,
+			OccurredAt: time.Now().UTC().Format(time.RFC3339),
+		})
+	}
 
 	return &types.ApiResponse{
 		Code:    200,

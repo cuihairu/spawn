@@ -33,10 +33,17 @@ const (
 
 type testEnv struct {
 	base string
-	sign func(claims utils.JWTClaims) string
+	// svcCtx 供测试直接装配事实（如订单投影），避免为断言重复走下单链路。
+	svcCtx *svc.ServiceContext
+	sign   func(claims utils.JWTClaims) string
 	// courierAmounts 供 Courier 存根按 skuId 返回金额（默认 1000）
 	courierAmounts map[string]int64
 	callbackSeen   int
+	// analyticsSeen GP-402 经营分析事实投递记录（data-panel /internal/events
+	// 存根收到的批次与令牌），analyticsBase 为空时投递客户端为 no-op。
+	analyticsSeen []string
+	analyticsTok  string
+	analyticsBase string
 }
 
 func newPaymentsServer(t *testing.T) *testEnv {
@@ -92,6 +99,20 @@ func newPaymentsServer(t *testing.T) *testEnv {
 	}))
 	t.Cleanup(courier.Close)
 
+	// data-panel 存根：/internal/events 记录事实事件批次（GP-402）
+	datapanel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/events" {
+			http.NotFound(w, r)
+			return
+		}
+		raw, _ := io.ReadAll(r.Body)
+		env.analyticsTok = r.Header.Get("X-Internal-Token")
+		env.analyticsSeen = append(env.analyticsSeen, string(raw))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"accepted": 1})
+	}))
+	t.Cleanup(datapanel.Close)
+
 	// 预占空闲端口
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -107,8 +128,12 @@ func newPaymentsServer(t *testing.T) *testEnv {
 	c.Courier.BaseURL = courier.URL
 	c.GameCatalog.BaseURL = catalog.URL
 	c.Channel.SandboxSecret = testSandboxSecret
+	c.Analytics.BaseURL = datapanel.URL
+	c.Analytics.Token = "gp402-payments-token"
+	env.analyticsBase = datapanel.URL
 
 	svcCtx := svc.NewServiceContext(c)
+	env.svcCtx = svcCtx
 	server := rest.MustNewServer(c.RestConf)
 	RegisterHandlers(server, svcCtx)
 	go server.Start()

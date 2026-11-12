@@ -83,3 +83,142 @@ type RecordedStatResp struct {
 	Message string     `json:"message"`
 	Stat    PlayerStat `json:"stat"`
 }
+
+// ---- GP-402 经营分析事件域（F24）----
+
+// AnalyticsEventIn S2S 摄入的单条平台事实事件：金额/订单等事实字段只由
+// 产生该事实的服务上报，摄入侧不做金额校验（账单核对在查询侧做对账）。
+type AnalyticsEventIn struct {
+	EventId     string `json:"event_id"`
+	EventType   string `json:"event_type"`
+	UserId      int64  `json:"user_id,optional"`
+	GameId      string `json:"game_id,optional"`
+	ActivityId  int64  `json:"activity_id,optional"`
+	OrderId     string `json:"order_id,optional"`
+	AmountCents int64  `json:"amount_cents,optional"`
+	OccurredAt  string `json:"occurred_at,optional"` // RFC3339；空则取摄入时刻
+}
+
+// IngestAnalyticsReq POST /internal/events 批量摄入（上限 500 条/批，
+// event_id 幂等：重复整行忽略）。
+type IngestAnalyticsReq struct {
+	Events []AnalyticsEventIn `json:"events"`
+}
+
+type IngestAnalyticsResp struct {
+	Accepted int64 `json:"accepted"`
+}
+
+// AnalyticsOverviewReq GET /api/v1/analytics/overview：期间按事件类型聚合
+// （漏斗基础数据）。from/to 支持 RFC3339 或 10 位日期（含全天边界）；
+// types 逗号分隔过滤，空为全部。
+type AnalyticsOverviewReq struct {
+	From   string `form:"from,optional"`
+	To     string `form:"to,optional"`
+	GameId string `form:"game_id,optional"`
+	Types  string `form:"types,optional"`
+}
+
+type AnalyticsTypeCount struct {
+	EventType   string `json:"event_type"`
+	Events      int64  `json:"events"`
+	Users       int64  `json:"users"`
+	AmountCents int64  `json:"amount_cents"`
+}
+
+type AnalyticsOverviewResp struct {
+	From   string               `json:"from"`
+	To     string               `json:"to"`
+	GameId string               `json:"game_id,omitempty"`
+	Items  []AnalyticsTypeCount `json:"items"`
+}
+
+// AnalyticsFunnelReq GET /api/v1/analytics/funnel：固定漏斗阶段
+// 注册→活跃→下载→付费（按各阶段去重人数算转化率）。
+type AnalyticsFunnelReq struct {
+	From   string `form:"from,optional"`
+	To     string `form:"to,optional"`
+	GameId string `form:"game_id,optional"`
+}
+
+type AnalyticsFunnelStage struct {
+	Stage       string  `json:"stage"`
+	Users       int64   `json:"users"`
+	Events      int64   `json:"events"`
+	OverallConv float64 `json:"overall_conv"` // 相对首阶段（注册）人数比
+	StepConv    float64 `json:"step_conv"`    // 相对上一阶段人数比；首阶段恒 1
+}
+
+type AnalyticsFunnelResp struct {
+	From   string                 `json:"from"`
+	To     string                 `json:"to"`
+	GameId string                 `json:"game_id,omitempty"`
+	Stages []AnalyticsFunnelStage `json:"stages"`
+}
+
+// AnalyticsRetentionReq GET /api/v1/analytics/retention：按 eventType 的
+// 日活对计算次日/第 N 日留存（date 算术在 Go 侧做，SQL 保持方言中立）。
+// window 天数上限 30。
+type AnalyticsRetentionReq struct {
+	EventType string `form:"event_type,optional,default=login"`
+	From      string `form:"from,optional"`
+	To        string `form:"to,optional"`
+	Window    int64  `form:"window,optional,default=7"`
+}
+
+type AnalyticsRetentionCell struct {
+	Retention float64 `json:"retention"`
+	Users     int64   `json:"users"`
+}
+
+type AnalyticsCohortRow struct {
+	Day       string                            `json:"day"`
+	Size      int64                             `json:"size"`
+	Retention map[string]AnalyticsRetentionCell `json:"retention"`
+}
+
+type AnalyticsRetentionResp struct {
+	EventType string               `json:"event_type"`
+	From      string               `json:"from"`
+	To        string               `json:"to"`
+	Window    int64                `json:"window"`
+	Cohorts   []AnalyticsCohortRow `json:"cohorts"`
+}
+
+// AnalyticsActivityReq GET /api/v1/analytics/activities/:id/effect：活动效果
+// （发奖笔数/参与人数/奖励金额，来自 reward_granted 事件事实）。
+type AnalyticsActivityReq struct {
+	Id int64 `path:"id"`
+}
+
+type AnalyticsActivityEffect struct {
+	ActivityId   int64 `json:"activity_id"`
+	Grants       int64 `json:"grants"`
+	Participants int64 `json:"participants"`
+	RewardCents  int64 `json:"reward_cents"`
+}
+
+type AnalyticsActivityResp struct {
+	Activity AnalyticsActivityEffect `json:"activity"`
+}
+
+// AnalyticsReconciliationReq GET /api/v1/analytics/reconciliation：账单核对
+// （F24）——按游戏聚合付费/退款事件笔数与金额，与 payments 对账单核对。
+type AnalyticsReconciliationReq struct {
+	From string `form:"from,optional"`
+	To   string `form:"to,optional"`
+}
+
+type AnalyticsReconciliationRow struct {
+	GameId      string `json:"game_id"`
+	PaidCount   int64  `json:"paid_count"`
+	PaidCents   int64  `json:"paid_cents"`
+	RefundCount int64  `json:"refund_count"`
+	RefundCents int64  `json:"refund_cents"`
+}
+
+type AnalyticsReconciliationResp struct {
+	From  string                       `json:"from"`
+	To    string                       `json:"to"`
+	Items []AnalyticsReconciliationRow `json:"items"`
+}

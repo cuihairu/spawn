@@ -241,8 +241,11 @@ func ListProductsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 // 验签先于解析，签名缺失/不匹配一律 403（payment.md 安全边界 2）。
 func CallbackHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// 只解析 path 变量：httpx.Parse 会在 Content-Type: application/json 时
+		// 预读并消费 r.Body，使验签取到的原始字节为空 → 真实渠道回调（带
+		// JSON content type）一律 403「回调签名无效」。
 		var req types.ChannelPathRequest
-		if err := httpx.Parse(r, &req); err != nil {
+		if err := httpx.ParsePath(r, &req); err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
