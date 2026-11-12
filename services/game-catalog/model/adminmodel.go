@@ -53,6 +53,11 @@ var (
 	ErrOwnershipMissing     = errors.New("game ownership missing")
 	ErrServerNotFound       = errors.New("server not found")
 	ErrReservationNotFound  = errors.New("reservation not found")
+
+	// GP-401 玩家长评（UserReview 区别于提审 GameReview）
+	ErrUserReviewNotFound   = errors.New("user review not found")
+	ErrUserReviewExists     = errors.New("user review already exists")
+	ErrReviewReportNotFound = errors.New("review report not found")
 )
 
 // Partner 合作方主体（F11）：先最小化人工审核，在线签约后续再考虑。
@@ -201,6 +206,29 @@ type AdminStore interface {
 	ListReservationUsersByGame(gameId string, limit int) ([]int64, error)
 	ListUnnotifiedReservations(serverId int64) ([]*ServerReservation, error)
 	MarkReservationsNotified(serverId int64) error
+
+	// GP-401 游戏评价（F04）：评分覆盖式（一游戏一评分），长评一游戏一评
+	//（UNIQUE 幂等语义），举报一人一评一报，开发者回复官方单条。
+	UpsertUserRating(gameId string, userId int64, rating int) error
+	GetRatingSummary(gameId string) (*RatingSummary, error)
+	GetUserRating(gameId string, userId int64) (int, error)
+	CreateUserReview(r *UserReview) (*UserReview, error)
+	GetUserReview(id int64) (*UserReview, error)
+	ListUserReviewsByGame(gameId string, limit, offset int) ([]*UserReview, int, error)
+	UpdateUserReview(id int64, content string) (*UserReview, error)
+	DeleteUserReview(id int64) error
+	UpsertDevReply(id, by int64, content string) (*UserReview, error)
+	CreateReviewReport(r *ReviewReport) (*ReviewReport, bool, error)
+	GetReviewReport(id int64) (*ReviewReport, error)
+	ListReviewReports(status string, limit, offset int) ([]*ReviewReport, int, error)
+	DecideReviewReportIfPending(id, handledBy int64, status string) (bool, error)
+	ResolvePendingReportsForReview(reviewId, handledBy int64) error
+
+	// GP-401 收藏游戏（F05）：收藏幂等；收藏人群为上线通知受众。
+	AddFavorite(gameId string, userId int64) (*GameFavorite, bool, error)
+	RemoveFavorite(gameId string, userId int64) error
+	ListMyFavorites(userId int64, limit int) ([]*GameFavorite, error)
+	ListFavoriteUsersByGame(gameId string, limit int) ([]int64, error)
 
 	WriteAudit(entry *AuditLog) error
 	ListAuditLogs(resourceType string, limit, offset int) ([]*AuditLog, int, error)
@@ -375,6 +403,97 @@ func (m *AdminModel) CreateAdminTables() error {
 				created_at VARCHAR(32) NOT NULL,
 				UNIQUE KEY uq_reservation_server_user (server_id, user_id),
 				KEY idx_reservations_game (game_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-401 玩家评分（F04）：1-5 星，一游戏一评分（复合主键覆盖式）
+			`CREATE TABLE IF NOT EXISTS game_ratings (
+				game_id VARCHAR(64) NOT NULL,
+				user_id INTEGER NOT NULL,
+				rating INTEGER NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				PRIMARY KEY (game_id, user_id)
+			)`,
+			`CREATE TABLE IF NOT EXISTS game_ratings (
+				game_id VARCHAR(64) NOT NULL,
+				user_id BIGINT NOT NULL,
+				rating INTEGER NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				PRIMARY KEY (game_id, user_id),
+				KEY idx_ratings_game (game_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-401 玩家长评（F04）：一游戏一评（UNIQUE 409 幂等语义），
+			// 开发者回复单条挂列（官方回复覆盖式更新）
+			`CREATE TABLE IF NOT EXISTS game_user_reviews (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				game_id VARCHAR(64) NOT NULL,
+				user_id INTEGER NOT NULL,
+				content VARCHAR(4000) NOT NULL,
+				dev_reply VARCHAR(2000) NOT NULL DEFAULT '',
+				dev_reply_by INTEGER NOT NULL DEFAULT 0,
+				dev_reply_at VARCHAR(32) NOT NULL DEFAULT '',
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				UNIQUE (game_id, user_id)
+			)`,
+			`CREATE TABLE IF NOT EXISTS game_user_reviews (
+				id BIGINT AUTO_INCREMENT PRIMARY KEY,
+				game_id VARCHAR(64) NOT NULL,
+				user_id BIGINT NOT NULL,
+				content VARCHAR(4000) NOT NULL,
+				dev_reply VARCHAR(2000) NOT NULL DEFAULT '',
+				dev_reply_by BIGINT NOT NULL DEFAULT 0,
+				dev_reply_at VARCHAR(32) NOT NULL DEFAULT '',
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				UNIQUE KEY uq_user_review_game_user (game_id, user_id),
+				KEY idx_user_reviews_game (game_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-401 评价举报（F04）：UNIQUE(reporter_id,review_id) 一人一评一报
+			`CREATE TABLE IF NOT EXISTS review_reports (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				review_id INTEGER NOT NULL,
+				game_id VARCHAR(64) NOT NULL,
+				reporter_id INTEGER NOT NULL,
+				reason VARCHAR(1024) NOT NULL DEFAULT '',
+				status VARCHAR(16) NOT NULL DEFAULT 'pending',
+				handled_by INTEGER NOT NULL DEFAULT 0,
+				created_at VARCHAR(32) NOT NULL,
+				handled_at VARCHAR(32) NOT NULL DEFAULT '',
+				UNIQUE (reporter_id, review_id)
+			)`,
+			`CREATE TABLE IF NOT EXISTS review_reports (
+				id BIGINT AUTO_INCREMENT PRIMARY KEY,
+				review_id BIGINT NOT NULL,
+				game_id VARCHAR(64) NOT NULL,
+				reporter_id BIGINT NOT NULL,
+				reason VARCHAR(1024) NOT NULL DEFAULT '',
+				status VARCHAR(16) NOT NULL DEFAULT 'pending',
+				handled_by BIGINT NOT NULL DEFAULT 0,
+				created_at VARCHAR(32) NOT NULL,
+				handled_at VARCHAR(32) NOT NULL DEFAULT '',
+				UNIQUE KEY uq_review_report_reporter_review (reporter_id, review_id),
+				KEY idx_review_reports_status (status)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-401 收藏游戏（F05）：复合主键幂等；收藏人群为上线通知受众
+			`CREATE TABLE IF NOT EXISTS game_favorites (
+				game_id VARCHAR(64) NOT NULL,
+				user_id INTEGER NOT NULL,
+				created_at VARCHAR(32) NOT NULL,
+				PRIMARY KEY (game_id, user_id)
+			)`,
+			`CREATE TABLE IF NOT EXISTS game_favorites (
+				game_id VARCHAR(64) NOT NULL,
+				user_id BIGINT NOT NULL,
+				created_at VARCHAR(32) NOT NULL,
+				PRIMARY KEY (game_id, user_id),
+				KEY idx_favorites_user (user_id)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 		},
 		{

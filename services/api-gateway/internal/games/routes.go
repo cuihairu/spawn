@@ -55,6 +55,20 @@ func RegisterGameProxyRoutes(server *rest.Server, serverCtx *svc.ServiceContext)
 		{Method: http.MethodPost, Path: "/games/:id/servers/:serverId/reserve", Handler: h},
 		{Method: http.MethodDelete, Path: "/games/:id/servers/:serverId/reserve", Handler: h},
 		{Method: http.MethodGet, Path: "/games/:id/reservations/me", Handler: h},
+		// GP-401 游戏评价（F04）：长评公开读 + 评分/发评/改评/举报；
+		// 开发者回复与举报处置在合作方/管理路由，鉴权均在 game-catalog 侧
+		{Method: http.MethodGet, Path: "/games/:id/reviews", Handler: h},
+		{Method: http.MethodPost, Path: "/games/:id/rating", Handler: h},
+		{Method: http.MethodPost, Path: "/games/:id/reviews", Handler: h},
+		{Method: http.MethodPut, Path: "/games/:id/reviews/:reviewId", Handler: h},
+		{Method: http.MethodPost, Path: "/games/:id/reviews/:reviewId/report", Handler: h},
+		{Method: http.MethodPost, Path: "/partner/games/:id/reviews/:reviewId/reply", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/review-reports", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/review-reports/:id/handle", Handler: h},
+		// GP-401 收藏游戏（F05）：收藏/取消幂等 + 我的收藏
+		{Method: http.MethodPost, Path: "/games/:id/favorite", Handler: h},
+		{Method: http.MethodDelete, Path: "/games/:id/favorite", Handler: h},
+		{Method: http.MethodGet, Path: "/me/favorites", Handler: h},
 	})
 
 	// GP-105 包体通道：latest 元数据是小 JSON，走普通反代；上传/下载为

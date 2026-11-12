@@ -83,6 +83,24 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		rest.Route{Method: http.MethodGet, Path: "/games/:id/reservations/me", Handler: MyReservationsHandler(serverCtx)},
 	))
 
+	// GP-401 游戏评价（F04）：长评列表公开读（详情附评分聚合）；评分/发评/
+	// 改评/举报走平台 JWT（player 即可）。开发者回复在合作方路由组（自有
+	// 游戏）；举报处置在管理路由组。
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/games/:id/reviews", Handler: ListGameReviewsHandler(serverCtx)},
+	})
+	server.AddRoutes(rest.WithMiddleware(auth,
+		rest.Route{Method: http.MethodPost, Path: "/games/:id/rating", Handler: RateGameHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/games/:id/reviews", Handler: CreateGameReviewHandler(serverCtx)},
+		rest.Route{Method: http.MethodPut, Path: "/games/:id/reviews/:reviewId", Handler: UpdateGameReviewHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/games/:id/reviews/:reviewId/report", Handler: ReportGameReviewHandler(serverCtx)},
+		// GP-401 收藏游戏（F05）：收藏/取消幂等；我的收藏列表。上线通知
+		//（game_launch）在游戏上架过渡时向收藏人群扇出（AdminLogic）。
+		rest.Route{Method: http.MethodPost, Path: "/games/:id/favorite", Handler: FavoriteGameHandler(serverCtx)},
+		rest.Route{Method: http.MethodDelete, Path: "/games/:id/favorite", Handler: UnfavoriteGameHandler(serverCtx)},
+		rest.Route{Method: http.MethodGet, Path: "/me/favorites", Handler: MyFavoritesHandler(serverCtx)},
+	))
+
 	// GP-306 S2S：游戏维度去重预约人群（promotions 活动通知受众）。
 	// X-Internal-Token 校验在 handler 内先于 body 解析；S2S 专用不进网关。
 	server.AddRoutes([]rest.Route{
@@ -107,6 +125,9 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		rest.Route{Method: http.MethodGet, Path: "/admin/games/:id/versions", Handler: AdminListVersionsHandler(serverCtx)},
 		rest.Route{Method: http.MethodPost, Path: "/admin/games/:id/versions/:versionId/publish", Handler: PublishVersionHandler(serverCtx)},
 		rest.Route{Method: http.MethodPost, Path: "/admin/games/:id/versions/:versionId/revoke", Handler: RevokeVersionHandler(serverCtx)},
+		// GP-401 评价举报处置：驳回（评价保留）/移除（评价删除+同评未决结案）
+		rest.Route{Method: http.MethodGet, Path: "/admin/review-reports", Handler: ListReviewReportsHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/admin/review-reports/:id/handle", Handler: HandleReviewReportHandler(serverCtx)},
 		rest.Route{Method: http.MethodGet, Path: "/admin/audit", Handler: ListAuditLogsHandler(serverCtx)},
 	)...)
 	server.AddRoutes(rest.WithMiddleware(auth, adminRoutes...))
@@ -124,6 +145,8 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			rest.Route{Method: http.MethodPost, Path: "/partner/games/:id/servers", Handler: PartnerCreateServerHandler(serverCtx)},
 			rest.Route{Method: http.MethodGet, Path: "/partner/games/:id/servers", Handler: PartnerListServersHandler(serverCtx)},
 			rest.Route{Method: http.MethodPatch, Path: "/partner/games/:id/servers/:serverId", Handler: PartnerUpdateServerHandler(serverCtx)},
+			// GP-401 开发者回复长评（自有游戏，官方单条覆盖式）
+			rest.Route{Method: http.MethodPost, Path: "/partner/games/:id/reviews/:reviewId/reply", Handler: ReplyGameReviewHandler(serverCtx)},
 		)...,
 	))
 }

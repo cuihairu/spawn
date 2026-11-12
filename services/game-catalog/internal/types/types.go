@@ -86,8 +86,10 @@ type UpdateGameTagsRequest struct {
 	Tags []string `json:"tags"`
 }
 
+// GameDetailResponse 详情（GP-401 附玩家评分聚合；与运营编辑分 score 分离）。
 type GameDetailResponse struct {
-	Game Game `json:"game"`
+	Game   Game              `json:"game"`
+	Rating RatingSummaryView `json:"rating"`
 }
 
 type FeaturedGamesResponse struct {
@@ -348,4 +350,134 @@ type MyReservationsResponse struct {
 type InternalReservationUsersResponse struct {
 	GameId  string  `json:"game_id"`
 	UserIds []int64 `json:"user_ids"`
+}
+
+// ==================== GP-401 游戏评价（F04） ====================
+
+// RateGameRequest 玩家评分（1-5 整数星，重复提交覆盖上一评分）。
+type RateGameRequest struct {
+	Id     string `path:"id"`
+	Rating int    `json:"rating"`
+}
+
+// RatingSummaryView 评分聚合（average 为 1-5 均值；无评分 count=0 average=0）。
+type RatingSummaryView struct {
+	Average float64 `json:"average"`
+	Count   int64   `json:"count"`
+}
+
+type RateGameResponse struct {
+	GameId  string            `json:"game_id"`
+	Rating  int               `json:"rating"`
+	Summary RatingSummaryView `json:"summary"`
+}
+
+// CreateGameReviewRequest 发长评（10-4000 字；一游戏一评，重复 409，改评走 PUT）。
+type CreateGameReviewRequest struct {
+	Id      string `path:"id"`
+	Content string `json:"content"`
+}
+
+// UpdateGameReviewRequest 作者改评（path reviewId 为长评 id）。
+type UpdateGameReviewRequest struct {
+	Id       string `path:"id"`
+	ReviewId int64  `path:"reviewId"`
+	Content  string `json:"content"`
+}
+
+// UserReviewView 玩家长评（公开列表视图；Rating 为作者当前评分，0=未评分；
+// DevReply 为开发者官方回复，单条覆盖式）。
+type UserReviewView struct {
+	Id         int64  `json:"id"`
+	GameId     string `json:"game_id"`
+	UserId     int64  `json:"user_id"`
+	Rating     int    `json:"rating"`
+	Content    string `json:"content"`
+	DevReply   string `json:"dev_reply"`
+	DevReplyBy int64  `json:"dev_reply_by"`
+	DevReplyAt string `json:"dev_reply_at"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+type GameReviewListRequest struct {
+	Id     string `path:"id"`
+	Limit  int64  `form:"limit,default=20"`
+	Offset int64  `form:"offset,default=0"`
+}
+
+type GameReviewListResponse struct {
+	Items  []UserReviewView `json:"items"`
+	Total  int              `json:"total"`
+	Limit  int64            `json:"limit"`
+	Offset int64            `json:"offset"`
+}
+
+// ReportGameReviewRequest 举报长评（一人一评一报，重复举报返回既有记录）。
+type ReportGameReviewRequest struct {
+	Id       string `path:"id"`
+	ReviewId int64  `path:"reviewId"`
+	Reason   string `json:"reason"`
+}
+
+type ReportGameReviewResponse struct {
+	Id      int64 `json:"id"`
+	Created bool  `json:"created"`
+}
+
+// ReplyGameReviewRequest 开发者回复长评（合作方仅限自有游戏；覆盖式更新）。
+type ReplyGameReviewRequest struct {
+	Id       string `path:"id"`
+	ReviewId int64  `path:"reviewId"`
+	Content  string `json:"content"`
+}
+
+// ListReviewReportsRequest 管理举报队列查询（status 空=全部）。
+type ListReviewReportsRequest struct {
+	Status string `form:"status,optional"`
+	Limit  int64  `form:"limit,default=20"`
+	Offset int64  `form:"offset,default=0"`
+}
+
+// ReviewReportView 举报记录（管理视图）。
+type ReviewReportView struct {
+	Id         int64  `json:"id"`
+	ReviewId   int64  `json:"review_id"`
+	GameId     string `json:"game_id"`
+	ReporterId int64  `json:"reporter_id"`
+	Reason     string `json:"reason"`
+	Status     string `json:"status"`
+	HandledBy  int64  `json:"handled_by"`
+	CreatedAt  string `json:"created_at"`
+	HandledAt  string `json:"handled_at"`
+}
+
+type ReviewReportsListResponse struct {
+	Items []ReviewReportView `json:"items"`
+	Total int                `json:"total"`
+}
+
+// HandleReviewReportRequest 处置举报：dismiss 驳回（评价保留），
+// remove 移除评价（同评其余未决举报一并结案）。
+type HandleReviewReportRequest struct {
+	Id     int64  `path:"id"`
+	Action string `json:"action"`
+}
+
+// ==================== GP-401 收藏游戏（F05） ====================
+
+// FavoriteGameResponse 收藏结果（重复收藏幂等 created=false）。
+type FavoriteGameResponse struct {
+	GameId  string `json:"game_id"`
+	Created bool   `json:"created"`
+}
+
+// FavoriteItemView 我的收藏条目（收藏时快照不可得，回读游戏现状含状态）。
+type FavoriteItemView struct {
+	Game        Game   `json:"game"`
+	FavoritedAt string `json:"favorited_at"`
+}
+
+type MyFavoritesResponse struct {
+	Items []FavoriteItemView `json:"items"`
 }

@@ -110,3 +110,27 @@ func toTypesServer(s *model.GameServer) *types.GameServer {
 		CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
 	}
 }
+
+// toTypesUserReview 玩家长评视图（GP-401 F04）。
+func toTypesUserReview(r *model.UserReview) *types.UserReviewView {
+	if r == nil {
+		return &types.UserReviewView{}
+	}
+	return &types.UserReviewView{
+		Id: r.Id, GameId: r.GameId, UserId: r.UserId, Rating: r.Rating,
+		Content: r.Content, DevReply: r.DevReply, DevReplyBy: r.DevReplyBy,
+		DevReplyAt: r.DevReplyAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+}
+
+// toTypesReviewReport 举报记录视图（GP-401 F04 管理面）。
+func toTypesReviewReport(r *model.ReviewReport) *types.ReviewReportView {
+	if r == nil {
+		return &types.ReviewReportView{}
+	}
+	return &types.ReviewReportView{
+		Id: r.Id, ReviewId: r.ReviewId, GameId: r.GameId, ReporterId: r.ReporterId,
+		Reason: r.Reason, Status: r.Status, HandledBy: r.HandledBy,
+		CreatedAt: r.CreatedAt, HandledAt: r.HandledAt,
+	}
+}

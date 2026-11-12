@@ -187,7 +187,18 @@ func (l *AdminLogic) DecideReview(req *types.DecideReviewRequest) (*types.GameRe
 	var statusErr error
 	if review.VersionId == "" {
 		if req.Decision == model.ReviewApprove {
-			_, statusErr = l.svcCtx.GameRepository.SetStatus(review.GameId, model.GameStatusApproved, "")
+			// GP-401 上线通知：过审上架同样是上架过渡，先取旧状态供过渡判定
+			beforeGame, gerr := l.svcCtx.GameRepository.Get(review.GameId)
+			if gerr != nil {
+				l.Errorf("query game before approve failed: %v", gerr)
+				return nil, newAPIError(http.StatusInternalServerError, "查询游戏失败")
+			}
+			afterGame, serr := l.svcCtx.GameRepository.SetStatus(review.GameId, model.GameStatusApproved, "")
+			if serr != nil {
+				statusErr = serr
+			} else {
+				l.notifyGameLaunch(beforeGame, afterGame)
+			}
 		} else {
 			_, statusErr = l.svcCtx.GameRepository.SetStatus(review.GameId, model.GameStatusRejected, req.Reason)
 		}
@@ -221,8 +232,37 @@ func (l *AdminLogic) setGameStatus(gameID, status, action, reason string) (*type
 		return nil, newAPIError(http.StatusInternalServerError, "更新游戏状态失败")
 	}
 	l.audit(action, "game", gameID, toJSON(toTypesGame(before)), toJSON(toTypesGame(after)))
+	// GP-401 上线通知（F05）：非上架 → 上架过渡向收藏人群扇出 game_launch
+	l.notifyGameLaunch(before, after)
 	g := toTypesGame(after)
 	return &g, nil
+}
+
+// notifyGameLaunch GP-401 上线通知（F05）：游戏进入上架状态且此前未上架时，
+// 向收藏该游戏的用户扇出 game_launch（站内信 + realtime-hub 远程推送）。
+// community 未配置时跳过；失败仅记日志不影响上架结果。
+func (l *AdminLogic) notifyGameLaunch(before, after *model.Game) {
+	if before == nil || after == nil {
+		return
+	}
+	if before.Status == model.GameStatusApproved || after.Status != model.GameStatusApproved {
+		return
+	}
+	if !l.svcCtx.Notify.Enabled() {
+		return
+	}
+	users, err := l.svcCtx.AdminRepository.ListFavoriteUsersByGame(after.Id, 10000)
+	if err != nil {
+		l.Errorf("list favorite users for game %s failed: %v", after.Id, err)
+		return
+	}
+	if len(users) == 0 {
+		return
+	}
+	l.svcCtx.Notify.Publish(notify.Notification{
+		UserIds: users, Type: "game_launch", TargetId: 0,
+		Content: "您收藏的游戏《" + after.Title + "》已上线，快来体验",
+	})
 }
 
 func (l *AdminLogic) PublishGame(id string) (*types.Game, error) {

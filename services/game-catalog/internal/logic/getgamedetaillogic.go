@@ -41,8 +41,16 @@ func (l *GetGameDetailLogic) GetGameDetail(req *types.GetGameDetailRequest) (*ty
 		return nil, newAPIError(http.StatusNotFound, "游戏不存在")
 	}
 
+	// GP-401 玩家评分聚合（与运营编辑分 score 分离，F04）
+	summary, err := l.svcCtx.AdminRepository.GetRatingSummary(req.Id)
+	if err != nil {
+		l.Errorf("query rating summary failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询评分失败")
+	}
+
 	return &types.GameDetailResponse{
-		Game: toTypesGame(game),
+		Game:   toTypesGame(game),
+		Rating: types.RatingSummaryView{Average: summary.Average, Count: summary.Count},
 	}, nil
 }
 

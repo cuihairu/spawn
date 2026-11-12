@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,6 +93,65 @@ func TestGameProxyRoutesPassthrough(t *testing.T) {
 	last = hits[len(hits)-1]
 	if last.method != http.MethodPatch || last.path != "/games/g-1/tags" {
 		t.Fatalf("PATCH tags hit = %+v", last)
+	}
+}
+
+// TestGameProxyRoutesGP401Passthrough GP-401 评价/收藏路由透传：
+// 评分/长评/举报/开发者回复/举报处置/收藏与我的收藏，方法与路径原样到达上游。
+func TestGameProxyRoutesGP401Passthrough(t *testing.T) {
+	type hit struct{ method, path string }
+	var hits []hit
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, hit{r.Method, r.URL.Path})
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(upstream.Close)
+
+	var cfg config.Config
+	cfg.Upstreams.GameCatalog.BaseURL = upstream.URL
+	cfg.Upstreams.GameCatalog.Timeout = 2000
+	serverCtx := &svc.ServiceContext{Config: cfg}
+	l := startTestServer(t, serverCtx)
+
+	routes := []struct{ method, path, body string }{
+		{http.MethodGet, "/games/g-1/reviews?limit=10&offset=0", ""},
+		{http.MethodPost, "/games/g-1/rating", `{"rating":5}`},
+		{http.MethodPost, "/games/g-1/reviews", `{"content":"内容不少于十个字，验证透传。"}`},
+		{http.MethodPut, "/games/g-1/reviews/7", `{"content":"作者改评的正文内容。"}`},
+		{http.MethodPost, "/games/g-1/reviews/7/report", `{"reason":"疑似抄袭"}`},
+		{http.MethodPost, "/partner/games/g-1/reviews/7/reply", `{"content":"感谢反馈，下一版本优化。"}`},
+		{http.MethodGet, "/admin/review-reports?status=pending", ""},
+		{http.MethodPost, "/admin/review-reports/9/handle", `{"action":"dismiss"}`},
+		{http.MethodPost, "/games/g-1/favorite", ""},
+		{http.MethodDelete, "/games/g-1/favorite", ""},
+		{http.MethodGet, "/me/favorites", ""},
+	}
+	for _, rc := range routes {
+		var req *http.Request
+		if rc.body == "" {
+			req, _ = http.NewRequest(rc.method, l+rc.path, nil)
+		} else {
+			req, _ = http.NewRequest(rc.method, l+rc.path, strings.NewReader(rc.body))
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", rc.method, rc.path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s %s status=%d", rc.method, rc.path, resp.StatusCode)
+		}
+		last := hits[len(hits)-1]
+		// r.URL.Path 不含 query：期望路径在 ? 处截断后对比
+		wantPath := rc.path
+		if i := strings.IndexByte(wantPath, '?'); i >= 0 {
+			wantPath = wantPath[:i]
+		}
+		if last.method != rc.method || last.path != wantPath {
+			t.Fatalf("%s %s hit = %+v", rc.method, rc.path, last)
+		}
 	}
 }
 
