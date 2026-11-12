@@ -60,6 +60,7 @@ func TestRegisterDataPanelProxyRoutesAnalyticsPassthrough(t *testing.T) {
 		{http.MethodGet, "/api/v1/analytics/retention?window=2"},
 		{http.MethodGet, "/api/v1/analytics/activities/7/effect"},
 		{http.MethodGet, "/api/v1/analytics/reconciliation?from=2026-11-01"},
+		{http.MethodGet, "/api/v1/analytics/channels?from=2026-11-01"},
 		{http.MethodGet, "/api/v1/stats/users/1001/summary"},
 		{http.MethodGet, "/api/v1/stats/users/1001/games?limit=5"},
 	}
