@@ -168,6 +168,7 @@ func (l *AdminOrderLogic) emitRefundRequested(row *model.OrderProjection, action
 		EventType:   analytics.EventRefundRequested,
 		UserId:      analytics.UserIDOf(row.AccountId),
 		GameId:      row.GameId,
+		PartnerId:   row.PartnerId,
 		OrderId:     row.OrderId,
 		AmountCents: amount,
 		OccurredAt:  time.Now().UTC().Format(time.RFC3339),

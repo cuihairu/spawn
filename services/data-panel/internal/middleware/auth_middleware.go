@@ -58,6 +58,9 @@ func (m *AuthMiddleware) Handle(next http.HandlerFunc) http.HandlerFunc {
 
 		ctx := context.WithValue(r.Context(), "user_id", claims.UserId)
 		ctx = context.WithValue(ctx, "username", claims.Username)
+		// 原始 Authorization 头入上下文（GP-404 合作方自助数据面透传给
+		// game-catalog /me 做角色/合作方归属权威判定）
+		ctx = context.WithValue(ctx, "auth_header", authHeader)
 
 		next(w, r.WithContext(ctx))
 	}

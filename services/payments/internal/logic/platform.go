@@ -53,8 +53,10 @@ func platformRole(ctx context.Context, svcCtx *svc.ServiceContext, authHeader st
 		return "", 0, err
 	}
 	var me struct {
-		Role      string `json:"role"`
-		PartnerId int64  `json:"partnerId"`
+		Role string `json:"role"`
+		// 合作方 id：game-catalog /me 的字段名为 partner_id（MeResponse），
+		// 历史上曾按 partnerId 反序列化，GP-404 合作方自助面按 partner_id 取。
+		PartnerId int64 `json:"partner_id"`
 	}
 	if err := json.Unmarshal(raw, &me); err != nil {
 		return "", 0, fmt.Errorf("decode /me: %w", err)
@@ -72,6 +74,24 @@ func requireAdminRole(ctx context.Context, svcCtx *svc.ServiceContext, authHeade
 		return newAPIError(http.StatusForbidden, "无权限执行该操作")
 	}
 	return nil
+}
+
+// requirePartnerRole 合作方自助面角色守卫（GP-404）：角色必须是 partner 且
+// 已绑定合作方 id（game-catalog /me 权威判定，不信任客户端声明）。
+// 未绑定合作方返回 0，由调用方按 403 拒绝——partner 角色但无归属时不应看到
+// 任何结算数据。
+func requirePartnerRole(ctx context.Context, svcCtx *svc.ServiceContext, authHeader string) (int64, error) {
+	role, partnerID, err := platformRole(ctx, svcCtx, authHeader)
+	if err != nil {
+		return 0, newAPIError(http.StatusBadGateway, "角色服务不可用")
+	}
+	if role != "partner" {
+		return 0, newAPIError(http.StatusForbidden, "无权限执行该操作")
+	}
+	if partnerID <= 0 {
+		return 0, newAPIError(http.StatusForbidden, "当前账号未绑定合作方")
+	}
+	return partnerID, nil
 }
 
 // catalogServerOpen 校验充值目标：serverId 必须出现在 game-catalog 该游戏的

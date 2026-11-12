@@ -31,4 +31,12 @@ type Config struct {
 	Analytics struct {
 		AdminUserIds []string `json:",optional"`
 	}
+
+	// GameCatalog 角色权威（GP-404 合作方自助数据面）：合作方自助端点经
+	// game-catalog GET /me 判角色与 partner 归属（单一事实源，不复制角色
+	// 数据）。BaseURL 未配置时该端点整体 fail-closed（502）。
+	GameCatalog struct {
+		BaseURL string `json:",optional,env=GAMECATALOG_BASE_URL"`
+		Timeout int64  `json:",default=5000,optional,env=GAMECATALOG_TIMEOUT"`
+	}
 }

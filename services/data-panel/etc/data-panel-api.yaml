@@ -17,6 +17,12 @@ Prometheus:
   Host: 0.0.0.0
   Port: 9097
 
+# 角色权威（GP-404 合作方自助数据面）：合作方自助端点经 game-catalog /me
+# 判角色与 partner_id 归属；不可达时 fail-closed（502），不返回任何数据。
+GameCatalog:
+  BaseURL: "http://localhost:8890"
+  Timeout: 5000
+
 # 结构化日志（go-zero logx）：JSON 单行输出到容器 stdout，
 # 由 deploy/docker-compose.monitoring.yaml 的 Promtail 集中收集进 Loki
 Log:

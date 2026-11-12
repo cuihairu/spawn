@@ -57,6 +57,7 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodGet, Path: "/admin/statements/:id", Handler: GetStatementHandler(svcCtx)},
 		{Method: http.MethodPut, Path: "/admin/statements/:id/settlement", Handler: UpdateSettlementHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/admin/statements/:id/confirm", Handler: ConfirmStatementHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/admin/statements/:id/resolve", Handler: ResolveDisputeHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/statements/:id/export", Handler: ExportStatementHandler(svcCtx)},
 		// GP-305 优惠券管理面：定义/状态机/列表/详情（platform_admin/operator）
 		{Method: http.MethodPost, Path: "/admin/coupons", Handler: CreateCouponHandler(svcCtx)},
@@ -68,6 +69,19 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodGet, Path: "/admin/coupons/:id", Handler: GetCouponHandler(svcCtx)},
 	}
 	server.AddRoutes(rest.WithMiddleware(auth, adminRoutes...))
+
+	// 合作方自助面（GP-404 F12/F23）：账单确认与结算差异，角色 partner +
+	// game-catalog 绑定的 partner_id 行级隔离（requirePartnerRole 在 logic 内
+	// 权威判定，与 adminRoutes 共用同一 AuthMiddleware 解析令牌）。
+	partnerRoutes := []rest.Route{
+		{Method: http.MethodGet, Path: "/partner/statements", Handler: PartnerListStatementsHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/partner/statements/differences", Handler: PartnerStatementDifferencesHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/partner/statements/:id", Handler: PartnerGetStatementHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/partner/statements/:id/export", Handler: PartnerExportStatementHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/partner/statements/:id/confirm", Handler: PartnerConfirmStatementHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/partner/statements/:id/dispute", Handler: PartnerDisputeStatementHandler(svcCtx)},
+	}
+	server.AddRoutes(rest.WithMiddleware(auth, partnerRoutes...))
 
 	// 渠道 S2S 回调：验签先于 body 解析（payment.md 安全边界 2），无 Bearer
 	server.AddRoutes([]rest.Route{
@@ -559,5 +573,129 @@ func ExportStatementHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(data)
+	}
+}
+
+// ResolveDisputeHandler 运营复核处理合作方异议（GP-404 结算差异处理）。
+func ResolveDisputeHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.StatementPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewStatementLogic(r.Context(), svcCtx).ResolveDispute(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// ---- GP-404 合作方自助账单面（角色 partner + partner_id 行级隔离） ----
+
+// PartnerListStatementsHandler 合作方账单列表（本人名下）。
+func PartnerListStatementsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.PartnerStatementListRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewPartnerStatementLogic(r.Context(), svcCtx).List(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// PartnerGetStatementHandler 合作方账单详情。
+func PartnerGetStatementHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.StatementPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewPartnerStatementLogic(r.Context(), svcCtx).Get(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// PartnerExportStatementHandler 合作方账单 CSV 导出（作用域同详情）。
+func PartnerExportStatementHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.StatementPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		filename, data, err := logic.NewPartnerStatementLogic(r.Context(), svcCtx).Export(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	}
+}
+
+// PartnerConfirmStatementHandler 合作方账单确认（先确认不自动打款）。
+func PartnerConfirmStatementHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.StatementPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewPartnerStatementLogic(r.Context(), svcCtx).Confirm(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// PartnerDisputeStatementHandler 合作方对结算差异提异议。
+func PartnerDisputeStatementHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.DisputeStatementRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewPartnerStatementLogic(r.Context(), svcCtx).Dispute(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// PartnerStatementDifferencesHandler 合作方结算差异清单（diff ≠ 0）。
+func PartnerStatementDifferencesHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.StatementListRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewPartnerStatementLogic(r.Context(), svcCtx).Differences(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
 	}
 }

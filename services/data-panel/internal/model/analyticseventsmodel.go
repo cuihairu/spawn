@@ -43,7 +43,10 @@ type AnalyticsEvent struct {
 	AmountCents int64  `json:"amount_cents"`
 	// Channel GP-403 渠道标识（单层渠道 code，如 my-app.com 的推广渠道）。
 	// 注册/下载等事件可带渠道，用于按渠道看漏斗；空 = 未归因/自然流量。
-	Channel    string `json:"channel"`
+	Channel string `json:"channel"`
+	// PartnerId GP-404 合作方归属（产生方从订单投影落定；用于合作方自助
+	// 数据面的行级隔离：只统计本人名下事件）。0 = 未标注（平台级事件）。
+	PartnerId  int64  `json:"partner_id"`
 	OccurredAt string `json:"occurred_at"` // RFC3339；空则由摄入侧补当前时间
 }
 
@@ -109,6 +112,9 @@ type AnalyticsStore interface {
 	ActivityEffect(activityId int64) (*ActivityEffectRow, error)
 	Reconciliation(from, to string) ([]ReconciliationRow, error)
 	ChannelEffect(from, to string, gameId string) ([]ChannelEffectRow, error)
+	// PartnerOverview 合作方自助数据（GP-404）：期间内 partner_id 命中的事件，
+	// 按事件类型聚合；gameIds 非空时再按游戏 id 收窄（合作方名下游戏清单）。
+	PartnerOverview(from, to string, partnerID int64, gameIds []string) ([]TypeCounts, error)
 }
 
 var _ AnalyticsStore = (*AnalyticsEventsModel)(nil)
@@ -138,6 +144,7 @@ func (m *AnalyticsEventsModel) CreateAnalyticsTable() error {
 			order_id VARCHAR(64) NOT NULL DEFAULT '',
 			amount_cents INTEGER NOT NULL DEFAULT 0,
 			channel VARCHAR(64) NOT NULL DEFAULT '',
+			partner_id INTEGER NOT NULL DEFAULT 0,
 			occurred_at VARCHAR(32) NOT NULL,
 			created_at VARCHAR(32) NOT NULL,
 			UNIQUE (event_id)
@@ -155,6 +162,7 @@ func (m *AnalyticsEventsModel) CreateAnalyticsTable() error {
 				order_id VARCHAR(64) NOT NULL DEFAULT '',
 				amount_cents BIGINT NOT NULL DEFAULT 0,
 				channel VARCHAR(64) NOT NULL DEFAULT '',
+				partner_id BIGINT NOT NULL DEFAULT 0,
 				occurred_at VARCHAR(32) NOT NULL,
 				created_at VARCHAR(32) NOT NULL,
 				UNIQUE KEY uk_event_id (event_id),
@@ -174,6 +182,7 @@ func (m *AnalyticsEventsModel) CreateAnalyticsTable() error {
 			`CREATE INDEX IF NOT EXISTS idx_events_user_time ON platform_events (user_id, occurred_at)`,
 			`CREATE INDEX IF NOT EXISTS idx_events_activity ON platform_events (activity_id)`,
 			`CREATE INDEX IF NOT EXISTS idx_events_channel_time ON platform_events (channel, occurred_at)`,
+			`CREATE INDEX IF NOT EXISTS idx_events_partner_time ON platform_events (partner_id, occurred_at)`,
 		} {
 			if _, err := m.db.Exec(idx); err != nil {
 				return fmt.Errorf("创建平台事件索引失败: %w", err)
@@ -193,9 +202,12 @@ func (m *AnalyticsEventsModel) CreateAnalyticsTable() error {
 			return fmt.Errorf("创建平台事件索引失败: %w", err)
 		}
 	}
-	// 存量库补列（GP-403 渠道标识）：CREATE TABLE IF NOT EXISTS 不会给已有
-	// 表加列，故补一次 ALTER（列已存在视为成功，不阻断启动）。
-	return m.migrateChannelColumn()
+	// 存量库补列（GP-403 渠道标识、GP-404 合作方归属）：CREATE TABLE IF NOT
+	// EXISTS 不会给已有表加列，故各补一次 ALTER（列已存在视为成功，不阻断启动）。
+	if err := m.migrateChannelColumn(); err != nil {
+		return err
+	}
+	return m.migratePartnerColumn()
 }
 
 // migrateChannelColumn 为存量 platform_events 补 channel 列（幂等；
@@ -216,6 +228,27 @@ func (m *AnalyticsEventsModel) migrateChannelColumn() error {
 		return nil
 	}
 	if _, err := m.db.Exec(`ALTER TABLE platform_events ADD COLUMN channel VARCHAR(64) NOT NULL DEFAULT ''`); err != nil {
+		// 列已存在（并发）或方言差异：忽略，不阻断
+	}
+	return nil
+}
+
+// migratePartnerColumn 为存量 platform_events 补 partner_id 列（GP-404 合作方
+// 自助数据面的行级隔离键；幂等，枚举失败跳过不阻断）。
+func (m *AnalyticsEventsModel) migratePartnerColumn() error {
+	has := false
+	const name = "partner_id"
+	if rows, err := m.db.Query(`PRAGMA table_info(platform_events)`); err == nil {
+		has = columnPresent(rows, 1, name)
+		rows.Close()
+	} else if rows, err := m.db.Query(`SHOW COLUMNS FROM platform_events`); err == nil {
+		has = columnPresent(rows, 0, name)
+		rows.Close()
+	}
+	if has {
+		return nil
+	}
+	if _, err := m.db.Exec(`ALTER TABLE platform_events ADD COLUMN partner_id INTEGER NOT NULL DEFAULT 0`); err != nil {
 		// 列已存在（并发）或方言差异：忽略，不阻断
 	}
 	return nil
@@ -257,18 +290,18 @@ func (m *AnalyticsEventsModel) IngestEvents(events []*AnalyticsEvent, now string
 		var res sql.Result
 		var err error
 		res, err = m.db.Exec(
-			`INSERT OR IGNORE INTO platform_events (event_id, event_type, user_id, game_id, activity_id, order_id, amount_cents, channel, occurred_at, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			e.EventId, e.EventType, e.UserId, e.GameId, e.ActivityId, e.OrderId, e.AmountCents, e.Channel, occurred, now,
+			`INSERT OR IGNORE INTO platform_events (event_id, event_type, user_id, game_id, activity_id, order_id, amount_cents, channel, partner_id, occurred_at, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			e.EventId, e.EventType, e.UserId, e.GameId, e.ActivityId, e.OrderId, e.AmountCents, e.Channel, e.PartnerId, occurred, now,
 		)
 		if err != nil {
 			if !strings.Contains(err.Error(), "syntax") && !strings.Contains(err.Error(), "near") {
 				return accepted, fmt.Errorf("写入平台事件失败: %w", err)
 			}
 			res, err = m.db.Exec(
-				`INSERT IGNORE INTO platform_events (event_id, event_type, user_id, game_id, activity_id, order_id, amount_cents, channel, occurred_at, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				e.EventId, e.EventType, e.UserId, e.GameId, e.ActivityId, e.OrderId, e.AmountCents, e.Channel, occurred, now,
+				`INSERT IGNORE INTO platform_events (event_id, event_type, user_id, game_id, activity_id, order_id, amount_cents, channel, partner_id, occurred_at, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				e.EventId, e.EventType, e.UserId, e.GameId, e.ActivityId, e.OrderId, e.AmountCents, e.Channel, e.PartnerId, occurred, now,
 			)
 			if err != nil {
 				return accepted, fmt.Errorf("写入平台事件失败: %w", err)
@@ -416,4 +449,56 @@ func (m *AnalyticsEventsModel) ChannelEffect(from, to string, gameId string) ([]
 
 func placeholders(n int) string {
 	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
+// PartnerOverview 合作方自助数据聚合（GP-404 F12）：期间内归属命中的事件按
+// 类型聚合（注册/活跃/下载/付费）。行级隔离键二选一，优先 gameIds：
+//   - gameIds 非空（推荐）：按合作方名下游戏 id 收窄——game→partner 归属
+//     是 game-catalog 的单一事实源，注册/活跃/下载等未带 partner_id 的
+//     平台级事件也能按游戏正确归属；
+//   - 否则按 partner_id 命中（产生方落定，仅覆盖已标注归属的事件）。
+//
+// 两者皆空 → 空结果（不返回全平台数据）。
+//
+// 占位符口径注记（与 ChannelStats 同款坑）：本查询的 ? 只出现在 WHERE，
+// 且 gameIds 展开占位符随参数顺序 append，不先于参数文本出现。
+func (m *AnalyticsEventsModel) PartnerOverview(from, to string, partnerID int64, gameIds []string) ([]TypeCounts, error) {
+	var q string
+	var args []any
+	if len(gameIds) > 0 {
+		q = `SELECT event_type, COUNT(*) AS events,
+				COUNT(DISTINCT CASE WHEN user_id > 0 THEN user_id END) AS users,
+				COALESCE(SUM(CASE WHEN event_type = '` + EventOrderPaid + `' THEN amount_cents ELSE 0 END), 0) AS amount_cents
+			 FROM platform_events
+			 WHERE game_id IN (` + placeholders(len(gameIds)) + `) AND occurred_at >= ? AND occurred_at <= ?`
+		args = make([]any, 0, len(gameIds)+2)
+		for _, g := range gameIds {
+			args = append(args, g)
+		}
+		args = append(args, from, to)
+	} else if partnerID > 0 {
+		q = `SELECT event_type, COUNT(*) AS events,
+				COUNT(DISTINCT CASE WHEN user_id > 0 THEN user_id END) AS users,
+				COALESCE(SUM(CASE WHEN event_type = '` + EventOrderPaid + `' THEN amount_cents ELSE 0 END), 0) AS amount_cents
+			 FROM platform_events
+			 WHERE partner_id = ? AND occurred_at >= ? AND occurred_at <= ?`
+		args = []any{partnerID, from, to}
+	} else {
+		return nil, nil
+	}
+	q += ` GROUP BY event_type ORDER BY event_type`
+	rows, err := m.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("聚合合作方数据失败: %w", err)
+	}
+	defer rows.Close()
+	out := make([]TypeCounts, 0, 8)
+	for rows.Next() {
+		var r TypeCounts
+		if err := rows.Scan(&r.EventType, &r.Events, &r.Users, &r.Amount); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }

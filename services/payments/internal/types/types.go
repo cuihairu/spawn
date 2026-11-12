@@ -337,6 +337,11 @@ type StatementView struct {
 	Status        string `json:"status"`
 	ConfirmedBy   int64  `json:"confirmed_by"`
 	ConfirmedAt   string `json:"confirmed_at"`
+	// DisputeBy/DisputeAt/DisputeReason 结算差异异议（GP-404）：非零/非空表示
+	// 合作方对该周期差异提出过异议，待运营复核。
+	DisputeBy     int64  `json:"dispute_by"`
+	DisputeAt     string `json:"dispute_at"`
+	DisputeReason string `json:"dispute_reason"`
 	CreatedBy     int64  `json:"created_by"`
 	CreatedAt     string `json:"created_at"`
 	UpdatedAt     string `json:"updated_at"`
@@ -348,6 +353,20 @@ type StatementResponse struct {
 
 type StatementListResponse struct {
 	Items []StatementView `json:"items"`
+}
+
+// ---- GP-404 合作方自助账单确认 / 结算差异 ----
+
+// DisputeStatementRequest 合作方对差异提异议（异议理由必填，留痕）。
+type DisputeStatementRequest struct {
+	Id     int64  `path:"id"`
+	Reason string `json:"reason"`
+}
+
+// PartnerStatementListRequest 合作方自助账单列表（只读本人名下单据）。
+type PartnerStatementListRequest struct {
+	Vendor string `form:"vendor,optional"`
+	Status string `form:"status,optional"`
 }
 
 // ---- GP-305 优惠券 ----

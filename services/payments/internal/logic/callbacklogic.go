@@ -125,6 +125,7 @@ func (l *CallbackLogic) emitOrderPaid(rawBody []byte) {
 		EventType:   analytics.EventOrderPaid,
 		UserId:      analytics.UserIDOf(proj.AccountId),
 		GameId:      proj.GameId,
+		PartnerId:   proj.PartnerId,
 		OrderId:     proj.OrderId,
 		AmountCents: proj.AmountCents,
 		OccurredAt:  proj.PaidAt,

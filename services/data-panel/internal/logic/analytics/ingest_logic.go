@@ -65,8 +65,8 @@ func (l *IngestLogic) Ingest(req *types.IngestAnalyticsReq) (*types.IngestAnalyt
 		if !model.ValidEventType(in.EventType) {
 			return nil, httperr.BadRequest("unknown event_type: " + in.EventType)
 		}
-		if in.UserId < 0 || in.ActivityId < 0 || in.AmountCents < 0 {
-			return nil, httperr.BadRequest("user_id/activity_id/amount_cents must be non-negative")
+		if in.UserId < 0 || in.ActivityId < 0 || in.AmountCents < 0 || in.PartnerId < 0 {
+			return nil, httperr.BadRequest("user_id/activity_id/amount_cents/partner_id must be non-negative")
 		}
 		if in.OccurredAt != "" {
 			if _, err := time.Parse(time.RFC3339, in.OccurredAt); err != nil {
@@ -94,6 +94,7 @@ func (l *IngestLogic) Ingest(req *types.IngestAnalyticsReq) (*types.IngestAnalyt
 			OrderId:     in.OrderId,
 			AmountCents: in.AmountCents,
 			Channel:     channel,
+			PartnerId:   in.PartnerId,
 			OccurredAt:  in.OccurredAt,
 		})
 	}

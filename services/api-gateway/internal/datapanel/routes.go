@@ -37,5 +37,7 @@ func RegisterDataPanelProxyRoutes(server *rest.Server, serverCtx *svc.ServiceCon
 		// GP-403 渠道效果（F22）：按渠道汇总注册/去重用户/付费，对照渠道包
 		// 追踪口径（登录与 AdminUserIds 名单鉴权在 data-panel 侧）
 		{Method: http.MethodGet, Path: "/api/v1/analytics/channels", Handler: h},
+		// GP-404 合作方自助数据（角色 partner + partner_id 行级隔离在 data-panel 侧）
+		{Method: http.MethodGet, Path: "/api/v1/analytics/partner", Handler: h},
 	})
 }

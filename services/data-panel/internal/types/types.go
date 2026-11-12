@@ -97,6 +97,7 @@ type AnalyticsEventIn struct {
 	OrderId     string `json:"order_id,optional"`
 	AmountCents int64  `json:"amount_cents,optional"`
 	Channel     string `json:"channel,optional"`     // GP-403 渠道标识（≤64 字符，白名单外不拒）
+	PartnerId   int64  `json:"partner_id,optional"`  // GP-404 合作方归属（产生方落定，行级隔离键）
 	OccurredAt  string `json:"occurred_at,optional"` // RFC3339；空则取摄入时刻
 }
 
@@ -244,4 +245,19 @@ type AnalyticsChannelEffectResp struct {
 	From  string                      `json:"from"`
 	To    string                      `json:"to"`
 	Items []AnalyticsChannelEffectRow `json:"items"`
+}
+
+// AnalyticsPartnerReq GET /api/v1/analytics/partner：合作方自助数据（GP-404
+// F12）。角色必须是 game-catalog 绑定的 partner，数据按 partner_id 行级
+// 隔离（只统计本人名下事件）；from/to 口径与 overview 一致。
+type AnalyticsPartnerReq struct {
+	From string `form:"from,optional"`
+	To   string `form:"to,optional"`
+}
+
+type AnalyticsPartnerResp struct {
+	From      string               `json:"from"`
+	To        string               `json:"to"`
+	PartnerId int64                `json:"partner_id"`
+	Items     []AnalyticsTypeCount `json:"items"`
 }

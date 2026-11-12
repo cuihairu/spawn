@@ -67,6 +67,9 @@ func (l *StatementLogic) Generate(req *types.GenerateStatementRequest, authHeade
 	if existing != nil && existing.Status == model.StatementStatusConfirmed {
 		return nil, newAPIError(http.StatusConflict, "该周期对账单已确认，不可重生成")
 	}
+	if existing != nil && existing.Status == model.StatementStatusDisputed {
+		return nil, newAPIError(http.StatusConflict, "该周期对账单存在未处理异议，请先复核处理")
+	}
 
 	paid, err := l.svcCtx.StatementDB.StatementPaidAggregate(req.PartnerId, start, end)
 	if err != nil {
@@ -220,6 +223,37 @@ func (l *StatementLogic) Confirm(req *types.StatementPathRequest, authHeader str
 	return &types.StatementResponse{Statement: toStatementView(got)}, nil
 }
 
+// ResolveDispute 运营复核处理异议（GP-404）：清空异议标记并回草稿，
+// 由运营复核后改结算单再确认。异议明细（dispute_by/reason）留痕在审计里。
+func (l *StatementLogic) ResolveDispute(req *types.StatementPathRequest, authHeader string) (*types.StatementResponse, error) {
+	userID, ip := actorFrom(l.ctx)
+	role, err := requireAdmin(l.ctx, l.svcCtx, authHeader)
+	if err != nil {
+		return nil, err
+	}
+	st, err := l.svcCtx.StatementDB.Get(req.Id)
+	if errors.Is(err, model.ErrStatementNotFound) {
+		return nil, newAPIError(http.StatusNotFound, "对账单不存在")
+	}
+	if err != nil {
+		l.Errorf("get statement %d failed: %v", req.Id, err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询对账单失败")
+	}
+	if st.Status != model.StatementStatusDisputed {
+		return nil, newAPIError(http.StatusConflict, "对账单不存在待处理异议")
+	}
+	if err := l.svcCtx.StatementDB.ClearDispute(req.Id); err != nil {
+		l.Errorf("resolve dispute %d failed: %v", req.Id, err)
+		return nil, newAPIError(http.StatusInternalServerError, "处理异议失败")
+	}
+	detail, _ := json.Marshal(map[string]any{"id": req.Id, "dispute_by": st.DisputeBy, "reason": st.DisputeReason, "diff": st.Diff})
+	_ = l.svcCtx.ProjectionDB.LogAudit(&model.OrderAuditLog{
+		ActorId: userID, ActorRole: role, Action: "statement_dispute_resolved", Detail: string(detail), Ip: ip,
+	})
+	got, _ := l.svcCtx.StatementDB.Get(req.Id)
+	return &types.StatementResponse{Statement: toStatementView(got)}, nil
+}
+
 // Export 导出对账单 CSV（明细 + 汇总）；返回文件名与内容。
 func (l *StatementLogic) Export(req *types.StatementPathRequest, authHeader string) (string, []byte, error) {
 	userID, ip := actorFrom(l.ctx)
@@ -261,7 +295,9 @@ func toStatementView(s *model.VendorStatement) types.StatementView {
 		PaidTotal: s.PaidTotal, DiscountTotal: s.DiscountTotal, RefundTotal: s.RefundTotal,
 		SplitBase: s.SplitBase, SplitRateBp: s.SplitRateBp, SplitAmount: s.SplitAmount,
 		Settlement: s.Settlement, Diff: s.Diff, OrderCount: s.OrderCount, Status: s.Status,
-		ConfirmedBy: s.ConfirmedBy, ConfirmedAt: s.ConfirmedAt, CreatedBy: s.CreatedBy,
+		ConfirmedBy: s.ConfirmedBy, ConfirmedAt: s.ConfirmedAt,
+		DisputeBy: s.DisputeBy, DisputeAt: s.DisputeAt, DisputeReason: s.DisputeReason,
+		CreatedBy: s.CreatedBy,
 		CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
 	}
 }

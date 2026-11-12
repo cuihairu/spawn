@@ -27,6 +27,7 @@ type Event struct {
 	EventType   string `json:"event_type"`
 	UserId      int64  `json:"user_id,optional"`
 	GameId      string `json:"game_id,optional"`
+	PartnerId   int64  `json:"partner_id,optional"` // GP-404 合作方归属（数据面板行级隔离）
 	ActivityId  int64  `json:"activity_id,optional"`
 	OrderId     string `json:"order_id,optional"`
 	AmountCents int64  `json:"amount_cents,optional"`

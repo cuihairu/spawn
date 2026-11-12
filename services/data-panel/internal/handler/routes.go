@@ -99,6 +99,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/analytics/channels",
 					Handler: analytics.AnalyticsChannelEffectHandler(serverCtx),
 				},
+				// GP-404 合作方自助数据（角色 partner + partner_id 行级隔离）
+				{
+					Method:  http.MethodGet,
+					Path:    "/analytics/partner",
+					Handler: analytics.AnalyticsPartnerHandler(serverCtx),
+				},
 			}...,
 		),
 		rest.WithPrefix("/api/v1"),

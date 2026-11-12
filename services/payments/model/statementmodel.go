@@ -16,9 +16,12 @@ import (
 	"strings"
 )
 
-// 对账单状态（先人工确认，不自动打款）。
+// 对账单状态（先人工确认，不自动打款）。disputed = 合作方对差异提出异议
+// （GP-404），此时运营须复核处理（/admin/statements/:id/resolve），
+// 复核通过才置 confirmed；确认后不可再改。
 const (
 	StatementStatusDraft     = "draft"
+	StatementStatusDisputed  = "disputed"
 	StatementStatusConfirmed = "confirmed"
 )
 
@@ -46,6 +49,11 @@ type VendorStatement struct {
 	Status        string `json:"status"`
 	ConfirmedBy   int64  `json:"confirmed_by"`
 	ConfirmedAt   string `json:"confirmed_at"`
+	// DisputeBy/DisputeAt/DisputeReason 结算差异异议（GP-404）：合作方对差异
+	// 提出异议时记录（非空表示存在未处理异议），运营复核处理后清空。
+	DisputeBy     int64  `json:"dispute_by"`
+	DisputeAt     string `json:"dispute_at"`
+	DisputeReason string `json:"dispute_reason"`
 	CreatedBy     int64  `json:"created_by"`
 	CreatedAt     string `json:"created_at"`
 	UpdatedAt     string `json:"updated_at"`
@@ -98,6 +106,9 @@ func (m *StatementModel) CreateTables() error {
 				status VARCHAR(16) NOT NULL DEFAULT 'draft',
 				confirmed_by INTEGER NOT NULL DEFAULT 0,
 				confirmed_at VARCHAR(32) NOT NULL DEFAULT '',
+				dispute_by INTEGER NOT NULL DEFAULT 0,
+				dispute_at VARCHAR(32) NOT NULL DEFAULT '',
+				dispute_reason VARCHAR(256) NOT NULL DEFAULT '',
 				created_by INTEGER NOT NULL DEFAULT 0,
 				created_at VARCHAR(32) NOT NULL,
 				updated_at VARCHAR(32) NOT NULL,
@@ -121,6 +132,9 @@ func (m *StatementModel) CreateTables() error {
 				status VARCHAR(16) NOT NULL DEFAULT 'draft',
 				confirmed_by BIGINT NOT NULL DEFAULT 0,
 				confirmed_at VARCHAR(32) NOT NULL DEFAULT '',
+				dispute_by BIGINT NOT NULL DEFAULT 0,
+				dispute_at VARCHAR(32) NOT NULL DEFAULT '',
+				dispute_reason VARCHAR(256) NOT NULL DEFAULT '',
 				created_by BIGINT NOT NULL DEFAULT 0,
 				created_at VARCHAR(32) NOT NULL,
 				updated_at VARCHAR(32) NOT NULL,
@@ -136,16 +150,43 @@ func (m *StatementModel) CreateTables() error {
 			}
 		}
 	}
-	return nil
+	// 存量库补异议列（GP-404 结算差异处理）：CREATE TABLE IF NOT EXISTS 不会
+	// 给已有表加列，故按双方言各试一次 ALTER（列已存在视为成功，不阻断启动）。
+	return m.migrateStatementColumns()
 }
 
-const statementColumns = "id, vendor, partner_id, period_start, period_end, paid_total, discount_total, refund_total, split_base, split_rate_bp, split_amount, settlement, diff, order_count, status, confirmed_by, confirmed_at, created_by, created_at, updated_at"
+// migrateStatementColumns 存量 vendor_statements 补 dispute_by/dispute_at/
+// dispute_reason 列（口径同 couponmodel.migrateCouponColumns）。
+func (m *StatementModel) migrateStatementColumns() error {
+	lastErr := error(nil)
+	for _, stmt := range []string{
+		`ALTER TABLE vendor_statements ADD COLUMN dispute_by BIGINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE vendor_statements ADD COLUMN dispute_at VARCHAR(32) NOT NULL DEFAULT ''`,
+		`ALTER TABLE vendor_statements ADD COLUMN dispute_reason VARCHAR(256) NOT NULL DEFAULT ''`,
+	} {
+		if _, err := m.db.Exec(stmt); err != nil {
+			lastErr = err
+		}
+	}
+	if lastErr == nil {
+		return nil
+	}
+	msg := lastErr.Error()
+	if strings.Contains(msg, "duplicate column") || strings.Contains(msg, "exists") ||
+		strings.Contains(msg, "already exists") || strings.Contains(msg, "duplicate") {
+		return nil // 已补过列
+	}
+	return lastErr
+}
+
+const statementColumns = "id, vendor, partner_id, period_start, period_end, paid_total, discount_total, refund_total, split_base, split_rate_bp, split_amount, settlement, diff, order_count, status, confirmed_by, confirmed_at, dispute_by, dispute_at, dispute_reason, created_by, created_at, updated_at"
 
 func scanStatement(s *VendorStatement) []any {
 	return []any{&s.Id, &s.Vendor, &s.PartnerId, &s.PeriodStart, &s.PeriodEnd,
 		&s.PaidTotal, &s.DiscountTotal, &s.RefundTotal, &s.SplitBase, &s.SplitRateBp,
 		&s.SplitAmount, &s.Settlement, &s.Diff, &s.OrderCount, &s.Status,
-		&s.ConfirmedBy, &s.ConfirmedAt, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt}
+		&s.ConfirmedBy, &s.ConfirmedAt, &s.DisputeBy, &s.DisputeAt, &s.DisputeReason,
+		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt}
 }
 
 // UpsertStatement 落对账单快照（同 key 更新草稿；已确认的由逻辑层拒绝）。
@@ -156,8 +197,8 @@ func (m *StatementModel) UpsertStatement(s *VendorStatement) error {
 	}
 	s.UpdatedAt = now
 	_, err := m.db.Exec(
-		`INSERT INTO vendor_statements (vendor, partner_id, period_start, period_end, paid_total, discount_total, refund_total, split_base, split_rate_bp, split_amount, settlement, diff, order_count, status, confirmed_by, confirmed_at, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO vendor_statements (vendor, partner_id, period_start, period_end, paid_total, discount_total, refund_total, split_base, split_rate_bp, split_amount, settlement, diff, order_count, status, confirmed_by, confirmed_at, dispute_by, dispute_at, dispute_reason, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(vendor, partner_id, period_start, period_end) DO UPDATE SET
 		   paid_total = excluded.paid_total, discount_total = excluded.discount_total,
 		   refund_total = excluded.refund_total, split_base = excluded.split_base,
@@ -166,13 +207,14 @@ func (m *StatementModel) UpsertStatement(s *VendorStatement) error {
 		   order_count = excluded.order_count, updated_at = excluded.updated_at`,
 		s.Vendor, s.PartnerId, s.PeriodStart, s.PeriodEnd, s.PaidTotal, s.DiscountTotal,
 		s.RefundTotal, s.SplitBase, s.SplitRateBp, s.SplitAmount, s.Settlement, s.Diff,
-		s.OrderCount, s.Status, s.ConfirmedBy, s.ConfirmedAt, s.CreatedBy, s.CreatedAt, s.UpdatedAt,
+		s.OrderCount, s.Status, s.ConfirmedBy, s.ConfirmedAt, s.DisputeBy, s.DisputeAt, s.DisputeReason,
+		s.CreatedBy, s.CreatedAt, s.UpdatedAt,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "syntax") || strings.Contains(err.Error(), "near") {
 			_, err2 := m.db.Exec(
-				`INSERT INTO vendor_statements (vendor, partner_id, period_start, period_end, paid_total, discount_total, refund_total, split_base, split_rate_bp, split_amount, settlement, diff, order_count, status, confirmed_by, confirmed_at, created_by, created_at, updated_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				`INSERT INTO vendor_statements (vendor, partner_id, period_start, period_end, paid_total, discount_total, refund_total, split_base, split_rate_bp, split_amount, settlement, diff, order_count, status, confirmed_by, confirmed_at, dispute_by, dispute_at, dispute_reason, created_by, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				 ON DUPLICATE KEY UPDATE
 				   paid_total = VALUES(paid_total), discount_total = VALUES(discount_total),
 				   refund_total = VALUES(refund_total), split_base = VALUES(split_base),
@@ -181,7 +223,8 @@ func (m *StatementModel) UpsertStatement(s *VendorStatement) error {
 				   order_count = VALUES(order_count), updated_at = VALUES(updated_at)`,
 				s.Vendor, s.PartnerId, s.PeriodStart, s.PeriodEnd, s.PaidTotal, s.DiscountTotal,
 				s.RefundTotal, s.SplitBase, s.SplitRateBp, s.SplitAmount, s.Settlement, s.Diff,
-				s.OrderCount, s.Status, s.ConfirmedBy, s.ConfirmedAt, s.CreatedBy, s.CreatedAt, s.UpdatedAt,
+				s.OrderCount, s.Status, s.ConfirmedBy, s.ConfirmedAt, s.DisputeBy, s.DisputeAt, s.DisputeReason,
+				s.CreatedBy, s.CreatedAt, s.UpdatedAt,
 			)
 			return err2
 		}
@@ -209,6 +252,21 @@ func (m *StatementModel) GetByKey(vendor string, partnerID int64, start, end str
 		`SELECT `+statementColumns+` FROM vendor_statements WHERE vendor = ? AND partner_id = ? AND period_start = ? AND period_end = ?`,
 		vendor, partnerID, start, end,
 	).Scan(scanStatement(&s)...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrStatementNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// GetForPartner 按单据 id + 合作方归属取（GP-404 合作方自助面：行级隔离，
+// 不是本人名下的单据一律视为不存在，避免跨合作方枚举）。
+func (m *StatementModel) GetForPartner(id, partnerID int64) (*VendorStatement, error) {
+	var s VendorStatement
+	err := m.db.QueryRow(`SELECT `+statementColumns+` FROM vendor_statements WHERE id = ? AND partner_id = ?`,
+		id, partnerID).Scan(scanStatement(&s)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrStatementNotFound
 	}
@@ -267,12 +325,67 @@ func (m *StatementModel) UpdateSettlement(id, settlement, diff int64) error {
 }
 
 // ConfirmStatement 人工确认（不自动打款；先确认后不可改结算单/重生成）。
+// 确认同时清空异议标记（运营复核处理完毕）。
 func (m *StatementModel) ConfirmStatement(id, by int64) error {
 	_, err := m.db.Exec(
-		`UPDATE vendor_statements SET status = 'confirmed', confirmed_by = ?, confirmed_at = ?, updated_at = ? WHERE id = ?`,
+		`UPDATE vendor_statements SET status = 'confirmed', confirmed_by = ?, confirmed_at = ?,
+		   dispute_by = 0, dispute_at = '', dispute_reason = '', updated_at = ? WHERE id = ?`,
 		by, nowUTC(), nowUTC(), id,
 	)
 	return err
+}
+
+// DisputeStatement 合作方对差异提出异议（GP-404 结算差异处理）：状态转
+// disputed 并记录异议人与原因；已确认的单据不可异议（由逻辑层拒绝）。
+func (m *StatementModel) DisputeStatement(id, by int64, reason string) error {
+	_, err := m.db.Exec(
+		`UPDATE vendor_statements SET status = 'disputed', dispute_by = ?, dispute_at = ?,
+		   dispute_reason = ?, updated_at = ? WHERE id = ?`,
+		by, nowUTC(), reason, nowUTC(), id,
+	)
+	return err
+}
+
+// ClearDispute 运营复核处理异议（GP-404）：清空异议标记并回到草稿，
+// 后续由运营改结算单再确认。
+func (m *StatementModel) ClearDispute(id int64) error {
+	_, err := m.db.Exec(
+		`UPDATE vendor_statements SET status = 'draft', dispute_by = 0, dispute_at = '',
+		   dispute_reason = '', updated_at = ? WHERE id = ?`,
+		nowUTC(), id,
+	)
+	return err
+}
+
+// ListDifferences 结算差异清单（GP-404）：该合作方名下 diff ≠ 0 的对账单，
+// 按差异绝对值降序（先处理偏差大的周期）。vendor 过滤留空为全部厂商。
+func (m *StatementModel) ListDifferences(partnerID int64, vendor string, limit int) ([]*VendorStatement, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	q := `SELECT ` + statementColumns + ` FROM vendor_statements
+		 WHERE partner_id = ? AND diff <> 0`
+	args := []any{partnerID}
+	if vendor != "" {
+		q += ` AND vendor = ?`
+		args = append(args, vendor)
+	}
+	// ABS() 双方言一致；差异为零的周期不进入清单。
+	q += fmt.Sprintf(` ORDER BY ABS(diff) DESC, id DESC LIMIT %d`, limit)
+	rows, err := m.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*VendorStatement, 0, limit)
+	for rows.Next() {
+		var s VendorStatement
+		if err := rows.Scan(scanStatement(&s)...); err != nil {
+			return nil, err
+		}
+		out = append(out, &s)
+	}
+	return out, rows.Err()
 }
 
 // StatementPaidAggregate 周期内实付聚合（已付订单金额与单数）。

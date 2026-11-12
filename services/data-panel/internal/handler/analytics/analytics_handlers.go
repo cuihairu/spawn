@@ -141,3 +141,22 @@ func AnalyticsChannelEffectHandler(svcCtx *svc.ServiceContext) http.HandlerFunc 
 		}
 	}
 }
+
+// AnalyticsPartnerHandler GET /api/v1/analytics/partner：合作方自助数据
+// （GP-404 F12，角色 partner + partner_id 行级隔离）
+func AnalyticsPartnerHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.AnalyticsPartnerReq
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		l := alogic.NewPartnerLogic(r.Context(), svcCtx)
+		resp, err := l.Query(&req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}

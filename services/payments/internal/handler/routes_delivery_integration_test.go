@@ -102,11 +102,17 @@ func newDeliveryServer(t *testing.T) *testDeliveryEnv {
 	catalog := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/me":
-			role := "player"
-			if claims, ok := decodeJWT(r.Header.Get("Authorization")); ok && claims.UserId == 1 {
-				role = "platform_admin"
+			role, partnerID := "player", int64(1)
+			if claims, ok := decodeJWT(r.Header.Get("Authorization")); ok {
+				if claims.UserId == 1 {
+					role = "platform_admin"
+				}
+				// GP-404：user 2 绑定合作方 5（合作方自助面的行级隔离口径）
+				if claims.UserId == 2 {
+					role, partnerID = "partner", 5
+				}
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"role": role, "partner_id": 1})
+			_ = json.NewEncoder(w).Encode(map[string]any{"role": role, "partner_id": partnerID})
 		case strings.HasPrefix(r.URL.Path, "/games/") && strings.HasSuffix(r.URL.Path, "/servers"):
 			_ = json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{
 				{"id": 1, "status": "open"},
