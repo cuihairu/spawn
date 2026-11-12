@@ -96,6 +96,7 @@ type AnalyticsEventIn struct {
 	ActivityId  int64  `json:"activity_id,optional"`
 	OrderId     string `json:"order_id,optional"`
 	AmountCents int64  `json:"amount_cents,optional"`
+	Channel     string `json:"channel,optional"`     // GP-403 渠道标识（≤64 字符，白名单外不拒）
 	OccurredAt  string `json:"occurred_at,optional"` // RFC3339；空则取摄入时刻
 }
 
@@ -221,4 +222,26 @@ type AnalyticsReconciliationResp struct {
 	From  string                       `json:"from"`
 	To    string                       `json:"to"`
 	Items []AnalyticsReconciliationRow `json:"items"`
+}
+
+// AnalyticsChannelEffectReq GET /api/v1/analytics/channels：渠道效果
+// （F22/GP-403）——按渠道标识聚合注册人数与付费金额；channel 空串行即
+// 自然流量。game_id 非空时只统计该游戏的付费。
+type AnalyticsChannelEffectReq struct {
+	From   string `form:"from,optional"`
+	To     string `form:"to,optional"`
+	GameId string `form:"game_id,optional"`
+}
+
+type AnalyticsChannelEffectRow struct {
+	Channel       string `json:"channel"`
+	Registrations int64  `json:"registrations"`
+	Users         int64  `json:"users"`
+	PaidCents     int64  `json:"paid_cents"`
+}
+
+type AnalyticsChannelEffectResp struct {
+	From  string                      `json:"from"`
+	To    string                      `json:"to"`
+	Items []AnalyticsChannelEffectRow `json:"items"`
 }

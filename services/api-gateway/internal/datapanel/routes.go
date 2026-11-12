@@ -34,5 +34,8 @@ func RegisterDataPanelProxyRoutes(server *rest.Server, serverCtx *svc.ServiceCon
 		{Method: http.MethodGet, Path: "/api/v1/analytics/retention", Handler: h},
 		{Method: http.MethodGet, Path: "/api/v1/analytics/activities/:id/effect", Handler: h},
 		{Method: http.MethodGet, Path: "/api/v1/analytics/reconciliation", Handler: h},
+		// GP-403 渠道效果（F22）：按渠道汇总注册/去重用户/付费，对照渠道包
+		// 追踪口径（登录与 AdminUserIds 名单鉴权在 data-panel 侧）
+		{Method: http.MethodGet, Path: "/api/v1/analytics/channels", Handler: h},
 	})
 }

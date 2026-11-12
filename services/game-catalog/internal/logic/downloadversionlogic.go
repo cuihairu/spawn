@@ -13,6 +13,7 @@ import (
 	"github.com/tappi/tappi/services/game-catalog/internal/analytics"
 	"github.com/tappi/tappi/services/game-catalog/internal/store"
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
+	"github.com/tappi/tappi/services/game-catalog/internal/types"
 	"github.com/tappi/tappi/services/game-catalog/model"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -45,7 +46,7 @@ func NewDownloadVersionLogic(ctx context.Context, svcCtx *svc.ServiceContext) *D
 // Download GP-105 受控下载读取侧：只放行「游戏匹配 + 已发布 + 平台托管」的
 // 版本；不存在/未发布/跨游戏一律 404，不泄露版本存在性。包体未托管在平台
 // （合作方只登记了外部 storage_url）返回 409，客户端改走商店链接（F08）。
-func (l *DownloadVersionLogic) Download(gameId, versionId string) (*DownloadResult, error) {
+func (l *DownloadVersionLogic) Download(gameId, versionId, channel string) (*DownloadResult, error) {
 	if l.svcCtx.PackageStore == nil {
 		return nil, newAPIError(http.StatusInternalServerError, "包体存储未配置")
 	}
@@ -81,7 +82,7 @@ func (l *DownloadVersionLogic) Download(gameId, versionId string) (*DownloadResu
 	if t, err := time.Parse(time.RFC3339, v.CreatedAt); err == nil {
 		modTime = t
 	}
-	l.emitDownload(gameId)
+	l.emitDownload(gameId, channel)
 	return &DownloadResult{
 		Version: v,
 		File:    f,
@@ -93,8 +94,16 @@ func (l *DownloadVersionLogic) Download(gameId, versionId string) (*DownloadResu
 
 // emitDownload GP-402/F24：包体下载事实事件（漏斗阶段）。每次成功开启
 // 下载记一条（下载可重复，故 event_id 用随机事实 ID 而非派生键）；
-// fire-and-forget，不阻塞流式响应。
-func (l *DownloadVersionLogic) emitDownload(gameId string) {
+// fire-and-forget，不阻塞流式响应。GP-403：带 channel 时事件携带渠道标识
+// （渠道看漏斗/渠道包效果），并额外记一条渠道包下载计数。
+func (l *DownloadVersionLogic) emitDownload(gameId, channel string) {
+	channel = strings.TrimSpace(channel)
+	if channel != "" {
+		// 渠道包追踪：无效渠道不阻断下载（RecordDownloadClick 内部吞掉错误）
+		NewPromoLogic(l.ctx, l.svcCtx).RecordDownloadClick(&types.PromoDownloadClickRequest{
+			Channel: channel, GameId: gameId,
+		})
+	}
 	if l.svcCtx.AnalyticsSvc == nil || !l.svcCtx.AnalyticsSvc.Enabled() {
 		return
 	}
@@ -107,6 +116,7 @@ func (l *DownloadVersionLogic) emitDownload(gameId string) {
 		EventType: analytics.EventDownload,
 		UserId:    l.userID(),
 		GameId:    gameId,
+		Channel:   channel,
 	})
 }
 

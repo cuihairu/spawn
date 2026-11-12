@@ -23,6 +23,10 @@ type Config struct {
 		GameCatalog struct {
 			BaseURL string `json:",default=http://localhost:8890,env=GAMECATALOG_BASE_URL"`
 			Timeout int64  `json:",default=5000,env=GAMECATALOG_TIMEOUT"` // 毫秒
+			// InternalToken GP-403 渠道归因 S2S（game-catalog
+			// /internal/promo/clicks/:id/resolve 的 X-Internal-Token）；
+			// 空 = 点击解析 403，注册按自然流量处理（归因不阻断注册）。
+			InternalToken string `json:",env=GAMECATALOG_INTERNAL_TOKEN,optional"`
 		}
 	}
 

@@ -107,6 +107,17 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		{Method: http.MethodGet, Path: "/internal/games/:id/reservation-users", Handler: InternalReservationUsersHandler(serverCtx)},
 	})
 
+	// GP-403 单层渠道推广（F22）：推广链接落地解析与渠道包下载登记公开
+	// 免登录（落地页通常在登录前打开，链接参数即归因输入）；渠道登记、
+	// 变更历史与效果计数走管理面。渠道表无上级字段——多级代理不在本任务。
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/promo/resolve", Handler: ResolvePromoLinkHandler(serverCtx)},
+		{Method: http.MethodPost, Path: "/promo/download-click", Handler: PromoDownloadClickHandler(serverCtx)},
+		// S2S：user-service 注册时按 click_id 解析归因（X-Internal-Token
+		// 守卫，handler 内先校验；不进网关）
+		{Method: http.MethodPost, Path: "/internal/promo/clicks/:clickId/resolve", Handler: InternalResolveClickHandler(serverCtx)},
+	})
+
 	// 运营后台（GP-103）：platform_admin/operator 方可访问；
 	// 角色授予收紧为 platform_admin（最小权限）。
 	adminRoutes := rest.WithMiddleware(middleware.RequireRole(model.RolePlatformAdmin),
@@ -129,6 +140,13 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		rest.Route{Method: http.MethodGet, Path: "/admin/review-reports", Handler: ListReviewReportsHandler(serverCtx)},
 		rest.Route{Method: http.MethodPost, Path: "/admin/review-reports/:id/handle", Handler: HandleReviewReportHandler(serverCtx)},
 		rest.Route{Method: http.MethodGet, Path: "/admin/audit", Handler: ListAuditLogsHandler(serverCtx)},
+		// GP-403 单层渠道推广（F22）：渠道登记/列表/变更/启停与效果计数；
+		// 变更历史复用 /admin/audit?resource_type=promo_channel。
+		rest.Route{Method: http.MethodPost, Path: "/admin/promo/channels", Handler: CreatePromoChannelHandler(serverCtx)},
+		rest.Route{Method: http.MethodGet, Path: "/admin/promo/channels", Handler: ListPromoChannelsHandler(serverCtx)},
+		rest.Route{Method: http.MethodPatch, Path: "/admin/promo/channels/:id", Handler: UpdatePromoChannelHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/admin/promo/channels/:id/status", Handler: SetPromoChannelStatusHandler(serverCtx)},
+		rest.Route{Method: http.MethodGet, Path: "/admin/promo/channels/:code/stats", Handler: PromoChannelStatsHandler(serverCtx)},
 	)...)
 	server.AddRoutes(rest.WithMiddleware(auth, adminRoutes...))
 

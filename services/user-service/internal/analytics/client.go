@@ -28,7 +28,9 @@ type Event struct {
 	ActivityId  int64  `json:"activity_id,optional"`
 	OrderId     string `json:"order_id,optional"`
 	AmountCents int64  `json:"amount_cents,optional"`
-	OccurredAt  string `json:"occurred_at,optional"`
+	// Channel GP-403 渠道标识（注册时由推广链接归因得到，空=自然流量）。
+	Channel    string `json:"channel,optional"`
+	OccurredAt string `json:"occurred_at,optional"`
 }
 
 // Client 事实事件投递口（不向调用方返回错误）。

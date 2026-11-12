@@ -122,3 +122,22 @@ func AnalyticsReconciliationHandler(svcCtx *svc.ServiceContext) http.HandlerFunc
 		}
 	}
 }
+
+// AnalyticsChannelEffectHandler GET /api/v1/analytics/channels（名单管理员）：
+// 渠道效果（F22/GP-403），按渠道标识聚合注册人数与付费金额。
+func AnalyticsChannelEffectHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.AnalyticsChannelEffectReq
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		l := alogic.NewChannelEffectLogic(r.Context(), svcCtx)
+		resp, err := l.Query(&req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}

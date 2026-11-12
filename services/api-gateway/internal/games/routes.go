@@ -57,6 +57,17 @@ func RegisterGameProxyRoutes(server *rest.Server, serverCtx *svc.ServiceContext)
 		{Method: http.MethodGet, Path: "/games/:id/reservations/me", Handler: h},
 		// GP-401 游戏评价（F04）：长评公开读 + 评分/发评/改评/举报；
 		// 开发者回复与举报处置在合作方/管理路由，鉴权均在 game-catalog 侧
+		// GP-403 单层渠道推广（F22）：推广链接落地解析与渠道包下载登记公开
+		// 免登录（落地页通常在登录前打开）；渠道登记/变更/启停与效果计数在
+		// 管理路由（Authorization 头透传，角色鉴权在 game-catalog 侧）。
+		// S2S /internal/promo/* 不经网关暴露（内部令牌守卫，仅服务间直连）。
+		{Method: http.MethodGet, Path: "/promo/resolve", Handler: h},
+		{Method: http.MethodPost, Path: "/promo/download-click", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/promo/channels", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/promo/channels", Handler: h},
+		{Method: http.MethodPatch, Path: "/admin/promo/channels/:id", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/promo/channels/:id/status", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/promo/channels/:code/stats", Handler: h},
 		{Method: http.MethodGet, Path: "/games/:id/reviews", Handler: h},
 		{Method: http.MethodPost, Path: "/games/:id/rating", Handler: h},
 		{Method: http.MethodPost, Path: "/games/:id/reviews", Handler: h},

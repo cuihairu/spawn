@@ -289,3 +289,34 @@ func (l *ReconciliationLogic) Reconcile(req *types.AnalyticsReconciliationReq) (
 func round4(v float64) float64 {
 	return float64(int64(v*10000+0.5)) / 10000
 }
+
+// ChannelEffectLogic 渠道效果（F22/GP-403）：按渠道标识聚合注册人数与
+// 付费金额；channel 空串行即自然流量（未带渠道的注册）。
+type ChannelEffectLogic struct {
+	logx.Logger
+	ctx    context.Context
+	svcCtx *svc.ServiceContext
+}
+
+func NewChannelEffectLogic(ctx context.Context, svcCtx *svc.ServiceContext) *ChannelEffectLogic {
+	return &ChannelEffectLogic{Logger: logx.WithContext(ctx), ctx: ctx, svcCtx: svcCtx}
+}
+
+func (l *ChannelEffectLogic) Query(req *types.AnalyticsChannelEffectReq) (*types.AnalyticsChannelEffectResp, error) {
+	if err := requireAnalyticsAdmin(l.svcCtx, l.ctx); err != nil {
+		return nil, err
+	}
+	from, to, err := normalizeBounds(req.From, req.To)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := l.svcCtx.AnalyticsSvc.ChannelEffect(from, to, req.GameId)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]types.AnalyticsChannelEffectRow, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, types.AnalyticsChannelEffectRow(r))
+	}
+	return &types.AnalyticsChannelEffectResp{From: from, To: to, Items: items}, nil
+}

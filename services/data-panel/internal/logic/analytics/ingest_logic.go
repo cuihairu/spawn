@@ -79,6 +79,12 @@ func (l *IngestLogic) Ingest(req *types.IngestAnalyticsReq) (*types.IngestAnalyt
 		if len(in.OrderId) > 64 {
 			return nil, httperr.BadRequest("order_id too long")
 		}
+		// GP-403 渠道标识：列宽 64，trim 空白（渠道 code 由产生方登记，
+		// 摄入侧只做卫生长度校验，不维护渠道白名单——空串即自然流量）。
+		channel := strings.TrimSpace(in.Channel)
+		if len(channel) > 64 {
+			return nil, httperr.BadRequest("channel too long")
+		}
 		events = append(events, &model.AnalyticsEvent{
 			EventId:     eventId,
 			EventType:   in.EventType,
@@ -87,6 +93,7 @@ func (l *IngestLogic) Ingest(req *types.IngestAnalyticsReq) (*types.IngestAnalyt
 			ActivityId:  in.ActivityId,
 			OrderId:     in.OrderId,
 			AmountCents: in.AmountCents,
+			Channel:     channel,
 			OccurredAt:  in.OccurredAt,
 		})
 	}

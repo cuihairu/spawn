@@ -58,6 +58,10 @@ var (
 	ErrUserReviewNotFound   = errors.New("user review not found")
 	ErrUserReviewExists     = errors.New("user review already exists")
 	ErrReviewReportNotFound = errors.New("review report not found")
+
+	// GP-403 单层渠道推广（F22）：渠道标识与推广点击
+	ErrPromoChannelNotFound = errors.New("promo channel not found")
+	ErrPromoClickNotFound   = errors.New("promo click not found")
 )
 
 // Partner 合作方主体（F11）：先最小化人工审核，在线签约后续再考虑。
@@ -229,6 +233,18 @@ type AdminStore interface {
 	RemoveFavorite(gameId string, userId int64) error
 	ListMyFavorites(userId int64, limit int) ([]*GameFavorite, error)
 	ListFavoriteUsersByGame(gameId string, limit int) ([]int64, error)
+
+	// GP-403 单层渠道推广（F22）：渠道登记、推广点击与归因计数。
+	CreatePromoChannel(code, name string, windowHours int64) (*PromoChannel, error)
+	GetPromoChannel(id int64) (*PromoChannel, error)
+	GetPromoChannelByCode(code string) (*PromoChannel, error)
+	ListPromoChannels(limit, offset int) ([]*PromoChannel, error)
+	UpdatePromoChannel(id int64, name string, windowHours int64) (*PromoChannel, error)
+	SetPromoChannelStatus(id int64, status string) (*PromoChannel, error)
+	RecordPromoClick(clickId string, ch *PromoChannel, kind, gameId, now string) (*PromoClick, error)
+	GetPromoClick(clickId string) (*PromoClick, error)
+	MarkClickAttributed(clickId string, userId int64) (bool, error)
+	ChannelStats(channelCode, from, to string) (*ChannelStats, error)
 
 	WriteAudit(entry *AuditLog) error
 	ListAuditLogs(resourceType string, limit, offset int) ([]*AuditLog, int, error)
@@ -494,6 +510,59 @@ func (m *AdminModel) CreateAdminTables() error {
 				created_at VARCHAR(32) NOT NULL,
 				PRIMARY KEY (game_id, user_id),
 				KEY idx_favorites_user (user_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-403 推广渠道（F22）：单层渠道（无 parent_id，多级代理不进首版），
+			// code 为渠道标识（推广链接 ?channel=<code>），归因窗口小时数，
+			// status active/disabled，disabled 链接不再计点击与归因
+			`CREATE TABLE IF NOT EXISTS promo_channels (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				code VARCHAR(64) NOT NULL,
+				name VARCHAR(128) NOT NULL,
+				attribution_window_hours INTEGER NOT NULL DEFAULT 72,
+				status VARCHAR(16) NOT NULL DEFAULT 'active',
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				UNIQUE (code)
+			)`,
+			`CREATE TABLE IF NOT EXISTS promo_channels (
+				id BIGINT AUTO_INCREMENT PRIMARY KEY,
+				code VARCHAR(64) NOT NULL,
+				name VARCHAR(128) NOT NULL,
+				attribution_window_hours INT NOT NULL DEFAULT 72,
+				status VARCHAR(16) NOT NULL DEFAULT 'active',
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				UNIQUE KEY uq_promo_channels_code (code)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-403 推广点击（F22）：点击即落一条（归因窗口结算凭据），
+			// click_id 唯一供注册回调携带；渠道包追踪：每次下载也记一条 channel 字段
+			`CREATE TABLE IF NOT EXISTS promo_clicks (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				click_id VARCHAR(64) NOT NULL,
+				channel_id INTEGER NOT NULL,
+				channel VARCHAR(64) NOT NULL DEFAULT '',
+				user_id INTEGER NOT NULL DEFAULT 0,
+				kind VARCHAR(16) NOT NULL DEFAULT 'click',
+				game_id VARCHAR(64) NOT NULL DEFAULT '',
+				occurred_at VARCHAR(32) NOT NULL,
+				created_at VARCHAR(32) NOT NULL,
+				UNIQUE (click_id)
+			)`,
+			`CREATE TABLE IF NOT EXISTS promo_clicks (
+				id BIGINT AUTO_INCREMENT PRIMARY KEY,
+				click_id VARCHAR(64) NOT NULL,
+				channel_id INTEGER NOT NULL,
+				channel VARCHAR(64) NOT NULL DEFAULT '',
+				user_id BIGINT NOT NULL DEFAULT 0,
+				kind VARCHAR(16) NOT NULL DEFAULT 'click',
+				game_id VARCHAR(64) NOT NULL DEFAULT '',
+				occurred_at VARCHAR(32) NOT NULL,
+				created_at VARCHAR(32) NOT NULL,
+				UNIQUE KEY uq_promo_clicks_click_id (click_id)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 		},
 		{

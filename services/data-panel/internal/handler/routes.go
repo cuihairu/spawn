@@ -94,6 +94,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/analytics/reconciliation",
 					Handler: analytics.AnalyticsReconciliationHandler(serverCtx),
 				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/analytics/channels",
+					Handler: analytics.AnalyticsChannelEffectHandler(serverCtx),
+				},
 			}...,
 		),
 		rest.WithPrefix("/api/v1"),

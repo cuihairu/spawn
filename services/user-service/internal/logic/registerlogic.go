@@ -6,6 +6,7 @@ package logic
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tappi/tappi/services/user-service/internal/analytics"
@@ -121,6 +122,12 @@ func (l *RegisterLogic) Register(req *types.RegisterRequest) (resp *types.ApiRes
 
 	l.Infow("用户注册成功", logx.Field("username", req.Username), logx.Field("user_id", user.Id))
 
+	// GP-403/F22：渠道归因。register 请求携带 click_id 时向 game-catalog
+	// 解析点击所属推广渠道，只有落在归因窗口内才认领（一个点击只归因一次，
+	// 不改写已归属的点击）。任何失败都只记日志，注册结果不受影响。
+	occurredAt := time.Now().UTC().Format(time.RFC3339)
+	channel := l.resolveChannel(req.ClickId, occurredAt, user.Id)
+
 	// GP-402/F24：注册事实事件（漏斗首阶段）。event_id 由用户 ID 派生，
 	// 同一用户重放只算一次注册；fire-and-forget 不影响注册结果。
 	if l.svcCtx.AnalyticsSvc != nil && l.svcCtx.AnalyticsSvc.Enabled() {
@@ -128,7 +135,8 @@ func (l *RegisterLogic) Register(req *types.RegisterRequest) (resp *types.ApiRes
 			EventId:    "register:" + strconv.FormatInt(user.Id, 10),
 			EventType:  analytics.EventRegister,
 			UserId:     user.Id,
-			OccurredAt: time.Now().UTC().Format(time.RFC3339),
+			Channel:    channel,
+			OccurredAt: occurredAt,
 		})
 	}
 
@@ -139,4 +147,28 @@ func (l *RegisterLogic) Register(req *types.RegisterRequest) (resp *types.ApiRes
 			"user_id": user.Id,
 		},
 	}, nil
+}
+
+// resolveChannel GP-403/F22：按 click_id 解析注册来源渠道。返回渠道标识；
+// click_id 为空、解析失败或注册时刻已超出该渠道归因窗口时返回空串（自然流量）。
+// 归因是尽力而为的旁路，绝不因解析失败影响注册成功与否。
+func (l *RegisterLogic) resolveChannel(clickID, registeredAt string, userID int64) string {
+	clickID = strings.TrimSpace(clickID)
+	if clickID == "" || l.svcCtx.GameCatalogClient == nil {
+		return ""
+	}
+	res, err := l.svcCtx.GameCatalogClient.ResolvePromoClick(l.ctx, clickID, registeredAt, userID)
+	if err != nil {
+		l.Errorf("解析推广点击失败 click_id=%s: %v", clickID, err)
+		return ""
+	}
+	if res == nil || res.Channel == "" {
+		return ""
+	}
+	if !res.InWindow {
+		l.Infow("推广点击超出归因窗口，按自然流量处理",
+			logx.Field("click_id", clickID), logx.Field("channel", res.Channel))
+		return ""
+	}
+	return res.Channel
 }

@@ -15,6 +15,9 @@ Services:
   GameCatalog:
     BaseURL: "http://localhost:8890"
     Timeout: 5000
+    # GP-403 渠道归因 S2S 令牌：须与 game-catalog 的 INTERNAL_TOKEN 一致。
+    # 留空 = 点击解析 403，注册按自然流量处理（不影响注册本身）。
+    InternalToken: ""
 
 # Prometheus 指标端点（go-zero agent 自动暴露 /metrics）
 Prometheus:

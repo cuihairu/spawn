@@ -71,6 +71,10 @@ func NewServiceContext(c config.Config) *ServiceContext {
 
 	timeout := time.Duration(c.Services.GameCatalog.Timeout) * time.Millisecond
 	gameClient := integration.NewGameCatalogClient(c.Services.GameCatalog.BaseURL, timeout)
+	// GP-403 渠道归因 S2S 令牌（空 = 点击解析按未授权处理，归因退化为自然流量）
+	if c.Services.GameCatalog.InternalToken != "" {
+		gameClient.SetInternalToken(c.Services.GameCatalog.InternalToken)
+	}
 
 	// 创建用户表（开发环境）
 	if err := userModel.CreateUsersTable(); err != nil {

@@ -240,6 +240,9 @@ type CreateVersionRequest struct {
 type VersionPathRequest struct {
 	Id        string `path:"id"`
 	VersionId string `path:"versionId"`
+	// Channel GP-403 渠道标识（可选）：渠道包追踪。下载带渠道时计一条
+	// 渠道包下载（无效渠道不阻断下载，仅不计计数）。
+	Channel string `form:"channel,optional"`
 }
 
 type VersionListResponse struct {
@@ -480,4 +483,112 @@ type FavoriteItemView struct {
 
 type MyFavoritesResponse struct {
 	Items []FavoriteItemView `json:"items"`
+}
+
+// ==================== GP-403 单层渠道推广（F22） ====================
+// 口径边界：只做单层归因（渠道 → 用户），不引入多级代理——渠道表无
+// parent_id 列，代理层级不随本任务默认引入。
+
+// PromoChannelView 渠道登记视图（不含未定义字段，避免内部实现外泄）。
+type PromoChannelView struct {
+	Id                     int64  `json:"id"`
+	Code                   string `json:"code"`
+	Name                   string `json:"name"`
+	AttributionWindowHours int64  `json:"attribution_window_hours"`
+	Status                 string `json:"status"`
+	CreatedAt              string `json:"created_at"`
+	UpdatedAt              string `json:"updated_at"`
+}
+
+type PromoChannelListResponse struct {
+	Items []PromoChannelView `json:"items"`
+	Total int                `json:"total"`
+}
+
+// CreatePromoChannelRequest 登记渠道：code 为渠道标识（推广链接
+// ?channel=<code>），全局唯一；window_hours 为归因窗口小时数，缺省 72
+// （logic 侧 0-720 校验；显式传 0 = 立即失效，不开放归因）。
+type CreatePromoChannelRequest struct {
+	Code        string `json:"code"`
+	Name        string `json:"name"`
+	WindowHours int64  `json:"window_hours,optional,default=72"`
+}
+
+// UpdatePromoChannelRequest 变更渠道（PATCH）：改名与/或改归因窗口；
+// 改窗口不追改既有点击（历史结算不变，只影响其后新点击）。
+type UpdatePromoChannelRequest struct {
+	Id          int64  `path:"id"`
+	Name        string `json:"name,optional"`
+	WindowHours int64  `json:"window_hours,optional"`
+}
+
+// SetPromoChannelStatusRequest 启用/停用渠道（disabled 渠道链接不再计点击）。
+type SetPromoChannelStatusRequest struct {
+	Id     int64  `path:"id"`
+	Status string `json:"status"`
+}
+
+// PromoChannelStatsResponse 渠道包/渠道效果计数（点击/下载/归因人数）。
+type PromoChannelStatsResponse struct {
+	Channel         string `json:"channel"`
+	Clicks          int64  `json:"clicks"`
+	Downloads       int64  `json:"downloads"`
+	AttributedUsers int64  `json:"attributed_users"`
+}
+
+// ResolvePromoLinkRequest 推广链接落地解析：channel 为渠道标识，click_id
+// 由客户端生成（重放幂等），game_id 供下载侧关联游戏。
+type ResolvePromoLinkRequest struct {
+	Channel string `form:"channel"`
+	ClickId string `form:"click_id"`
+	GameId  string `form:"game_id,optional"`
+}
+
+// ResolvePromoLinkResponse 解析结果：有效渠道返回窗口秒数（客户端可据此
+// 在窗口外提示失效）；渠道无效/停用返回 404（不泄露渠道存在性由 logic 决定）。
+type ResolvePromoLinkResponse struct {
+	Channel    string `json:"channel"`
+	ClickId    string `json:"click_id"`
+	WindowSecs int64  `json:"window_secs"`
+}
+
+// PromoLinkResolveResponse S2S 解析（user-service 注册时带 click_id 回调）：
+// 返回渠道标识与是否在归因窗口内（注册时刻与点击时刻比较）。
+type PromoLinkResolveResponse struct {
+	Channel     string `json:"channel"`
+	ChannelId   int64  `json:"channel_id"`
+	ClickedAt   string `json:"clicked_at"`
+	WindowHours int64  `json:"window_hours"`
+	InWindow    bool   `json:"in_window"`
+}
+
+// PromoDownloadClickRequest 渠道包下载登记（渠道包追踪计数）。
+type PromoDownloadClickRequest struct {
+	Channel string `form:"channel"`
+	GameId  string `form:"game_id,optional"`
+}
+
+// PromoChannelListRequest 渠道列表分页查询（管理面）。
+type PromoChannelListRequest struct {
+	Limit  int64 `form:"limit,default=20"`
+	Offset int64 `form:"offset,default=0"`
+}
+
+// PromoDownloadClickResponse 渠道包下载登记结果（计数失败不阻断，恒 200）。
+type PromoDownloadClickResponse struct{}
+
+// ChannelStatsRequest 渠道效果计数查询：code 为渠道标识（path），
+// from/to 为可选时间区间（RFC3339 或 YYYY-MM-DD，空=不限下界/上界）。
+type ChannelStatsRequest struct {
+	Code string `path:"code"`
+	From string `form:"from,optional"`
+	To   string `form:"to,optional"`
+}
+
+// ResolveClickRequest S2S 归因解析请求（user-service 注册时携带）：
+// click_id 为推广点击标识，registered_at 为注册时刻，user_id 为注册用户。
+type ResolveClickRequest struct {
+	ClickId      string `json:"click_id"`
+	RegisteredAt string `json:"registered_at"`
+	UserID       int64  `json:"user_id,optional"`
 }

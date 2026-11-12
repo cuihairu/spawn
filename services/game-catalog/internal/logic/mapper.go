@@ -134,3 +134,33 @@ func toTypesReviewReport(r *model.ReviewReport) *types.ReviewReportView {
 		CreatedAt: r.CreatedAt, HandledAt: r.HandledAt,
 	}
 }
+
+// toTypesPromoChannel 渠道登记视图（GP-403 F22）：渠道为单层，无上级渠道字段。
+func toTypesPromoChannel(c *model.PromoChannel) *types.PromoChannelView {
+	if c == nil {
+		return &types.PromoChannelView{}
+	}
+	return &types.PromoChannelView{
+		Id: c.Id, Code: c.Code, Name: c.Name,
+		AttributionWindowHours: c.AttributionWindowHours,
+		Status:                 c.Status, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+	}
+}
+
+func toTypesPromoChannels(list []*model.PromoChannel) []types.PromoChannelView {
+	out := make([]types.PromoChannelView, 0, len(list))
+	for _, c := range list {
+		out = append(out, *toTypesPromoChannel(c))
+	}
+	return out
+}
+
+// toTypesChannelStats 渠道包/渠道效果计数视图（GP-403 渠道包追踪）。
+func toTypesChannelStats(code string, s *model.ChannelStats) types.PromoChannelStatsResponse {
+	resp := types.PromoChannelStatsResponse{Channel: code}
+	if s == nil {
+		return resp
+	}
+	resp.Clicks, resp.Downloads, resp.AttributedUsers = s.Clicks, s.Downloads, s.Attributes
+	return resp
+}

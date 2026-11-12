@@ -41,7 +41,10 @@ type AnalyticsEvent struct {
 	ActivityId  int64  `json:"activity_id"`
 	OrderId     string `json:"order_id"`
 	AmountCents int64  `json:"amount_cents"`
-	OccurredAt  string `json:"occurred_at"` // RFC3339；空则由摄入侧补当前时间
+	// Channel GP-403 渠道标识（单层渠道 code，如 my-app.com 的推广渠道）。
+	// 注册/下载等事件可带渠道，用于按渠道看漏斗；空 = 未归因/自然流量。
+	Channel    string `json:"channel"`
+	OccurredAt string `json:"occurred_at"` // RFC3339；空则由摄入侧补当前时间
 }
 
 // TypeCounts 单类型计数（指标查询中间行）。
@@ -77,6 +80,15 @@ type ActivityEffectRow struct {
 	RewardCents  int64 `json:"reward_cents"`
 }
 
+// ChannelEffectRow 渠道效果行（F22 渠道包追踪/归因口径，GP-403）：
+// 按渠道标识聚合注册人数与付费金额。channel 空串代表自然流量（未归因）。
+type ChannelEffectRow struct {
+	Channel       string `json:"channel"`
+	Registrations int64  `json:"registrations"`
+	Users         int64  `json:"users"`
+	PaidCents     int64  `json:"paid_cents"`
+}
+
 // ReconciliationRow 账单核对行（从交易事实核对，F24）：按游戏聚合
 // 付费/退款事件金额与笔数；与 payments 对账单（order_projection 事实）
 // 比对即可核对（两端均源自同一支付事实，事件侧仅做转发副本）。
@@ -96,6 +108,7 @@ type AnalyticsStore interface {
 	DailyActiveUsers(eventType string, from, to string) ([]DailyUserPair, error)
 	ActivityEffect(activityId int64) (*ActivityEffectRow, error)
 	Reconciliation(from, to string) ([]ReconciliationRow, error)
+	ChannelEffect(from, to string, gameId string) ([]ChannelEffectRow, error)
 }
 
 var _ AnalyticsStore = (*AnalyticsEventsModel)(nil)
@@ -124,6 +137,7 @@ func (m *AnalyticsEventsModel) CreateAnalyticsTable() error {
 			activity_id INTEGER NOT NULL DEFAULT 0,
 			order_id VARCHAR(64) NOT NULL DEFAULT '',
 			amount_cents INTEGER NOT NULL DEFAULT 0,
+			channel VARCHAR(64) NOT NULL DEFAULT '',
 			occurred_at VARCHAR(32) NOT NULL,
 			created_at VARCHAR(32) NOT NULL,
 			UNIQUE (event_id)
@@ -140,6 +154,7 @@ func (m *AnalyticsEventsModel) CreateAnalyticsTable() error {
 				activity_id BIGINT NOT NULL DEFAULT 0,
 				order_id VARCHAR(64) NOT NULL DEFAULT '',
 				amount_cents BIGINT NOT NULL DEFAULT 0,
+				channel VARCHAR(64) NOT NULL DEFAULT '',
 				occurred_at VARCHAR(32) NOT NULL,
 				created_at VARCHAR(32) NOT NULL,
 				UNIQUE KEY uk_event_id (event_id),
@@ -158,6 +173,7 @@ func (m *AnalyticsEventsModel) CreateAnalyticsTable() error {
 			`CREATE INDEX IF NOT EXISTS idx_events_game_time ON platform_events (game_id, occurred_at)`,
 			`CREATE INDEX IF NOT EXISTS idx_events_user_time ON platform_events (user_id, occurred_at)`,
 			`CREATE INDEX IF NOT EXISTS idx_events_activity ON platform_events (activity_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_events_channel_time ON platform_events (channel, occurred_at)`,
 		} {
 			if _, err := m.db.Exec(idx); err != nil {
 				return fmt.Errorf("创建平台事件索引失败: %w", err)
@@ -171,12 +187,60 @@ func (m *AnalyticsEventsModel) CreateAnalyticsTable() error {
 		`CREATE INDEX IF NOT EXISTS idx_events_game_time ON platform_events (game_id, occurred_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_events_user_time ON platform_events (user_id, occurred_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_events_activity ON platform_events (activity_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_events_channel_time ON platform_events (channel, occurred_at)`,
 	} {
 		if _, err := m.db.Exec(idx); err != nil {
 			return fmt.Errorf("创建平台事件索引失败: %w", err)
 		}
 	}
+	// 存量库补列（GP-403 渠道标识）：CREATE TABLE IF NOT EXISTS 不会给已有
+	// 表加列，故补一次 ALTER（列已存在视为成功，不阻断启动）。
+	return m.migrateChannelColumn()
+}
+
+// migrateChannelColumn 为存量 platform_events 补 channel 列（幂等；
+// SQLite PRAGMA / MySQL SHOW COLUMNS 枚举，枚举失败跳过不阻断）。
+func (m *AnalyticsEventsModel) migrateChannelColumn() error {
+	has := false
+	const name = "channel"
+	// SQLite：PRAGMA table_info（第 2 列为列名）
+	if rows, err := m.db.Query(`PRAGMA table_info(platform_events)`); err == nil {
+		has = columnPresent(rows, 1, name)
+		rows.Close()
+	} else if rows, err := m.db.Query(`SHOW COLUMNS FROM platform_events`); err == nil {
+		// MySQL：SHOW COLUMNS（第 1 列为列名）
+		has = columnPresent(rows, 0, name)
+		rows.Close()
+	}
+	if has {
+		return nil
+	}
+	if _, err := m.db.Exec(`ALTER TABLE platform_events ADD COLUMN channel VARCHAR(64) NOT NULL DEFAULT ''`); err != nil {
+		// 列已存在（并发）或方言差异：忽略，不阻断
+	}
 	return nil
+}
+
+// columnPresent 在列枚举结果里按列名位置判断某列是否已存在。
+// nameCol 为列名列的下标（PRAGMA table_info=1，SHOW COLUMNS=0）。
+func columnPresent(rows *sql.Rows, nameCol int, name string) bool {
+	for rows.Next() {
+		cols, err := rows.Columns()
+		if err != nil || nameCol >= len(cols) {
+			return false
+		}
+		vals := make([]any, len(cols))
+		for i := range vals {
+			vals[i] = new(sql.NullString)
+		}
+		if err := rows.Scan(vals...); err != nil {
+			return false
+		}
+		if ns, ok := vals[nameCol].(*sql.NullString); ok && ns.String == name {
+			return true
+		}
+	}
+	return false
 }
 
 // IngestEvents 批量摄入（event_id 幂等：重复整行忽略）。逐行 INSERT OR
@@ -193,18 +257,18 @@ func (m *AnalyticsEventsModel) IngestEvents(events []*AnalyticsEvent, now string
 		var res sql.Result
 		var err error
 		res, err = m.db.Exec(
-			`INSERT OR IGNORE INTO platform_events (event_id, event_type, user_id, game_id, activity_id, order_id, amount_cents, occurred_at, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			e.EventId, e.EventType, e.UserId, e.GameId, e.ActivityId, e.OrderId, e.AmountCents, occurred, now,
+			`INSERT OR IGNORE INTO platform_events (event_id, event_type, user_id, game_id, activity_id, order_id, amount_cents, channel, occurred_at, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			e.EventId, e.EventType, e.UserId, e.GameId, e.ActivityId, e.OrderId, e.AmountCents, e.Channel, occurred, now,
 		)
 		if err != nil {
 			if !strings.Contains(err.Error(), "syntax") && !strings.Contains(err.Error(), "near") {
 				return accepted, fmt.Errorf("写入平台事件失败: %w", err)
 			}
 			res, err = m.db.Exec(
-				`INSERT IGNORE INTO platform_events (event_id, event_type, user_id, game_id, activity_id, order_id, amount_cents, occurred_at, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				e.EventId, e.EventType, e.UserId, e.GameId, e.ActivityId, e.OrderId, e.AmountCents, occurred, now,
+				`INSERT IGNORE INTO platform_events (event_id, event_type, user_id, game_id, activity_id, order_id, amount_cents, channel, occurred_at, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				e.EventId, e.EventType, e.UserId, e.GameId, e.ActivityId, e.OrderId, e.AmountCents, e.Channel, occurred, now,
 			)
 			if err != nil {
 				return accepted, fmt.Errorf("写入平台事件失败: %w", err)
@@ -310,6 +374,39 @@ func (m *AnalyticsEventsModel) Reconciliation(from, to string) ([]Reconciliation
 	for rows.Next() {
 		var r ReconciliationRow
 		if err := rows.Scan(&r.GameId, &r.PaidCount, &r.PaidCents, &r.RefundCount, &r.RefundCents); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ChannelEffect 渠道效果（F22/GP-403）：期间内按渠道标识聚合注册人数与付费金额。
+// channel 为空串的行即自然流量（未带渠道的注册）。gameId 非空时只统计该游戏。
+func (m *AnalyticsEventsModel) ChannelEffect(from, to string, gameId string) ([]ChannelEffectRow, error) {
+	// 聚合列必须显式起别名：ORDER BY 依赖的列名在 SQLite 里只认 AS 别名
+	// （裸 COUNT/SUM 表达式无列名，会报 no such column），MySQL 侧同理。
+	q := `SELECT channel,
+			COUNT(CASE WHEN event_type = '` + EventRegister + `' THEN 1 END) AS registrations,
+			COUNT(DISTINCT CASE WHEN user_id > 0 THEN user_id END) AS users,
+			COALESCE(SUM(CASE WHEN event_type = '` + EventOrderPaid + `' THEN amount_cents ELSE 0 END), 0) AS paid_cents
+		 FROM platform_events
+		 WHERE event_type IN ('` + EventRegister + `','` + EventOrderPaid + `') AND occurred_at >= ? AND occurred_at <= ?`
+	args := []any{from, to}
+	if gameId != "" {
+		q += ` AND game_id = ?`
+		args = append(args, gameId)
+	}
+	q += ` GROUP BY channel ORDER BY registrations DESC, channel`
+	rows, err := m.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("聚合渠道效果失败: %w", err)
+	}
+	defer rows.Close()
+	out := make([]ChannelEffectRow, 0, 8)
+	for rows.Next() {
+		var r ChannelEffectRow
+		if err := rows.Scan(&r.Channel, &r.Registrations, &r.Users, &r.PaidCents); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

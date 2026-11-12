@@ -25,7 +25,9 @@ type Event struct {
 	ActivityId  int64  `json:"activity_id,optional"`
 	OrderId     string `json:"order_id,optional"`
 	AmountCents int64  `json:"amount_cents,optional"`
-	OccurredAt  string `json:"occurred_at,optional"`
+	// Channel GP-403 渠道标识（单层，如 my-app.com 的渠道 code）。
+	Channel    string `json:"channel,optional"`
+	OccurredAt string `json:"occurred_at,optional"`
 }
 
 // Client 事实事件投递口（不向调用方返回错误）。

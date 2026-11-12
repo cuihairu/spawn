@@ -200,3 +200,81 @@ func TestAnalyticsReconciliation(t *testing.T) {
 		t.Fatalf("game-b = %+v, want paid 1/900 refund 0", b)
 	}
 }
+
+// evChannel 同 ev，但带渠道标识（GP-403/F22 渠道归因口径）。
+func evChannel(id, typ string, userId int64, gameId string, amount int64, channel, at string) *AnalyticsEvent {
+	return &AnalyticsEvent{
+		EventId: id, EventType: typ, UserId: userId, GameId: gameId,
+		AmountCents: amount, Channel: channel, OccurredAt: at,
+	}
+}
+
+// TestAnalyticsChannelEffect GP-403 渠道效果口径：按渠道聚合注册人数、
+// 去重用户数与付费金额；空渠道 = 自然流量；区间与游戏过滤生效。
+func TestAnalyticsChannelEffect(t *testing.T) {
+	m := newTestAnalyticsModel(t)
+	batch := []*AnalyticsEvent{
+		// kol-li：u10 注册（窗口内归因）+ 两笔付费 600+300
+		evChannel("c-r1", EventRegister, 10, "", 0, "kol-li", "2026-11-01T09:00:00Z"),
+		evChannel("c-p1", EventOrderPaid, 10, "game-a", 600, "kol-li", "2026-11-01T10:00:00Z"),
+		evChannel("c-p2", EventOrderPaid, 10, "game-a", 300, "kol-li", "2026-11-02T10:00:00Z"),
+		// tvc：u11、u12 两例注册，无付费 → users 去重计数
+		evChannel("c-r2", EventRegister, 11, "", 0, "tvc", "2026-11-01T11:00:00Z"),
+		evChannel("c-r3", EventRegister, 12, "", 0, "tvc", "2026-11-02T11:00:00Z"),
+		evChannel("c-r6", EventRegister, 13, "", 0, "kol-li", "2026-11-02T11:30:00Z"),
+		// 自然流量（channel 空）：u20 注册 + 付费 900
+		evChannel("c-r4", EventRegister, 20, "", 0, "", "2026-11-02T12:00:00Z"),
+		evChannel("c-p3", EventOrderPaid, 20, "game-b", 900, "", "2026-11-02T12:30:00Z"),
+		// 区间外（12-05，超出下方 11 月查询窗口）：不应进入聚合
+		evChannel("c-r5", EventRegister, 30, "", 0, "kol-li", "2026-12-05T09:00:00Z"),
+	}
+	if accepted, err := m.IngestEvents(batch, "2026-12-05T10:00:00Z"); err != nil || accepted != 9 {
+		t.Fatalf("ingest accepted=%d err=%v, want 9", accepted, err)
+	}
+
+	rows, err := m.ChannelEffect("2026-11-01T00:00:00Z", "2026-11-30T00:00:00Z", "")
+	if err != nil {
+		t.Fatalf("channel effect: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("rows = %+v, want 3 channels", rows)
+	}
+	// 排序：注册数降序、同数按渠道标识升序 → kol-li(2) 先于 tvc(2)，自然流量(1) 垫底
+	if rows[0].Channel != "kol-li" || rows[0].Registrations != 2 || rows[0].Users != 2 || rows[0].PaidCents != 900 {
+		t.Fatalf("kol-li row = %+v, want regs=2 users=2 paid=900", rows[0])
+	}
+	if rows[1].Channel != "tvc" || rows[1].Registrations != 2 || rows[1].Users != 2 || rows[1].PaidCents != 0 {
+		t.Fatalf("tvc row = %+v, want regs=2 users=2 paid=0", rows[1])
+	}
+	if rows[2].Channel != "" || rows[2].Registrations != 1 || rows[2].Users != 1 || rows[2].PaidCents != 900 {
+		t.Fatalf("organic row = %+v, want channel=\"\" regs=1 users=1 paid=900", rows[2])
+	}
+
+	// 区间收窄：只到 11-02 之前不含 11-02 的付费
+	narrow, err := m.ChannelEffect("2026-11-01T00:00:00Z", "2026-11-01T23:59:59Z", "")
+	if err != nil {
+		t.Fatalf("narrow channel effect: %v", err)
+	}
+	if len(narrow) != 2 {
+		t.Fatalf("narrow rows = %+v, want 2 channels", narrow)
+	}
+	for _, r := range narrow {
+		if r.Channel == "kol-li" && r.PaidCents != 600 {
+			t.Fatalf("narrow kol-li paid = %d, want 600", r.PaidCents)
+		}
+	}
+
+	// 游戏过滤：game-b 只余自然流量一行
+	byGame, err := m.ChannelEffect("2026-11-01T00:00:00Z", "2026-11-30T00:00:00Z", "game-b")
+	if err != nil {
+		t.Fatalf("game filter: %v", err)
+	}
+	if len(byGame) != 1 || byGame[0].Channel != "" || byGame[0].PaidCents != 900 {
+		t.Fatalf("game-b rows = %+v, want single organic row paid=900", byGame)
+	}
+
+	// 无记录区间：空结果而非错误
+	if none, err := m.ChannelEffect("2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z", ""); err != nil || len(none) != 0 {
+		t.Fatalf("empty window = %+v/%v, want 0 rows", none, err)
+	}
+}

@@ -24,6 +24,12 @@ const testJWTSecret = "routes-integration-secret"
 // newAuthedTestServer 启动真实的 go-zero rest 服务器（含 RegisterHandlers 路由注册），
 // 返回 base URL 与签发令牌的工具函数。端口取自空闲端口，数据目录隔离到临时目录。
 func newAuthedTestServer(t *testing.T) (string, func(claims utils.JWTClaims) string) {
+	return newAuthedTestServerConfig(t, nil)
+}
+
+// newAuthedTestServerConfig 同 newAuthedTestServer，但允许测试侧微调 config
+// （GP-403 用：设置 Internal.Token 以覆盖 S2S 守卫的通过与拒绝两侧）。
+func newAuthedTestServerConfig(t *testing.T, mutate func(*config.Config)) (string, func(claims utils.JWTClaims) string) {
 	t.Helper()
 
 	// 与 game.go 生产装配一致：注册 logic 层错误处理器（404/500 状态码生效）
@@ -47,6 +53,9 @@ func newAuthedTestServer(t *testing.T) (string, func(claims utils.JWTClaims) str
 	c.Auth.JWTSecret = testJWTSecret
 	// 引导 user 1 为 platform_admin，覆盖 GP-103 角色守卫与后台链路
 	c.Auth.AdminUserIds = []string{"1"}
+	if mutate != nil {
+		mutate(&c)
+	}
 
 	svcCtx := svc.NewServiceContext(c)
 	server := rest.MustNewServer(c.RestConf)
