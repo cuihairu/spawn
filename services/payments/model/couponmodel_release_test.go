@@ -150,14 +150,22 @@ func TestCouponModel_CountUserCouponClaimed_OnlyClaimed(t *testing.T) {
 	}
 
 	// locked 超时释放回 claimed 后 claimed-only 计数回升（释放后仍受限领约束）。
+	// 阈值/老化用相对当前时间：两张锁券（order-z、order-x）都老化到阈值前，
+	// order-y 已 used 不受影响 → 释放 2 张，claimed-only 计数回升到 2。
 	if err := m.LockUserCoupon(claimed.Id, "order-z"); err != nil {
 		t.Fatalf("lock claimed: %v", err)
 	}
+	now := time.Now().UTC()
+	old := now.Add(-2 * time.Hour).Format(time.RFC3339)
 	if _, err := m.db.Exec(
-		`UPDATE user_coupons SET locked_at=? WHERE id=?`, "2026-01-01T00:00:00Z", claimed.Id); err != nil {
+		`UPDATE user_coupons SET locked_at=? WHERE id=?`, old, claimed.Id); err != nil {
 		t.Fatalf("age: %v", err)
 	}
-	if released, _, _ := m.ReleaseExpiredLocked("2026-11-12T00:00:00Z"); released != 2 {
+	if _, err := m.db.Exec(
+		`UPDATE user_coupons SET locked_at=? WHERE id=?`, old, locked.Id); err != nil {
+		t.Fatalf("age locked: %v", err)
+	}
+	if released, _, _ := m.ReleaseExpiredLocked(now.Add(-1 * time.Hour).Format(time.RFC3339)); released != 2 {
 		t.Fatalf("release=%d, want 2", released)
 	}
 	n, err = m.CountUserCouponClaimed(3, 11)
