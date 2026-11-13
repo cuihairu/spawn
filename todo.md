@@ -189,8 +189,10 @@ HEAD：`bc9866d596d7c2e16fe65b08dda2a4af0a6e7596`。完整清单见 `docs/archit
 
 ### 超大文件候选
 
-- [ ] LAY-001 [P1] 拆分 `apps/web-client/src/api/client.ts`（1792 行）——同一文件同时承载多域类型、请求封装、页面 API 和实时/统计聚合，接口边界已不可扫读（`apps/web-client/src/api/client.ts:1`）。
-- [ ] LAY-002 [P1] 拆分 `apps/mobile-app/src/api/client.ts`（1001 行）——多业务 API、统一信封处理和领域类型集中在一个客户端文件，应按服务域分文件（`apps/mobile-app/src/api/client.ts:1`）。
+- [x] LAY-001 [P1] 拆分 `apps/web-client/src/api/client.ts`（1792 行）——同一文件同时承载多域类型、请求封装、页面 API 和实时/统计聚合，接口边界已不可扫读（`apps/web-client/src/api/client.ts:1`）。
+  - 完成（574d81d）：client.ts 变纯桶文件（14 行，re-export 11 个域模块），引用路径 `./api/client` 不变、20 个引用页面零改动。域模块：http（request 封装/各服务基地址/gatewayBaseUrl）、users（80）、games（159）、guides（277）、comments（164）、community（358）、notifications（134）、media（28）、feed（57）、stats（133）、admin（360）。跨域依赖显式化：stats/feed 用网关基地址、admin 复用 games 的 mapGameDetail、notifications 复用 community 的 CommonResp。门禁：tsc -b、eslint、vite build 全绿。
+- [x] LAY-002 [P1] 拆分 `apps/mobile-app/src/api/client.ts`（1001 行）——多业务 API、统一信封处理和领域类型集中在一个客户端文件，应按服务域分文件（`apps/mobile-app/src/api/client.ts:1`）。
+  - 完成（8637562）：client.ts 变纯桶文件（13 行，re-export 10 个域模块），19 个引用文件零改动。域模块：http（request/requestEnvelope/信封类型/ApiError/401 回调/网关基地址）、users（57）、games（88）、guides（198）、comments（75）、community（267，含帖子评论/关注关系）、notifications（122）、media（44）、feed（29）、stats（73）。media 上传绕过 request() 的 401 处理改为复用共享 notifyUnauthorized()。门禁：tsc --noEmit、expo lint 全绿。
 - [x] LAY-003 [P1] 拆分 `services/api-gateway/internal/handler/routes_integration_test.go`（1153 行）——测试覆盖多代理族和网关自有行为，场景类型应拆成独立测试文件（`services/api-gateway/internal/handler/routes_integration_test.go:1`）。
   - 完成（ee50ef6）：按代理族拆为 7 个文件——harness（共享 stub/服务器/断言助手 + 网关级 RegistrationIsExact 边界测试，routes_integration_test.go，444 行）、users（login/register/profile 5 测）、games（featured/recommendations/列表详情 9 测）、share（分享卡 3 测）、homefeed（BFF 聚合 3 测）、stats（data-panel 反代 2 测）、community（通知/搜索/审核反代 3 测）；26 个测试全数保留零逻辑改动，测试内容逐字节平移仅移动 section 注释；handler 包 go test -race 全绿，api-gateway 全模块 13 包 -race 全绿。
 
