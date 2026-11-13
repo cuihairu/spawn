@@ -199,7 +199,8 @@ HEAD：`bc9866d596d7c2e16fe65b08dda2a4af0a6e7596`。完整清单见 `docs/archit
 ### 目录/分类不合理处
 
 - [ ] CLN-001 [P2] 移除 `services/user-service/user`（118081 字节的编译二进制不应入库）；补 `.gitignore`/构建输出边界（`services/user-service/user:1`）。
-- [ ] CLN-002 [P2] 为 `services/user-service`、`services/game-catalog`、`services/data-panel` 补服务 README；现有 `community`、`content-service`、`api-gateway`、`realtime-hub` 已有入口说明（`services/community/README.md:1`）。
+- [x] CLN-002 [P2] 为 `services/user-service`、`services/game-catalog`、`services/data-panel` 补服务 README；现有 `community`、`content-service`、`api-gateway`、`realtime-hub` 已有入口说明（`services/community/README.md:1`）。
+  - 完成：三份 README 按既有风格（概述/运行/端点/结构/角色或关系）落档——user-service（8888，认证/资料/推荐 + JWT 共享密钥模型）、game-catalog（8890，目录/版本下载/提审流/合作方与角色单一事实源 /me）、data-panel（8896，战绩面板与经营分析双域口径 + /internal/events S2S 摄入边界）。
 - [x] CLN-003 [P2] 网关 1153 行集成测试按代理族拆分，避免单个文件成为全路由变更的耦合点（`services/api-gateway/internal/handler/routes_integration_test.go:1`）。
   - 完成：与 LAY-003 同一改动（ee50ef6），见该条。
 - [ ] CLN-004 [P2] 统一跨服务客户端韧性抽象；目前仅 content→game-catalog 具备重试/熔断/指标，user→game-catalog 与网关聚合策略未共享（`services/content-service/client/breaker.go:22`）。
