@@ -11,6 +11,21 @@
 # Test binary, built with `go test -c`
 *.test
 
+# Compiled service binaries (build outputs of `go build` in a module dir;
+# one rule per service so the names stay explicit and never shadow source dirs)
+/services/api-gateway/api-gateway
+/services/community/community
+/services/content-service/content-service
+/services/courier-adapter/courier-adapter
+/services/data-panel/data-panel
+/services/game-catalog/game-catalog
+/services/payments/payments
+/services/promotions/promotions
+/services/realtime-hub/realtime-hub
+/services/user-service/user
+/services/user-service/user-service
+/services/user-service-rpc/user-service-rpc
+
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*
