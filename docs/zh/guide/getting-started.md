@@ -7,7 +7,7 @@
 
 | 依赖 | 版本 | 说明 |
 | --- | --- | --- |
-| Go | ≥ 1.26 | 根目录 `go.work` 声明 `go 1.26.0`（api-gateway 依赖组升级顶高的），聚合八个模块 |
+| Go | ≥ 1.26 | 根目录 `go.work` 声明 `go 1.26.0`（api-gateway 依赖组升级顶高的），聚合十二个模块 |
 | Node.js | 24 | 与 CI 一致 |
 | pnpm | 10.22 | 根 `package.json` 以 `packageManager` 钉定 |
 | Docker | 可选 | 一条命令起全部服务与观测栈 |

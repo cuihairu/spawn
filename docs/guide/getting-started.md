@@ -8,7 +8,7 @@ or start each side separately.
 
 | Dependency | Version | Notes |
 | --- | --- | --- |
-| Go | ≥ 1.26 | The root `go.work` declares `go 1.26.0` (raised by the api-gateway dependency group), aggregating eight modules |
+| Go | ≥ 1.26 | The root `go.work` declares `go 1.26.0` (raised by the api-gateway dependency group), aggregating twelve modules |
 | Node.js | 24 | Same as CI |
 | pnpm | 10.22 | Pinned by `packageManager` in the root `package.json` |
 | Docker | Optional | One command starts all services and the observability stack |

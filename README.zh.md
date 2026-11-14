@@ -12,7 +12,7 @@
 
 | 产物 | 内容 |
 | --- | --- |
-| `spawn-<服务名>-linux-amd64` ×7 | 七个服务二进制——api-gateway、community、content-service、data-panel、game-catalog、user-service、user-service-rpc（CGO 构建，内嵌 SQLite 驱动），下载后 `chmod +x` 直接运行，配置在仓库各服务 `etc/` 目录，`DATASOURCE` 注入 MySQL 连接串可切换存储。realtime-hub 不随 nightly 出二进制，经源码或 `docker compose` 运行 |
+| `spawn-<服务名>-linux-amd64` ×7 | 七个服务二进制——api-gateway、community、content-service、data-panel、game-catalog、user-service、user-service-rpc（CGO 构建，内嵌 SQLite 驱动），下载后 `chmod +x` 直接运行，配置在仓库各服务 `etc/` 目录，`DATASOURCE` 注入 MySQL 连接串可切换存储。realtime-hub、courier-adapter、payments、promotions 不随 nightly 出二进制，经源码或 `docker compose` 运行 |
 | `spawn-web-client-linux-amd64.tar.gz` | Web 主站静态产物，解压后任意静态服务器可托管 |
 | `spawn-gateway-nightly-linux-{amd64,arm64}.deb` | api-gateway 的 Debian 包：`sudo dpkg -i` 安装，包内含 systemd unit 与 `/etc/spawn-gateway/gateway-api.yaml`，装后 `systemctl start spawn-gateway`；卸载 `dpkg -r spawn-gateway` |
 | `spawn-gateway-nightly-linux-{amd64,arm64}.rpm` | api-gateway 的 RPM 包：`sudo rpm -i` 安装，unit 与配置布局同上；卸载 `rpm -e spawn-gateway` |
@@ -55,7 +55,7 @@
 └── tests                # 跨服务集成测试与合规测试
 ```
 
-> 上树是规划图。落地状态以 `services/README.md`、`apps/README.md` 为准：八服务与 web-client、
+> 上树是规划图。落地状态以 `services/README.md`、`apps/README.md` 为准：十一服务与 web-client、
 > mobile-app 有代码，matchmaking/crawler-jobs、mini-program、admin-console 尚未创建；
 > `platform/`（infra/devops/observability）与 `packages/`（ui-kit/data-models/shared-utils）为
 > README 占位——仅 `packages/config` 已落地（见 `packages/README.md`、`platform/README.md`）。
@@ -74,6 +74,9 @@
 | community | 8892 | 9094 |
 | api-gateway | 8800 | 9095 |
 | data-panel | 8896 | 9097 |
+| courier-adapter | 8897 | 9098 |
+| payments | 8898 | 9099 |
+| promotions | 8902 | 9103 |
 | user-service-rpc | 8080 (gRPC) | 9096 |
 
 ### 模块职责概览
@@ -146,13 +149,13 @@
 - 端口：8891
 
 #### 4. API Gateway（`services/api-gateway`）
-BFF 聚合 + 五路反代的统一接入层，对外只暴露统一的 API（mobile-app 全量调用面经此单地址）。
+BFF 聚合 + 九路反代的统一接入层，对外只暴露统一的 API（mobile-app 全量调用面经此单地址）。
 - `POST /auth/login` - 用户登录（透传 user-service）
 - `GET /games/featured` - 精选游戏
 - `GET /users/:id/recommendations` - 用户推荐
 - `GET /home/feed` - 首页列表聚合（精选游戏/热帖/话题/攻略四路并发，字段裁剪 + 单上游故障分组降级）
 - `GET /s/p/:id` - 帖子分享卡跳板页（og meta + `spawn://` 深链 + Web 入口）
-- 反代：community（帖子/话题/关注/点赞/帖子评论/通知/私信/审核）、content（攻略/评论）、users（注册/资料）、games（列表/详情）、data-panel（战绩）全量路由
+- 反代：community（帖子/话题/关注/点赞/帖子评论/通知/私信/审核）、content（攻略/评论）、users（注册/资料/登录）、games（列表/详情/管理面/合作面）、data-panel（战绩）、courier-adapter（游戏会话/兑换/工单/映射管理）、payments（订单/商品/发货/对账/优惠券/回调）、promotions（活动/礼包）全量路由
 - 端口：8800
 
 #### 5. 战绩数据面板服务（`services/data-panel`）
@@ -180,7 +183,16 @@ WebSocket 中枢：JWT 校验的 `/ws` 升级、`/internal/publish` 事件扇出
 #### 8. 用户服务 RPC（`services/user-service-rpc`）
 用户域的集群内部 gRPC 通路（etcd 服务注册），供其他服务调用，不经过网关暴露。业务端口 8080，/metrics 9096。
 
-#### 9. Web Client（`apps/web-client`）
+#### 9. Courier 适配服务（`services/courier-adapter`）
+spawn 与 Courier 游戏服侧之间的 go-zero 适配层：平台账号绑定、游戏登录/验票/角色映射（GP-201）、会话、兑换码、官方公告与工单（GP-307）。经网关路由组反代；不随 nightly 出二进制。端口：8897，/metrics 9098。
+
+#### 10. 支付服务（`services/payments`）
+移动端统一入口的支付接入（GP-202）：商品配置、订单、退款、厂商对账单（GP-205）、发货配置与补单（GP-203）、优惠券（GP-305）、合作方自助对账（GP-404）与渠道回调。SQLite/MySQL 双驱动；经网关反代；不随 nightly 出二进制。端口：8898，/metrics 9099。
+
+#### 11. 活动服务（`services/promotions`）
+活动与礼包（GP-301/302/303/304）：活动状态机（发布生成不可变版本快照）、倍率赠送运行时（payments S2S HMAC 验签）、首充/累充规则、礼包码库存与领取、活动发布消息触发（GP-306）。SQLite/MySQL 双驱动；经网关反代；不随 nightly 出二进制。端口：8902，/metrics 9103。
+
+#### 12. Web Client（`apps/web-client`）
 React 19 + Vite + React Router 7 前端。页面：首页（登录与推荐）、发现（一次请求聚合四区块）、
 游戏库与游戏详情、攻略列表/详情/创建编辑、社区（帖子流含最新/热门/我的/关注四种模式与关键词搜索）、帖子详情、个人中心、战绩面板（KPI 卡 + 按游戏明细，经网关取数）。
 攻略支持「全部/我的」筛选和草稿、发布两种保存态；攻略评论支持嵌套回复、点赞，作者可删自己的评论；
@@ -229,6 +241,10 @@ cd apps/web-client && npm install && npm run dev
 | content-service | 8891 | 内容服务（攻略+评论） | 已完成 |
 | community | 8892 | 社区服务（帖子/话题/关注/点赞） | 已完成 |
 | data-panel | 8896 | 战绩数据面板服务（摄入 + 查询） | 已完成 |
+| courier-adapter | 8897 | Courier 游戏服适配（会话/兑换/工单） | 已完成 |
+| payments | 8898 | 支付（订单/发货/对账/优惠券） | 已完成 |
+| promotions | 8902 | 活动（活动/礼包/赠送运行时） | 已完成 |
+| realtime-hub | 8893 | WebSocket 实时中枢（推送扇出/在线/信令） | 已完成 |
 | user-service-rpc | 8080 (gRPC) | 用户服务 RPC（集群内部） | 已完成 |
 | web-client | 5173 | Web前端 | 已完成 |
 | mobile-app | — | React Native（Expo）客户端 | 实施中（见 `docs/zh/mobile_plan.md`） |

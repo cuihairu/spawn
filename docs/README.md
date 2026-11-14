@@ -11,6 +11,8 @@ Landed documentation:
   topology: service boundaries / gateway route surface / auth data flow).
 - `guide/getting-started.md`: local setup, compose / per-service startup,
   web and mobile dev servers.
+- `guide/config-effects.md`: config-switch effect gifs (before/after records
+  per switch, pipeline and guide).
 - `clients.md`: client surface and Android packaging flow.
 - `backlog.md`: decision record and cleared/deferred table.
 - `realtime-hub.md`: realtime channel profile (M1–M3 record).

@@ -21,7 +21,7 @@ semantics such as presence / read receipts / direct messages. Mobile local push
   passthrough tunnel** (Hijack + bidirectional splice, `internal/realtime`), and
   clients now default to the gateway, with direct connection
   (`VITE_REALTIME_HUB_URL`) retained.
-- Port: 8893 (hub WS/HTTP); 9091-9097 are already taken by the services'
+- Port: 8893 (hub WS/HTTP); 9091–9099 and 9103 are already taken by the services'
   /metrics, so the hub's metrics face is not opened in M1.
 - Auth: the same HS256 JWT as the services (shared `JWT_SECRET`, claims shape
   same as `utils.JWTClaims`). Browsers cannot send custom headers on a WS, so

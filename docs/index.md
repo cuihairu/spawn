@@ -24,13 +24,13 @@ features:
   - title: Community interaction
     details: community has posts, topics, follows, likes, in-app notifications, direct messages and report moderation. The follow feed is time-descending with id as the tie-break inside one second; likes live in their own relation table; notifications deduplicate on (recipient, actor, type, target).
   - title: Access & aggregation
-    details: api-gateway owns the login/registration proxy plus five proxy routes; JWT issuing lives in user-service. /home/feed pulls featured games, hot posts, topics and guides in one request; if one upstream fails only that group degrades, the rest return normally.
+    details: api-gateway owns the login/registration proxy plus nine proxy route groups; JWT issuing lives in user-service. /home/feed pulls featured games, hot posts, topics and guides in one request; if one upstream fails only that group degrades, the rest return normally.
   - title: Realtime channel
     details: realtime-hub provides WebSocket long connections (JWT verified), /internal/publish fanout, presence and voice signalling passthrough, with Redis pub/sub relay across instances; the gateway /ws tunnel passes straight through.
   - title: Multi-client apps
     details: web-client on React 19 + Vite; mobile-app on Expo, with local push, deep-link share cards, a notification center and guide authoring/editing, Android builds via gradle. The mini-program and the admin console have not started.
   - title: Observability
-    details: seven of the eight services expose one Prometheus /metrics port each (9091–9097; realtime-hub has none); logs are structured JSON into Loki, and deploy/ ships compose files for Prometheus, Loki and Grafana.
+    details: ten of the eleven services expose one Prometheus /metrics port each (9091–9099 and 9103; realtime-hub has none); logs are structured JSON into Loki, and deploy/ ships compose files for Prometheus, Loki and Grafana.
 ---
 
 

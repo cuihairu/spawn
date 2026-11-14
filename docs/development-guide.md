@@ -17,7 +17,7 @@ What it covers:
 - Configuration management: environment variables and config file locations.
 - Database integration: MySQL dependency, the SQLite/MySQL dual driver, table
   creation.
-- Service inventory with ports, monitoring and metrics (Prometheus 9091–9097).
+- Service inventory with ports, monitoring and metrics (Prometheus 9091–9099 and 9103).
 - CI and deployment: docker compose, nightly builds, release flow.
 - Client integration: web and mobile talking to the gateway.
 
