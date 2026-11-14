@@ -34,6 +34,7 @@ Community Service 是 spawn 社区平台的核心服务之一，提供帖子发�
 - `DELETE /api/v1/posts/:id` - 删除帖子（需认证）
 - `POST /api/v1/posts/:id/like` - 点赞帖子 （需认证，幂等，落 post_likes 关系）
 - `POST /api/v1/posts/:id/share` - 分享帖子（需认证）
+- `POST /api/v1/posts/:id/pin` - 官方置顶/取消置顶（仅审核管理员，幂等，GP-307）
 - `GET /api/v1/posts/:id/comments` - 帖子评论列表（分页）
 - `POST /api/v1/posts/:id/comments` - 发表评论（需认证，`parent_id` 支持回复）
 - `DELETE /api/v1/posts/:id/comments/:cid` - 删除自己的评论（需认证）
@@ -77,6 +78,26 @@ Community Service 是 spawn 社区平台的核心服务之一，提供帖子发�
 - `GET /api/v1/moderation/reports` - 举报队列，status 过滤 + 分页（仅管理员）
 - `POST /api/v1/moderation/reports/:id/handle` - 处置举报，action 为
   `dismiss`（驳回，内容保留）/ `resolve`（处置，内容移除）（仅管理员）
+
+### 公告（GP-307）
+- `GET /api/v1/announcements` - 公告入口公开读（仅官方帖，置顶优先 id 倒序，limit ≤50）
+
+### 设计拆解（DESIGN-001）
+- `GET /api/v1/design/categories` - 品类列表（公开）
+- `GET /api/v1/design/breakdowns` - 拆解列表（品类/分页筛选，公开）
+- `GET /api/v1/design/breakdowns/:id` - 拆解详情（公开）
+- `GET /api/v1/design/breakdowns/:id/comments` - 拆解评论列表（公开）
+- `POST /api/v1/design/breakdowns` - 创建拆解（需认证）
+- `PUT /api/v1/design/breakdowns/:id` - 更新拆解（需认证）
+- `POST /api/v1/design/breakdowns/:id/feature` - 官方精选（需认证，仅审核管理员）
+- `POST /api/v1/design/breakdowns/:id/comments` - 发表拆解评论（需认证，`parent_id` 支持回复）
+- `DELETE /api/v1/design/breakdowns/:id/comments/:cid` - 删除自己的拆解评论（需认证）
+
+设计拆解域：公开读四类 + 登录写五类（发布/编辑/精选/评论/删评论），作者与审核
+管理员判定在 logic 层。
+
+### S2S 内部端点
+- `POST /internal/notifications` - 业务通知扇出（X-Internal-Token fail-closed 403）：按 user_ids 逐人落站内信并经 realtime-hub 推送在线用户（GP-306，version/server_open/game_activity 等触发方共用；fire-and-forget，失败只记日志）
 
 敏感词过滤为阻塞式：发帖/改帖/评论写入前扫描 `Moderation.BlockedWords`
 （空配置回落内置默认表），命中即 400 拒绝并提示首个违规词。

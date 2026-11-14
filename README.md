@@ -217,10 +217,11 @@ fetch game data for recommendations, with failure fallback; content-service fetc
 from game-catalog with circuit breaking, retries, and Prometheus metrics. Game repository and
 user recommendation logic have unit tests. `docker-compose.yaml` brings up all services with one
 command, and each service directory has its own `Dockerfile` (user-service-rpc has none; it is
-cluster-internal). The five SQLite-backed services (user-service, game-catalog, content-service,
-community, data-panel) run on the SQLite/MySQL dual driver (a DSN containing `file:` uses
-SQLite; inject a MySQL connection string in production), with in-process TTL+LRU read caching;
-concurrency safety is guaranteed by connection-pool clamping and the cache itself. user-service-rpc
+cluster-internal). Eight services — the core five (user-service, game-catalog, content-service,
+community, data-panel) plus courier-adapter, payments and promotions — run on the SQLite/MySQL
+dual driver (a DSN containing `file:` uses SQLite; inject a MySQL connection string in
+production); the core five also keep in-process TTL+LRU read caching, with concurrency safety
+guaranteed by connection-pool clamping and the cache itself. user-service-rpc
 is a gRPC service without a storage layer, and realtime-hub is stateless (in-memory registry).
 
 ### Quick Start
@@ -238,6 +239,9 @@ go run services/user-service/user.go -f services/user-service/etc/user-api.yaml
 go run services/content-service/content.go -f services/content-service/etc/content-api.yaml
 go run services/community/community.go -f services/community/etc/community-api.yaml
 go run services/data-panel/data-panel.go -f services/data-panel/etc/data-panel-api.yaml
+go run services/courier-adapter/adapter.go -f services/courier-adapter/etc/adapter-api.yaml
+go run services/payments/payments.go -f services/payments/etc/payments-api.yaml
+go run services/promotions/promotions.go -f services/promotions/etc/promotions-api.yaml
 go run services/realtime-hub/realtime-hub.go -f services/realtime-hub/etc/realtime-hub.yaml
 go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
 

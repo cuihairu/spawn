@@ -36,6 +36,10 @@ their status; unimplemented features are not described.
   post).
 - Direct messages (landed): `/messages` page — conversation list, per-peer
   thread with unread marking, delivered over the realtime-hub WebSocket channel.
+- Game design breakdown hub (landed 2026-11-14): `/design` is the category-
+  aggregated entry (chips group similar games, then the breakdown list) and
+  `/design/:id` is the breakdown detail with its discussion thread; both read
+  the gateway's `/api/v1/design/**` routes, which proxy to community.
 - Common scripts: `pnpm --dir apps/web-client run dev` (dev), `build`
   (tsc + vite bundle), `lint`.
 
@@ -57,11 +61,14 @@ their status; unimplemented features are not described.
   the author to edit (PUT partial update, game cannot be changed).
 - Android packaging: `pnpm --dir apps/mobile-app run prebuild:android` generates
   the native project, `build:android:release` runs gradle assembleRelease.
+- Game design breakdown (landed 2026-11-14): the community tab links to
+  `/design` (category chips + breakdown list) and `/design/[id]` (detail with
+  its discussion thread), served by the same `/api/v1/design/**` routes.
 - On-device regression items (local push, deep-link share cards, notification
   center) still await device verification; progress in the
   [mobile plan](/mobile_plan).
 
-## Services (seven go-zero microservices + one realtime hub)
+## Services (ten go-zero microservices + one realtime hub)
 
 | Service | Directory | Responsibility | Storage |
 | --- | --- | --- | --- |
@@ -71,6 +78,9 @@ their status; unimplemented features are not described.
 | content-service | `services/content-service` | Guides, comments, publish flow, favourites | SQLite / MySQL dual driver + in-process read cache |
 | community | `services/community` | Posts, topics, follows, likes, follow feed, in-app notifications, direct messages, report moderation | SQLite / MySQL dual driver |
 | data-panel | `services/data-panel` | Stats ingest (monotonic increments) and player stats queries | SQLite / MySQL dual driver + TTL/LRU cache |
+| courier-adapter | `services/courier-adapter` | Courier game-server adapter: platform account binding, delegated login / ticket verification / role mapping, sessions, redemption, deregistration sync, after-sales tickets and FAQ (GP-201/307) | SQLite / MySQL dual driver |
+| payments | `services/payments` | Payment access: product configuration, orders, refunds, delivery configuration and redelivery, vendor statements, partner self-service statements, coupons, channel callbacks | SQLite / MySQL dual driver |
+| promotions | `services/promotions` | Activities and gift packs: versioned activity snapshots, multiplier reward runtime, first-charge / cumulative-charge rules, gift-pack codes and claims, activity messages | SQLite / MySQL dual driver |
 | user-service-rpc | `services/user-service-rpc` | Internal gRPC API for the user domain (zrpc + etcd; currently a Ping health-check stub, no storage yet) | — |
 | realtime-hub | `services/realtime-hub` | WebSocket push / presence / voice signalling (8893, no /metrics) | — (in-memory registry, optional Redis pub/sub relay) |
 

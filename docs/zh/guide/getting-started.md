@@ -39,6 +39,9 @@ docker compose up --build
 | realtime-hub | 8893 | —（无 /metrics） |
 | api-gateway | 8800 | 9095 |
 | data-panel | 8896 | 9097 |
+| courier-adapter | 8897 | 9098 |
+| payments | 8898 | 9099 |
+| promotions | 8902 | 9103 |
 | user-service-rpc | 8080 (gRPC) | 9096 |
 
 ## 分别启动后端服务
@@ -51,6 +54,9 @@ go run services/user-service/user.go -f services/user-service/etc/user-api.yaml
 go run services/content-service/content.go -f services/content-service/etc/content-api.yaml
 go run services/community/community.go -f services/community/etc/community-api.yaml
 go run services/data-panel/data-panel.go -f services/data-panel/etc/data-panel-api.yaml
+go run services/courier-adapter/adapter.go -f services/courier-adapter/etc/adapter-api.yaml
+go run services/payments/payments.go -f services/payments/etc/payments-api.yaml
+go run services/promotions/promotions.go -f services/promotions/etc/promotions-api.yaml
 go run services/realtime-hub/realtime-hub.go -f services/realtime-hub/etc/realtime-hub.yaml
 go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
 ```

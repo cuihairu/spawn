@@ -204,10 +204,11 @@ React 19 + Vite + React Router 7 前端。页面：首页（登录与推荐）�
 跨服务调用走 HTTP：user-service 经 `GameCatalogClient` 调 game-catalog 拿游戏数据拼推荐，
 失败降级兜底；content-service 调 game-catalog 取游戏标题带熔断、重试和 Prometheus 指标。
 游戏仓库与用户推荐逻辑有单元测试。`docker-compose.yaml` 一条命令拉起全部服务，各服务目录
-有独立 `Dockerfile`（user-service-rpc 无镜像，集群内部部署）。五个 SQLite 服务（user-service、
-game-catalog、content-service、community、data-panel）数据面均跑 SQLite/MySQL 双驱动（DSN 含
-`file:` 走 SQLite，生产注入 MySQL 连接串），进程内 TTL+LRU 读缓存，并发安全由连接池钳制
-与缓存自身保证。user-service-rpc 是无存储的 gRPC 服务，realtime-hub 无状态（内存注册表）。
+有独立 `Dockerfile`（user-service-rpc 无镜像，集群内部部署）。八个服务（核心五：
+user-service、game-catalog、content-service、community、data-panel，加 courier-adapter、
+payments、promotions）数据面跑 SQLite/MySQL 双驱动（DSN 含 `file:` 走 SQLite，生产注入
+MySQL 连接串）；核心五个另带进程内 TTL+LRU 读缓存，并发安全由连接池钳制与缓存自身保证。
+user-service-rpc 是无存储的 gRPC 服务，realtime-hub 无状态（内存注册表）。
 
 ### 快速体验
 
@@ -224,6 +225,9 @@ go run services/user-service/user.go -f services/user-service/etc/user-api.yaml
 go run services/content-service/content.go -f services/content-service/etc/content-api.yaml
 go run services/community/community.go -f services/community/etc/community-api.yaml
 go run services/data-panel/data-panel.go -f services/data-panel/etc/data-panel-api.yaml
+go run services/courier-adapter/adapter.go -f services/courier-adapter/etc/adapter-api.yaml
+go run services/payments/payments.go -f services/payments/etc/payments-api.yaml
+go run services/promotions/promotions.go -f services/promotions/etc/promotions-api.yaml
 go run services/realtime-hub/realtime-hub.go -f services/realtime-hub/etc/realtime-hub.yaml
 go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
 
