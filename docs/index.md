@@ -4,7 +4,7 @@ layout: home
 hero:
   name: spawn
   text: Game community platform
-  tagline: Four capabilities — game catalog, guides, community, realtime — across two clients, web and mobile; seven go-zero microservices plus a WebSocket realtime hub, in one repository.
+  tagline: Four capabilities — game catalog, guides, community, realtime — across two clients, web and mobile; ten go-zero microservices plus a WebSocket realtime hub, in one repository.
   actions:
     - theme: brand
       text: Getting Started

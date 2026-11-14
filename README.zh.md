@@ -12,7 +12,7 @@
 
 | 产物 | 内容 |
 | --- | --- |
-| `spawn-<服务名>-linux-amd64` ×7 | 七个服务二进制——api-gateway、community、content-service、data-panel、game-catalog、user-service、user-service-rpc（CGO 构建，内嵌 SQLite 驱动），下载后 `chmod +x` 直接运行，配置在仓库各服务 `etc/` 目录，`DATASOURCE` 注入 MySQL 连接串可切换存储。realtime-hub、courier-adapter、payments、promotions 不随 nightly 出二进制，经源码或 `docker compose` 运行 |
+| `spawn-<服务名>-linux-amd64` ×7 | 七个服务二进制——api-gateway、community、content-service、data-panel、game-catalog、user-service、user-service-rpc（CGO 构建；七个中五个内嵌 SQLite 驱动——community、content-service、data-panel、game-catalog、user-service），下载后 `chmod +x` 直接运行，配置在仓库各服务 `etc/` 目录，`DATASOURCE` 注入 MySQL 连接串可切换存储。realtime-hub、courier-adapter、payments、promotions 不随 nightly 出二进制，经源码或 `docker compose` 运行 |
 | `spawn-web-client-linux-amd64.tar.gz` | Web 主站静态产物，解压后任意静态服务器可托管 |
 | `spawn-gateway-nightly-linux-{amd64,arm64}.deb` | api-gateway 的 Debian 包：`sudo dpkg -i` 安装，包内含 systemd unit 与 `/etc/spawn-gateway/gateway-api.yaml`，装后 `systemctl start spawn-gateway`；卸载 `dpkg -r spawn-gateway` |
 | `spawn-gateway-nightly-linux-{amd64,arm64}.rpm` | api-gateway 的 RPM 包：`sudo rpm -i` 安装，unit 与配置布局同上；卸载 `rpm -e spawn-gateway` |
@@ -20,7 +20,7 @@
 | `spawn-gateway-nightly-windows-amd64.msi` | api-gateway 的 Windows 安装包，安装到 `Program Files\spawn-gateway`，含配置样例 |
 | `SHA256SUMS.txt` | 全部资产校验和，同目录 `sha256sum -c SHA256SUMS.txt` 核对 |
 
-原生安装包只覆盖 api-gateway：它是唯一不内嵌 CGO SQLite 驱动的服务，可静态交叉编译出两个 Linux 架构与 Windows。其余六个服务只提供 amd64 二进制，不出安装包。包版本号为 `0.0.0~nightly<日期>.<sha7>`（deb）与 `0.0.0-nightly<日期>.<sha7>`（rpm），属滚动构建标记，不构成正式版本。移动端 APK 与服务容器镜像不在 nightly 交付面（Android 出包依赖本地 gradle 流程；镜像按 `services/*/Dockerfile` 自行构建）。正式版本尚未发布；文档站见 <https://cuihairu.github.io/spawn/zh/>。
+原生安装包只覆盖 api-gateway：它不依赖 CGO SQLite 驱动（user-service-rpc 是另一个不依赖的服务），可静态交叉编译出两个 Linux 架构与 Windows。其余六个服务只提供 amd64 二进制，不出安装包。包版本号为 `0.0.0~nightly<日期>.<sha7>`（deb）与 `0.0.0-nightly<日期>.<sha7>`（rpm），属滚动构建标记，不构成正式版本。当前 arm64 的 rpm 内部架构元数据仍是 x86_64（打包脚本未向 rpmbuild 传构建目标），在 arm64 主机上需 `rpm -i --force` 安装；deb 侧无此问题。移动端 APK 与服务容器镜像不在 nightly 交付面（Android 出包依赖本地 gradle 流程；镜像按 `services/*/Dockerfile` 自行构建）。正式版本尚未发布；文档站见 <https://cuihairu.github.io/spawn/zh/>。
 
 ## Monorepo 目录规划
 

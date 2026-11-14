@@ -6,7 +6,7 @@ Game Catalog Service 是 spawn 的游戏目录与发行域：游戏库、版本/
 
 ## 运行
 
-- 端口：`8890`（配置 `etc/game-catalog-api.yaml`）
+- 端口：`8890`（配置 `etc/game-api.yaml`）
 - 本地启动：`go run game.go`；测试：`go test ./... -race`
 - 存储：SQLite 或 MySQL（双方言 DDL，启动自动迁移/补列）
 - 上报：登录/下载/开服等事实事件 fire-and-forget 上报 data-panel；预约开服/版本发布经 community 扇出站内信

@@ -6,7 +6,7 @@ User Service 是 spawn 平台的账号中心：注册、登录（JWT 签发）�
 
 ## 运行
 
-- 端口：`8888`（REST，配置 `etc/user-api.yaml`）；gRPC `9091`（`user-service-rpc` 同仓拆出）
+- 端口：`8888`（REST，配置 `etc/user-api.yaml`）；gRPC `8080`（`user-service-rpc` 同仓拆出，配置 `etc/user.yaml`，/metrics `9096`）
 - 本地启动：`go run user.go`；测试：`go test ./... -race`
 - 存储：SQLite（`file:` DSN，零配置）或 MySQL（`MySQL.DataSource`），启动自动建表
 

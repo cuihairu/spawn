@@ -4,7 +4,7 @@ layout: home
 hero:
   name: spawn
   text: 游戏社区平台
-  tagline: 游戏库、攻略、社区、实时通道四块能力，Web 和移动两个客户端，七个 go-zero 微服务加一个 WebSocket 实时中枢，一个仓库。
+  tagline: 游戏库、攻略、社区、实时通道四块能力，Web 和移动两个客户端，十个 go-zero 微服务加一个 WebSocket 实时中枢，一个仓库。
   actions:
     - theme: brand
       text: 快速上手
