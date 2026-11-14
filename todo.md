@@ -144,11 +144,13 @@
   - 社区功能:拆解页挂讨论区(复用现有 community/guide 基建);策划可发布自己的拆解,玩家可评论碰撞;优质拆解进精选。
   - 验收:内容类型上线(web+mobile 双端)、5 个品类聚合页、首批 10+ 篇拆解、讨论区可用;vitest 绿门禁。
 
-- [ ] **DOC-GIF · P2 · 文档 · 配置开关效果动态图(每个开关 off→on 对比+GIF)**
-  - 交付:枚举本仓全部「开启后有效果」的开关/配置项;自动流水线生成证据——GUI 类用 @vscode/test-electron 或应用截图(off 一张/on 一张+切换过程录屏),CLI 类用终端录屏(asciinema→GIF 或 ffmpeg);ffmpeg 缝合动态 GIF。
-  - 文档:docs「配置效果」页(双语)逐开关嵌入:说明+off 图+on 图+GIF。
-  - 验收:清单内每个开关都有 off/on+GIF;流水线可重跑(配置变更随时再生成);兼作配置效果回归测试。
-  - 参考:kode todo C-24 同款流水线模式(2026-11-01 用户令全舰队推广)。
+- [x] **DOC-GIF · P2 · 文档 · 配置开关效果动态图(每个开关 off→on 对比+GIF)**(2026-11-14 完成)
+  - 交付:scripts/config-switch-gifs/{switches.json,generate.py,render_docs.py,README.md}——switches.json 为唯一事实源,盘点 15 个运行期开关:8 个 capture=true(社区敏感词/审核名单/community+data-panel+game-catalog+realtime-hub 四个服务间令牌/分析查询名单/离线推送 webhook)、7 个 capture=false(多服务联动/时间轴/部署面效果,不配图不编造,进文档页文末手工验证清单)。
+  - 流水线:generate.py 对真实服务采集——临时 SQLite 库逐状态(off/on)起服务二进制、发同样真实 HTTP 请求,行为断言(off=403/on=200、200→400、webhook 回调 0→1)不符即整条失败,PIL 终端帧+ffmpeg 缝循环 GIF,产物 docs/public/config-switch-gifs/(24 文件+manifest.json 契约,仓库相对路径);帧差闸 off/on 末帧逐字节相同即失败,宁可不产图不出假图;可重跑(--all/--switch=KEY)兼作配置效果回归测试。
+  - 文档:docs/guide/config-effects.md + docs/zh/guide/config-effects.md 双语页由 render_docs.py 从 switches.json 生成(勿手改),逐开关嵌入 GIF+off/on 静帧+断言说明;docs/.vitepress/config.mts 双语侧边栏已注册。
+  - 验收:--check 一致性闸绿(8 captured/7 manual/双语文档全覆盖);vitepress build 绿(8 GIF 全部以 /spawn/ base 渲染,docs/.vitepress/dist/zh/guide/config-effects.html);8/8 行为断言实跑通过。
+  - 证据:commit b2026ed;scripts/config-switch-gifs/generate.py(DEMOS 断言表)、docs/guide/config-effects.md。
+  - 参考:kode todo C-24 同款流水线模式(2026-11-01 用户令全舰队推广);本机无 asciinema/vhs,终端帧用 PIL 渲染(真实响应文本),ffmpeg 8.0.1 缝合。
 
 ## 审核修复批（2026-11-11 audit-batch2-6repos，spawn 节 P0/P1）
 
