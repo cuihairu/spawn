@@ -81,9 +81,20 @@ jobs:
 
       - name: Install packaging tools
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq rpm msitools zip unzip >/dev/null
-          command -v dpkg-deb rpmbuild rpm wixl zip unzip
+          set -uo pipefail
+          sudo apt-get update -qq 2>&1 | tail -3
+          sudo apt-get install -y -qq rpm msitools zip unzip > /tmp/apt-install.log 2>&1 || true
+          # command -v 多参数是"任一存在即 0"，逐个点名才能真正校验。
+          for t in dpkg-deb rpmbuild rpm zip unzip; do command -v "$t"; done
+          if command -v wixl >/dev/null; then
+            echo "wixl: $(command -v wixl)"
+          else
+            # 装不上时留下可诊断痕迹：是包不存在、源未开，还是装完没有 wixl。
+            echo "::warning::wixl missing - msi leg will be BLOCKED"
+            echo "--- apt install tail ---"
+            tail -15 /tmp/apt-install.log
+            apt-cache policy msitools || true
+          fi
 
       - name: Build deb + rpm (linux-amd64, linux-arm64)
         run: |
@@ -177,8 +188,13 @@ jobs:
             echo "- \`spawn-web-client-linux-amd64.tar.gz\`：Web 主站静态产物，解压后任意静态服务器可托管。"
             echo "- \`spawn-gateway-nightly-linux-{amd64,arm64}.deb|.rpm\`：api-gateway 原生安装包（systemd unit + \`/etc/spawn-gateway/gateway-api.yaml\`）。\`sudo dpkg -i\` / \`sudo rpm -i\` 安装，装后 \`systemctl start spawn-gateway\`；卸载 \`dpkg -r\` / \`rpm -e\`。"
             echo "- \`spawn-gateway-nightly-windows-amd64.zip\`：api-gateway Windows 原生 exe（解压即可运行，配置同仓库 \`services/api-gateway/etc/gateway-api.yaml\`）。"
-            echo "- \`spawn-gateway-nightly-windows-amd64.msi\`：api-gateway Windows 安装包（安装到 Program Files\\spawn-gateway，含配置样例）。"
             echo "- \`SHA256SUMS.txt\`：全部资产校验和，下载后于同目录 \`sha256sum -c SHA256SUMS.txt\` 核对。"
+            # msi 行只在真有产物时写进清单，BLOCKED 时不留幽灵条目
+            if [ "${{ steps.msi.outputs.built }}" = "true" ]; then
+              echo "- \`spawn-gateway-nightly-windows-amd64.msi\`：api-gateway Windows 安装包（安装到 Program Files\\spawn-gateway，含配置样例）。"
+            else
+              echo "- \`spawn-gateway-nightly-windows-amd64.msi\`：本轮 BLOCKED——runner 装不上 msitools/wixl，本地验证命令：\`wixl -a x64 -o spawn-gateway-nightly-windows-amd64.msi gateway.wxs\`（源在 \`scripts/packaging/spawn-gateway.wxs\`）。"
+            fi
             echo
             echo "## 口径说明"
             echo

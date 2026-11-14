@@ -112,7 +112,10 @@
   - deb/rpm：`dpkg-deb` + `rpmbuild` 单脚本，装 `/usr/local/bin/spawn-gateway`、`/etc/spawn-gateway/gateway-api.yaml` 与 systemd unit；版本 `0.0.0~nightly<date>.<sha7>`（deb）/ `0.0.0` + Release（rpm），仅滚动构建标记，不构成正式版本。
   - msi：ubuntu runner 上 `wixl`（msitools）离线编译 WiX v3 源，`-a x64` 对齐 PE32+ 载荷；装不上 msitools 时 msi 腿在 CI 里显式 warning + `built=false`，不硬造空包。
   - 冒烟：deb 包内二进制 `--help` rc=0（真实可执行）；rpm 元数据、deb control、zip 清单、msi `msiinfo tables|suminfo` 逐项校验；msi 只验结构不安装。
-  - 本机全链预演通过：deb 6.8M/6.1M、rpm 5.6M/5.0M、exe zip 6.9M、msi 9.5K（Template x64;1033）。首跑 CI 证据待 gh workflow run 后回填（run id + 资产清单与字节数）。
+  - 本机全链预演通过：deb 6.8M/6.1M、rpm 5.6M/5.0M、exe zip 6.9M、msi 9.5K（Template x64;1033）。
+  - CI 首跑证据：run 43610645160 success（6 分钟，baf9494）。实出资产 deb 7066332/6368798、rpm 7073063/6375747、exe zip 7204545；sha256 落 SHA256SUMS.txt。冒烟过：deb 包内二进制 `--help` 打出 usage、rpm/deb 元数据正确。
+  - msi 腿首跑如实 BLOCKED（run 43610645160 warning「wixl/msitools unavailable — msi leg BLOCKED (not fabricated)」，Release 无 msi 资产，未造空包）。根因：Install 步骤原用 `command -v a b c`，bash 语义是"任一存在即 0"，wixl 缺席被 zip 的命中掩盖——已改为逐个点名 + 装不上时打印 apt 日志与 `apt-cache policy msitools`。本地已用 wixl -a x64 验证同一条链路可出 msi（9.5K，msiinfo tables/suminfo 全绿）。
+  - 配套修正：Release 清单里 msi 行改为按 `steps.msi.outputs.built` 条件输出，BLOCKED 轮写明原因与本地验证命令，不再留幽灵条目。
 - [x] 文档一致性审计：门面 + 全仓文档 82 项差异清点修复，落 docs/审计-文档一致性.zh.md（694140c；Go 8 模块 -race 全绿 + docs build 绿）
 - [x] docs 双语第二轮：子目录 architecture/overview.md、architecture/topology.md、guide/getting-started.md 配对与切换器（6c04999；3 份全量英文译文，zh 侧 .zh.md 重命名，交叉引用与 vitepress 导航同步重指；另修根目录 3 份 zh 切换器段落粘连，docs build 绿）
 - [x] 审核整改（2026-10-18 独立审核，见 docs/review/luna-review-2026-10-18.md）：
