@@ -130,7 +130,13 @@
       compose）+ 待拍板材料标注已结清。docs build 绿（vitepress v1.6.4，
       build complete in 5.12s）。
 
-- [ ] **DESIGN-001 · P1 · 策划视角的游戏拆解库 + 设计者玩家碰撞社区（用户令 2026-11-01：给游戏设计者使用,从策划角度拆解游戏,按设计归类同类,供策划参考讨论）**
+- [x] **DESIGN-001 · P1 · 策划视角的游戏拆解库 + 设计者玩家碰撞社区（用户令 2026-11-01：给游戏设计者使用,从策划角度拆解游戏,按设计归类同类,供策划参考讨论）**
+  - 完成（commit 90bc4d9,2026-11-14）：全栈四端一次落地——community 后端 + 网关反代 + web + mobile。
+  - 后端：services/community/internal/model/designmodel.go:16（品类白名单 5 个：MMORPG/MOBA/SLG/卡牌/放置,扩展品类加白名单即可）、designmodel.go:30（DesignBreakdown 15 字段=拆解模板全分节）、designseed.go:10（首批 12 篇种子：原神/魔兽世界/FF14/英雄联盟/王者荣耀/率土之滨/部落冲突/炉石/杀戮尖塔/游戏王 MD/剑与远征/最强蜗牛,仅公开设计事实+来源标注,不编造内部数值）;internal/logic/design/designlogic.go（发布登录即可/仅作者编辑 404 掩蔽/精选仅审核管理员/评论 1-500 字+敏感词）;internal/handler/routes.go:282-343（9 条路由：4 公开读+5 登录写）。
+  - 测试：internal/handler/design_integration_test.go TestRoutes_DesignBreakdowns（种子 12×5/品类计数/列表筛选分页/详情全文/发布校验/作者编辑/精选幂等/讨论区增删查/敏感词 400）,community+api-gateway `go test -race` 全绿;网关 internal/community/routes.go:73-83 代理 9 条+透传断言。
+  - web：apps/web-client/src/api/design.ts + pages/DesignHubPage.tsx（品类 chips/只看精选/卡片流/同类横向对比表 core_loop×monetization×fairness）+ pages/DesignBreakdownPage.tsx（模板分节全文+来源+讨论区登录发言/删己评论）+ App.tsx 路由 /design、/design/:id + 导航「设计拆解」;vitest 首次落地 apps/web-client/src/api/design.test.ts 10 用例全绿（契约锁 URL/方法/鉴权头/请求体）。
+  - mobile：apps/mobile-app/src/api/design.ts + app/design/index.tsx（品类 chips+精选开关+卡片流下拉刷新）+ app/design/[id].tsx（分节全文+讨论区底部输入）+ 社区 tab「设计拆解 ›」入口（app/(tabs)/community.tsx:307）。
+  - 门禁：community/api-gateway gofmt+vet+build+`go test -race` 绿;web tsc -b+eslint+vite build+vitest 10 绿;mobile tsc --noEmit+expo lint 绿。
   - 定位:spawn 新增内容类型「设计拆解」——把常见游戏从策划视角结构化拆解,按设计归类聚合,形成策划与玩家碰撞讨论的社区板块。
   - 拆解模板(每游戏一篇,结构统一):核心循环(core loop)/进度系统/经济系统(产出与回收)/战斗或玩法机制/养成线/社交与协作/付费设计(如有)/反作弊与公平性/值得抄的设计点/踩坑点。
   - 品类归类:MMORPG/MOBA/SLG/卡牌/放置/FPS/生存建造/休闲益智 等,同类游戏聚合页(横向对比表:循环差异/经济差异/养成差异)。
