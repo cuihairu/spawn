@@ -83,7 +83,9 @@ jobs:
         run: |
           set -uo pipefail
           sudo apt-get update -qq 2>&1 | tail -3
-          sudo apt-get install -y -qq rpm msitools zip unzip > /tmp/apt-install.log 2>&1 || true
+          # wixl 在 Debian 里是独立包（msitools 只带 msiinfo/msidump/msibuild），
+          # 只装 msitools 拿不到 wixl，msi 腿会莫名 BLOCKED。
+          sudo apt-get install -y -qq rpm msitools wixl zip unzip > /tmp/apt-install.log 2>&1 || true
           # command -v 多参数是"任一存在即 0"，逐个点名才能真正校验。
           for t in dpkg-deb rpmbuild rpm zip unzip; do command -v "$t"; done
           if command -v wixl >/dev/null; then
@@ -91,9 +93,8 @@ jobs:
           else
             # 装不上时留下可诊断痕迹：是包不存在、源未开，还是装完没有 wixl。
             echo "::warning::wixl missing - msi leg will be BLOCKED"
-            echo "--- apt install tail ---"
             tail -15 /tmp/apt-install.log
-            apt-cache policy msitools || true
+            apt-cache policy wixl msitools || true
           fi
 
       - name: Build deb + rpm (linux-amd64, linux-arm64)
