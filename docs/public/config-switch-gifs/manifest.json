@@ -1,0 +1,50 @@
+[
+  {
+    "key": "community-blocked-words",
+    "off": "docs/public/config-switch-gifs/community-blocked-words-off.png",
+    "on": "docs/public/config-switch-gifs/community-blocked-words-on.png",
+    "gif": "docs/public/config-switch-gifs/community-blocked-words.gif"
+  },
+  {
+    "key": "community-internal-token",
+    "off": "docs/public/config-switch-gifs/community-internal-token-off.png",
+    "on": "docs/public/config-switch-gifs/community-internal-token-on.png",
+    "gif": "docs/public/config-switch-gifs/community-internal-token.gif"
+  },
+  {
+    "key": "community-moderation-admin-ids",
+    "off": "docs/public/config-switch-gifs/community-moderation-admin-ids-off.png",
+    "on": "docs/public/config-switch-gifs/community-moderation-admin-ids-on.png",
+    "gif": "docs/public/config-switch-gifs/community-moderation-admin-ids.gif"
+  },
+  {
+    "key": "data-panel-analytics-admin-ids",
+    "off": "docs/public/config-switch-gifs/data-panel-analytics-admin-ids-off.png",
+    "on": "docs/public/config-switch-gifs/data-panel-analytics-admin-ids-on.png",
+    "gif": "docs/public/config-switch-gifs/data-panel-analytics-admin-ids.gif"
+  },
+  {
+    "key": "data-panel-internal-token",
+    "off": "docs/public/config-switch-gifs/data-panel-internal-token-off.png",
+    "on": "docs/public/config-switch-gifs/data-panel-internal-token-on.png",
+    "gif": "docs/public/config-switch-gifs/data-panel-internal-token.gif"
+  },
+  {
+    "key": "game-catalog-internal-token",
+    "off": "docs/public/config-switch-gifs/game-catalog-internal-token-off.png",
+    "on": "docs/public/config-switch-gifs/game-catalog-internal-token-on.png",
+    "gif": "docs/public/config-switch-gifs/game-catalog-internal-token.gif"
+  },
+  {
+    "key": "realtime-hub-internal-token",
+    "off": "docs/public/config-switch-gifs/realtime-hub-internal-token-off.png",
+    "on": "docs/public/config-switch-gifs/realtime-hub-internal-token-on.png",
+    "gif": "docs/public/config-switch-gifs/realtime-hub-internal-token.gif"
+  },
+  {
+    "key": "realtime-hub-push-webhook",
+    "off": "docs/public/config-switch-gifs/realtime-hub-push-webhook-off.png",
+    "on": "docs/public/config-switch-gifs/realtime-hub-push-webhook-on.png",
+    "gif": "docs/public/config-switch-gifs/realtime-hub-push-webhook.gif"
+  }
+]
