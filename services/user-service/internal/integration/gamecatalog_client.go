@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tappi/tappi/pkg/resilience"
 )
 
 type Recommendation struct {
@@ -35,6 +37,13 @@ type GameCatalogClient struct {
 	// internalToken GP-403 渠道归因 S2S（/internal/promo/clicks/:id/resolve）
 	// 的 X-Internal-Token 守卫；空 = 归因按自然流量处理。
 	internalToken string
+
+	// breaker CLN-004 统一韧性抽象：GetRecommendations 读路径的熔断器
+	//（默认参数，与 content-service 客户端一致）。ResolvePromoClick
+	// 保持单次尝试（注册路径不重试，失败按自然流量处理）。
+	breaker *resilience.Breaker
+	// sleep 退避休眠注入点（测试用）。
+	sleep func(time.Duration)
 }
 
 func NewGameCatalogClient(baseURL string, timeout time.Duration) *GameCatalogClient {
@@ -52,10 +61,30 @@ func NewGameCatalogClient(baseURL string, timeout time.Duration) *GameCatalogCli
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
+		breaker: resilience.NewBreaker(resilience.DefaultMaxFailures, resilience.DefaultCooldown),
 	}
 }
 
 func (c *GameCatalogClient) GetRecommendations(ctx context.Context, params RecommendationParams) ([]Recommendation, error) {
+	return resilience.Call(ctx, resilience.CallOptions{
+		Retry:   resilience.DefaultRetryConfig(),
+		Breaker: c.breaker,
+		Sleep:   c.sleepOrTimeSleep(),
+	}, func(ctx context.Context) ([]Recommendation, error) {
+		return c.getRecommendationsOnce(ctx, params)
+	})
+}
+
+func (c *GameCatalogClient) sleepOrTimeSleep() func(time.Duration) {
+	if c.sleep != nil {
+		return c.sleep
+	}
+	return time.Sleep
+}
+
+// getRecommendationsOnce 单次推荐查询（错误按韧性分类：网络/5xx/429 瞬时可重试，
+// 其余 4xx 请求侧，契约异常计入熔断不重试）。
+func (c *GameCatalogClient) getRecommendationsOnce(ctx context.Context, params RecommendationParams) ([]Recommendation, error) {
 	endpoint := fmt.Sprintf("%s/games/recommendations", c.baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -76,20 +105,26 @@ func (c *GameCatalogClient) GetRecommendations(ctx context.Context, params Recom
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, resilience.NewError(resilience.KindCanceled, fmt.Sprintf("game catalog request failed: %v", err))
+		}
+		return nil, resilience.NewError(resilience.KindTransient, fmt.Sprintf("game catalog request failed: %v", err))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("game catalog %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, resilience.NewError(
+			resilience.StatusKind(resp.StatusCode),
+			fmt.Sprintf("game catalog %d: %s", resp.StatusCode, strings.TrimSpace(string(body))),
+		)
 	}
 
 	var payload struct {
 		Games []Recommendation `json:"games"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, err
+		return nil, resilience.WrapError(resilience.KindContract, err, fmt.Sprintf("game catalog decode: %v", err))
 	}
 	return payload.Games, nil
 }

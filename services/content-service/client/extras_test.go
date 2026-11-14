@@ -7,19 +7,21 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/tappi/tappi/pkg/resilience"
 )
 
 // TestNewGameCatalogClient_NormalizesInvalidOptions 零值/负值注入项全部被
 // 构造函数归一化：maxAttempts<1→1、负退避→0、nil sleep/breaker/metrics 走默认。
 func TestNewGameCatalogClient_NormalizesInvalidOptions(t *testing.T) {
 	c := newGameCatalogClient("http://127.0.0.1:1", time.Second, clientOptions{
-		retry: retryConfig{maxAttempts: 0, baseDelay: -time.Second, maxDelay: -time.Second},
+		retry: retryConfig{MaxAttempts: 0, BaseDelay: -time.Second, MaxDelay: -time.Second},
 	})
 
-	if c.retry.maxAttempts != 1 {
-		t.Fatalf("maxAttempts = %d, want 1", c.retry.maxAttempts)
+	if c.retry.MaxAttempts != 1 {
+		t.Fatalf("MaxAttempts = %d, want 1", c.retry.MaxAttempts)
 	}
-	if c.retry.baseDelay != 0 || c.retry.maxDelay != 0 {
+	if c.retry.BaseDelay != 0 || c.retry.MaxDelay != 0 {
 		t.Fatalf("negative delays not normalized: %+v", c.retry)
 	}
 	if c.sleep == nil {
@@ -30,9 +32,6 @@ func TestNewGameCatalogClient_NormalizesInvalidOptions(t *testing.T) {
 	}
 	if c.metrics == nil {
 		t.Fatal("metrics must default to defaultMetrics")
-	}
-	if c.breaker.onChange == nil {
-		t.Fatal("default breaker must get metrics attached via onChange")
 	}
 }
 
@@ -48,7 +47,7 @@ func TestGetGameById_CanceledDuringBackoff(t *testing.T) {
 	defer cancel()
 
 	c := newGameCatalogClient(server.URL, time.Second, clientOptions{
-		retry: retryConfig{maxAttempts: 5, baseDelay: time.Hour},
+		retry: retryConfig{MaxAttempts: 5, BaseDelay: time.Hour},
 		sleep: func(time.Duration) { cancel() }, // 首次退避即取消
 	})
 
@@ -69,9 +68,8 @@ func TestGetGameById_DoFailsWithCanceledContext(t *testing.T) {
 
 	c := NewGameCatalogClient(server.URL, time.Second)
 	_, err := c.getGameByIdOnce(ctx, "g-1")
-	ce, ok := err.(*callError)
-	if !ok || ce.kind != kindCanceled {
-		t.Fatalf("err = %v (%T), want kindCanceled callError", err, err)
+	if resilience.KindOf(err) != kindCanceled {
+		t.Fatalf("err = %v (%T), want kindCanceled", err, err)
 	}
 }
 
@@ -92,9 +90,8 @@ func TestGetGameById_TruncatedResponseBody(t *testing.T) {
 
 	c := NewGameCatalogClient(server.URL, 5*time.Second)
 	_, err := c.GetGameById(context.Background(), "g-1")
-	ce, ok := err.(*callError)
-	if !ok || ce.kind != kindTransient {
-		t.Fatalf("err = %v (%T), want kindTransient callError", err, err)
+	if resilience.KindOf(err) != kindTransient {
+		t.Fatalf("err = %v (%T), want kindTransient", err, err)
 	}
 }
 
@@ -103,9 +100,8 @@ func TestGetGameById_TruncatedResponseBody(t *testing.T) {
 func TestGetGameByIdOnce_InvalidGameId(t *testing.T) {
 	c := NewGameCatalogClient("http://127.0.0.1:1", time.Second)
 	_, err := c.getGameByIdOnce(context.Background(), "bad\x00id")
-	ce, ok := err.(*callError)
-	if !ok || ce.kind != kindCanceled {
-		t.Fatalf("err = %v (%T), want kindCanceled callError", err, err)
+	if resilience.KindOf(err) != kindCanceled {
+		t.Fatalf("err = %v (%T), want kindCanceled", err, err)
 	}
 }
 
@@ -115,7 +111,7 @@ func TestStatusForInternalMetrics_Mappings(t *testing.T) {
 	if got := statusForInternalMetrics(errors.New("plain")); got != "unknown_error" {
 		t.Fatalf("plain error → %q, want unknown_error", got)
 	}
-	if got := statusForInternalMetrics(&callError{kind: kindCanceled}); got != "canceled" {
+	if got := statusForInternalMetrics(resilience.NewError(kindCanceled, "")); got != "canceled" {
 		t.Fatalf("canceled → %q, want canceled", got)
 	}
 }
@@ -126,62 +122,7 @@ func TestResultLabel_Mappings(t *testing.T) {
 	if got := resultLabel(errors.New("plain")); got != resultUnknownError {
 		t.Fatalf("plain error → %q, want %q", got, resultUnknownError)
 	}
-	if got := resultLabel(&callError{kind: kindCanceled}); got != resultCanceled {
+	if got := resultLabel(resilience.NewError(kindCanceled, "")); got != resultCanceled {
 		t.Fatalf("canceled → %q, want %q", got, resultCanceled)
-	}
-}
-
-// TestBreaker_SetOnChangeAndHalfOpenProbe 白盒驱动 half-open：
-// 直接置 half-open 且无探测在途 → 放行一个探测；第二个探测被拒。
-func TestBreaker_SetOnChangeAndHalfOpenProbe(t *testing.T) {
-	var transitions []breakerState
-	b := NewBreaker(1, time.Minute)
-	b.SetOnChange(func(s breakerState) { transitions = append(transitions, s) })
-
-	// maxFailures=1：一次失败即 open，触发回调
-	b.Failure()
-	if len(transitions) != 1 || transitions[0] != stateOpen {
-		t.Fatalf("transitions = %v, want [open]", transitions)
-	}
-
-	// 白盒置为 half-open 且无探测在途
-	b.mu.Lock()
-	b.state = stateHalfOpen
-	b.probing = false
-	b.mu.Unlock()
-
-	if !b.Allow() {
-		t.Fatal("first half-open probe must be allowed")
-	}
-	if b.Allow() {
-		t.Fatal("second concurrent probe must be rejected")
-	}
-}
-
-// TestBreakerStateNames_Unknown 非法状态值 → "unknown"。
-func TestBreakerStateNames_Unknown(t *testing.T) {
-	if got := fromStateName(breakerState(42)); got != "unknown" {
-		t.Fatalf("stateName = %q, want unknown", got)
-	}
-	if got := transitionStateName(breakerState(42)); got != "unknown" {
-		t.Fatalf("transitionStateName = %q, want unknown", got)
-	}
-}
-
-// TestBackoffDelay_CapsInsideDoublingLoop 倍增过程中命中 maxDelay 即返回
-// （走循环内封顶分支）。
-func TestBackoffDelay_CapsInsideDoublingLoop(t *testing.T) {
-	r := retryConfig{baseDelay: time.Millisecond, maxDelay: 3 * time.Millisecond}
-	if got := r.backoffDelay(10); got != 3*time.Millisecond {
-		t.Fatalf("backoffDelay(10) = %v, want 3ms cap", got)
-	}
-}
-
-// TestBackoffDelay_FirstAttemptBaseOverMax failedAttempts=1 时循环不执行，
-// baseDelay 本身超过 maxDelay → 走循环后封顶分支。
-func TestBackoffDelay_FirstAttemptBaseOverMax(t *testing.T) {
-	r := retryConfig{baseDelay: 10 * time.Millisecond, maxDelay: 5 * time.Millisecond}
-	if got := r.backoffDelay(1); got != 5*time.Millisecond {
-		t.Fatalf("backoffDelay(1) = %v, want 5ms cap", got)
 	}
 }

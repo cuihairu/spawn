@@ -402,16 +402,18 @@ func TestRoutes_Recommendations(t *testing.T) {
 		t.Fatal("must not call game-catalog for missing user")
 	}
 
-	// 上游失败 → envelope 502
-	status, body, _ = do(t, http.MethodGet, base+"/users/1/recommendations?genres=err-trigger", token, "")
-	if status != http.StatusOK || code(t, body) != 502 {
-		t.Fatalf("reco upstream fail: status=%d body=%v", status, body)
-	}
-
-	// limit 溢出被钳制到 1..20（20 → 上游收到 20）
+	// limit 溢出被钳制到 1..20（20 → 上游收到 20）。
+	// 须在 err-trigger 熔断用例之前：瞬时错误重试耗尽会打开熔断器，
+	// 其后的调用快速失败、不再触达上游。
 	status, _, _ = do(t, http.MethodGet, base+"/users/1/recommendations?limit=99", token, "")
 	if status != http.StatusOK || seen["limit"] != "20" {
 		t.Fatalf("clamp limit: status=%d seen=%v", status, seen)
+	}
+
+	// 上游失败 → envelope 502（瞬时错误重试后仍失败，熔断器转 open）
+	status, body, _ = do(t, http.MethodGet, base+"/users/1/recommendations?genres=err-trigger", token, "")
+	if status != http.StatusOK || code(t, body) != 502 {
+		t.Fatalf("reco upstream fail: status=%d body=%v", status, body)
 	}
 
 	// 坏 limit → Parse 400

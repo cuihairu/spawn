@@ -6,6 +6,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/mattn/go-sqlite3 v1.14.52
+	github.com/tappi/tappi/pkg/resilience v0.0.0-00010101000000-000000000000
 	github.com/zeromicro/go-zero v1.10.3
 	golang.org/x/crypto v0.58.0
 )
@@ -57,3 +58,5 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
+
+replace github.com/tappi/tappi/pkg/resilience => ../../pkg/resilience

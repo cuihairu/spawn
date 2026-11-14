@@ -2,17 +2,19 @@ package client
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/tappi/tappi/pkg/resilience"
+	"github.com/tappi/tappi/services/content-service/internal/metrics"
 )
 
 // GetGameById 结果分类标签。
 const (
-	resultSuccess      = "success"
-	resultBreakerOpen  = "breaker_open"
-	resultTransient    = "transient_error"
-	resultBadRequest   = "bad_request"
-	resultCanceled     = "canceled"
-	resultContractErr  = "contract_error"
-	resultUnknownError = "unknown_error"
+	resultSuccess      = string(resilience.ResultSuccess)
+	resultBreakerOpen  = string(resilience.ResultBreakerOpen)
+	resultTransient    = string(resilience.ResultTransient)
+	resultBadRequest   = string(resilience.ResultBadRequest)
+	resultCanceled     = string(resilience.ResultCanceled)
+	resultContractErr  = string(resilience.ResultContract)
+	resultUnknownError = string(resilience.ResultUnknown)
 )
 
 // clientMetrics 跨服务调用指标集合（ENHANCEMENT #3：Prometheus 监控跨服务调用）。
@@ -73,41 +75,33 @@ var defaultMetrics = newClientMetrics(prometheus.DefaultRegisterer)
 
 // resultLabel 将调用错误映射为结果分类标签。
 func resultLabel(err error) string {
-	callErr, ok := err.(*callError)
-	if !ok {
-		return resultUnknownError
-	}
-	switch callErr.kind {
-	case kindTransient:
-		return resultTransient
-	case kindBadRequest:
-		return resultBadRequest
-	case kindCanceled:
-		return resultCanceled
-	case kindContract:
-		return resultContractErr
+	return string(resilience.ResultOf(err))
+}
+
+// statusForInternalMetrics 将错误映射为内部 metrics 的状态标签。
+func statusForInternalMetrics(err error) string {
+	switch resilience.KindOf(err) {
+	case resilience.KindTransient:
+		return "transient_error"
+	case resilience.KindBadRequest:
+		return "bad_request"
+	case resilience.KindCanceled:
+		return "canceled"
+	case resilience.KindContract:
+		return "parse_error"
 	default:
-		return resultUnknownError
+		return "unknown_error"
 	}
 }
 
-// attachBreakerMetrics 将熔断器状态迁移上报到 gauge。
-// 回调由 Breaker 在锁外同步调用，只做 gauge 写入（prometheus 类型自身并发安全）。
+// attachBreakerMetrics 将熔断器状态迁移上报到 gauge 与内部指标。
+// 回调由 Breaker 在锁外同步调用，只做指标写入（prometheus 类型自身并发安全）。
 // 状态值映射见 GaugeOpts Help：0=closed 1=half-open 2=open。
 func attachBreakerMetrics(b *Breaker, m *clientMetrics) {
-	b.onChange = func(s breakerState) {
-		m.breakerState.Set(breakerStateValue(s))
-	}
-}
-
-// breakerStateValue 将内部状态枚举映射为 gauge 语义值。
-func breakerStateValue(s breakerState) float64 {
-	switch s {
-	case stateOpen:
-		return 2
-	case stateHalfOpen:
-		return 1
-	default:
-		return 0
-	}
+	b.SetOnTransition(func(from, to breakerState) {
+		v := breakerStateValue(to)
+		m.breakerState.Set(v)
+		metrics.CircuitBreakerState.WithLabelValues("game_catalog").Set(v)
+		metrics.CircuitBreakerTransitionsTotal.WithLabelValues("game_catalog", from.String(), to.String()).Inc()
+	})
 }
