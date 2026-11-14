@@ -8,6 +8,8 @@ import CommunityPage from './pages/CommunityPage'
 import GuidesPage from './pages/GuidesPage'
 import GuideDetailPage from './pages/GuideDetailPage'
 import GuideEditorPage from './pages/GuideEditorPage'
+import DesignHubPage from './pages/DesignHubPage'
+import DesignBreakdownPage from './pages/DesignBreakdownPage'
 import GamesPage from './pages/GamesPage'
 import GameDetailPage from './pages/GameDetailPage'
 import NotificationsPage from './pages/NotificationsPage'
@@ -142,6 +144,9 @@ function App() {
               <Link to="/guides" className="nav-link">
                 攻略
               </Link>
+              <Link to="/design" className="nav-link">
+                设计拆解
+              </Link>
               {auth ? (
                 <>
                   <Link to="/notifications" className="nav-bell" aria-label={`未读通知 ${unreadNotifications} 条`}>
@@ -186,6 +191,9 @@ function App() {
           <Routes>
             <Route path="/" element={<HomePage auth={auth} onAuthChange={handleAuthChange} />} />
             <Route path="/discover" element={<DiscoverPage />} />
+            {/* DESIGN-001 设计拆解：品类聚合入口 + 拆解详情（讨论区登录态透传） */}
+            <Route path="/design" element={<DesignHubPage />} />
+            <Route path="/design/:id" element={<DesignBreakdownPage auth={auth} />} />
             <Route path="/games" element={<GamesPage />} />
             <Route path="/games/:id" element={<GameDetailPage token={auth?.token} />} />
             <Route

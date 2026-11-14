@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	comment "github.com/tappi/tappi/services/community/internal/handler/comment"
+	design "github.com/tappi/tappi/services/community/internal/handler/design"
 	follow "github.com/tappi/tappi/services/community/internal/handler/follow"
 	message "github.com/tappi/tappi/services/community/internal/handler/message"
 	moderation "github.com/tappi/tappi/services/community/internal/handler/moderation"
@@ -275,6 +276,69 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 				Handler: topic.GetTopicHandler(serverCtx),
 			},
 		},
+		rest.WithPrefix("/api/v1"),
+	)
+
+	// DESIGN-001 设计拆解域：公开读（品类/列表/详情/评论列表）。
+	server.AddRoutes(
+		[]rest.Route{
+			{
+				Method:  http.MethodGet,
+				Path:    "/design/categories",
+				Handler: design.ListCategoriesHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/design/breakdowns",
+				Handler: design.ListBreakdownsHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/design/breakdowns/:id",
+				Handler: design.GetBreakdownHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/design/breakdowns/:id/comments",
+				Handler: design.ListDesignCommentsHandler(serverCtx),
+			},
+		},
+		rest.WithPrefix("/api/v1"),
+	)
+
+	// DESIGN-001 设计拆解域：登录写（发布/编辑/精选/评论/删评论），
+	// 作者与审核管理员判定在 logic 层。
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPost,
+					Path:    "/design/breakdowns",
+					Handler: design.CreateBreakdownHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/design/breakdowns/:id",
+					Handler: design.UpdateBreakdownHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/design/breakdowns/:id/feature",
+					Handler: design.FeatureBreakdownHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/design/breakdowns/:id/comments",
+					Handler: design.CreateDesignCommentHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodDelete,
+					Path:    "/design/breakdowns/:id/comments/:cid",
+					Handler: design.DeleteDesignCommentHandler(serverCtx),
+				},
+			}...,
+		),
 		rest.WithPrefix("/api/v1"),
 	)
 

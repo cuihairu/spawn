@@ -7,6 +7,7 @@ export * from './games';
 export * from './guides';
 export * from './comments';
 export * from './community';
+export * from './design';
 export * from './notifications';
 export * from './media';
 export * from './feed';

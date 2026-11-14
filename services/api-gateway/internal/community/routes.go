@@ -68,5 +68,17 @@ func RegisterCommunityProxyRoutes(server *rest.Server, serverCtx *svc.ServiceCon
 		{Method: http.MethodPost, Path: "/api/v1/posts/:id/report", Handler: h},
 		{Method: http.MethodGet, Path: "/api/v1/moderation/reports", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/moderation/reports/:id/handle", Handler: h},
+
+		// DESIGN-001 设计拆解：品类/列表/详情/评论列表公开读；发布/编辑/
+		// 精选/评论写端点登录与管理员语义由 community 校验
+		{Method: http.MethodGet, Path: "/api/v1/design/categories", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/design/breakdowns", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/design/breakdowns/:id", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/design/breakdowns/:id/comments", Handler: h},
+		{Method: http.MethodPost, Path: "/api/v1/design/breakdowns", Handler: h},
+		{Method: http.MethodPut, Path: "/api/v1/design/breakdowns/:id", Handler: h},
+		{Method: http.MethodPost, Path: "/api/v1/design/breakdowns/:id/feature", Handler: h},
+		{Method: http.MethodPost, Path: "/api/v1/design/breakdowns/:id/comments", Handler: h},
+		{Method: http.MethodDelete, Path: "/api/v1/design/breakdowns/:id/comments/:cid", Handler: h},
 	})
 }
