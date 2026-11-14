@@ -53,6 +53,17 @@ func (u *Upstream) Handler() http.HandlerFunc {
 	}
 }
 
+// HandlerFor 固定路径转发：网关路径与上游路径不同名时用它。网关的路由表
+// 全局唯一（同 method+path 重复注册会让 rest server 启动时 panic），而上游
+// 服务的对外路径由它自己决定（如 courier-adapter 与 payments 各自都把审计
+// 回读挂在 /admin/audit）；两组同名路径经网关必须各占一个域内路径
+// （/admin/courier/audit、/admin/payments/audit），转发时还原成上游路径。
+func (u *Upstream) HandlerFor(upstreamPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u.serveHTTPPath(w, r, upstreamPath)
+	}
+}
+
 // StreamingHandler GP-105 包体通道（合作方上传/玩家受控下载）：不缓冲请求体、
 // 不设整体超时，流式透传——受 1 MiB 缓冲与整体超时约束的 JSON 反代承载不了
 // GB 级包体。大小上限（2 GiB）与鉴权由 game-catalog 侧强制；请求体定长优先
@@ -97,8 +108,14 @@ func (u *Upstream) serveHTTPStreaming(w http.ResponseWriter, r *http.Request) {
 const maxProxyBody = 1 << 20 // 1 MiB
 
 func (u *Upstream) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	u.serveHTTPPath(w, r, r.URL.Path)
+}
+
+// serveHTTPPath 是反代的公共实现；upstreamPath 为上游侧路径（同名转发传
+// r.URL.Path，HandlerFor 传固定路径）。
+func (u *Upstream) serveHTTPPath(w http.ResponseWriter, r *http.Request, upstreamPath string) {
 	upstreamURL := *u.baseURL
-	upstreamURL.Path = strings.TrimRight(u.baseURL.Path, "/") + r.URL.Path
+	upstreamURL.Path = strings.TrimRight(u.baseURL.Path, "/") + upstreamPath
 	upstreamURL.RawQuery = r.URL.RawQuery
 
 	// 缓冲请求体再转发：直接转发 r.Body 时长度未知，Go 会改用 chunked 编码，

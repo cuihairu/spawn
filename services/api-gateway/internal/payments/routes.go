@@ -46,7 +46,9 @@ func RegisterPaymentsRoutes(server *rest.Server, serverCtx *svc.ServiceContext) 
 		{Method: http.MethodGet, Path: "/admin/orders/:orderId", Handler: h},
 		{Method: http.MethodPost, Path: "/admin/orders/:orderId/refund", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/refunds", Handler: h},
-		{Method: http.MethodGet, Path: "/admin/audit", Handler: h},
+		// 审计回读挂域内路径：上游路径（/admin/audit）与 games 组（game-catalog）
+		// 的审计同名，走 HandlerFor 转发时还原成上游路径。
+		{Method: http.MethodGet, Path: "/admin/payments/audit", Handler: upstream.HandlerFor("/admin/audit")},
 		// GP-205 厂商对账单：生成/列表/详情/结算单录入/确认/导出。
 		{Method: http.MethodPost, Path: "/admin/statements", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/statements", Handler: h},

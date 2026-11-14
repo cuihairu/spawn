@@ -39,6 +39,8 @@ func RegisterCourierAdapterRoutes(server *rest.Server, serverCtx *svc.ServiceCon
 		{Method: http.MethodGet, Path: "/games/:id/support/faq", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/games/:id/mapping", Handler: h},
 		{Method: http.MethodPut, Path: "/admin/games/:id/mapping", Handler: h},
-		{Method: http.MethodGet, Path: "/admin/audit", Handler: h},
+		// 审计回读挂域内路径：上游路径（/admin/audit）与 games 组（game-catalog）
+		// 的审计同名，走 HandlerFor 转发时还原成上游路径。
+		{Method: http.MethodGet, Path: "/admin/courier/audit", Handler: upstream.HandlerFor("/admin/audit")},
 	})
 }
