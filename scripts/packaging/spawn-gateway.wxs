@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- spawn-gateway 的 WiX v3 安装包源（wixl 可离线编译，不依赖 Windows runner 的
+     WiX SDK）。nightly 滚动构建用，版本号固定 0.0.0 —— 不自行判断该发什么版本。
+     生成时 sed 替换 @VER@/@UPG@/@EXEGUID@/@CFGUID@/@BIN@/@CFG@。 -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="spawn-gateway" Language="1033"
+           Version="@VER@" Manufacturer="spawn" UpgradeCode="@UPG@">
+    <Package InstallerVersion="300" Compressed="yes" InstallScope="perMachine" />
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLDIR" Name="spawn-gateway">
+          <Component Id="Executable" Guid="@EXEGUID@">
+            <File Id="GatewayExe" Source="@BIN@" KeyPath="yes" />
+          </Component>
+          <Component Id="ConfigFile" Guid="@CFGUID@">
+            <File Id="GatewayConfig" Source="@CFG@" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+    <Feature Id="ProductFeature" Title="spawn-gateway" Level="1">
+      <ComponentRef Id="Executable" />
+      <ComponentRef Id="ConfigFile" />
+    </Feature>
+  </Product>
+</Wix>

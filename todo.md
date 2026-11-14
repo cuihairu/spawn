@@ -107,6 +107,12 @@
 - [x] ES 全文搜索保留为规模化升级路径，community README 长期项已改写说明（574ae0d）
 - [x] Actions 版本升级：checkout/setup-node/setup-go/pnpm-action 全部升主版本，CI/docs 双绿（6d12e81；CI 绿）
 - [x] Ubuntu 26 迁移评估：钉 ubuntu-24.04 消除漂移，nightly CGO gcc 为唯一镜像侧依赖，canary 与升版时间点已记录（abf2190）
+- [x] nightly 原生安装包：api-gateway 的 linux deb/rpm（amd64+arm64）、windows exe（zip）、msi 进入滚动 nightly 资产（工作流与打包脚本见 `.github/workflows/nightly.yml`、`scripts/nightly-packages.sh`、`scripts/packaging/spawn-gateway.wxs`）。
+  - 选型：api-gateway 是唯一不依赖 mattn/go-sqlite3（CGO）的服务，`CGO_ENABLED=0` 纯 Go 可静态交叉编译出 linux-amd64/arm64 与 windows-amd64；其余六个服务内嵌 SQLite 驱动，保持 amd64 裸二进制口径，如实不出安装包。
+  - deb/rpm：`dpkg-deb` + `rpmbuild` 单脚本，装 `/usr/local/bin/spawn-gateway`、`/etc/spawn-gateway/gateway-api.yaml` 与 systemd unit；版本 `0.0.0~nightly<date>.<sha7>`（deb）/ `0.0.0` + Release（rpm），仅滚动构建标记，不构成正式版本。
+  - msi：ubuntu runner 上 `wixl`（msitools）离线编译 WiX v3 源，`-a x64` 对齐 PE32+ 载荷；装不上 msitools 时 msi 腿在 CI 里显式 warning + `built=false`，不硬造空包。
+  - 冒烟：deb 包内二进制 `--help` rc=0（真实可执行）；rpm 元数据、deb control、zip 清单、msi `msiinfo tables|suminfo` 逐项校验；msi 只验结构不安装。
+  - 本机全链预演通过：deb 6.8M/6.1M、rpm 5.6M/5.0M、exe zip 6.9M、msi 9.5K（Template x64;1033）。首跑 CI 证据待 gh workflow run 后回填（run id + 资产清单与字节数）。
 - [x] 文档一致性审计：门面 + 全仓文档 82 项差异清点修复，落 docs/审计-文档一致性.zh.md（694140c；Go 8 模块 -race 全绿 + docs build 绿）
 - [x] docs 双语第二轮：子目录 architecture/overview.md、architecture/topology.md、guide/getting-started.md 配对与切换器（6c04999；3 份全量英文译文，zh 侧 .zh.md 重命名，交叉引用与 vitepress 导航同步重指；另修根目录 3 份 zh 切换器段落粘连，docs build 绿）
 - [x] 审核整改（2026-10-18 独立审核，见 docs/review/luna-review-2026-10-18.md）：

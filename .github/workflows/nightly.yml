@@ -61,6 +61,97 @@ jobs:
           tar -C dist -czf dist/spawn-web-client-linux-amd64.tar.gz spawn-web-client
           rm -rf dist/spawn-web-client
 
+      # ---- 原生安装包（deb/rpm/exe/msi）----------------------------------
+      # 打包单元 = api-gateway：它是唯一不依赖 mattn/go-sqlite3（CGO）的服务，
+      # 可 CGO_ENABLED=0 纯 Go 交叉编译出 linux-amd64/arm64 与 windows-amd64
+      # 三份静态产物。其余六个服务内嵌 SQLite 驱动（CGO），保持 amd64 裸二进制
+      # 口径，不进安装包。
+      - name: Build api-gateway for native packages (pure Go cross)
+        run: |
+          mkdir -p dist/pkg
+          (cd services/api-gateway &&
+            for target in linux/amd64 linux/arm64 windows/amd64; do
+              os="${target%/*}"; arch="${target#*/}"
+              echo "build gateway $os/$arch"
+              CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+                go build -trimpath -ldflags '-s -w' \
+                -o "../../dist/pkg/gateway-$os-$arch" gateway.go
+            done)
+          file dist/pkg/*
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm msitools zip unzip >/dev/null
+          command -v dpkg-deb rpmbuild rpm wixl zip unzip
+
+      - name: Build deb + rpm (linux-amd64, linux-arm64)
+        run: |
+          set -euo pipefail
+          DATE=$(date -u +%Y%m%d)
+          SHA7="${GITHUB_SHA::7}"
+          BUILD_TAG="nightly${DATE}.${SHA7}"
+          for arch in amd64 arm64; do
+            bash scripts/nightly-packages.sh \
+              spawn-gateway "dist/pkg/gateway-linux-$arch" \
+              services/api-gateway/etc linux-$arch dist \
+              0.0.0 "$BUILD_TAG"
+          done
+
+      # windows exe：zip 打包的原生可执行文件（与 msi 安装器并列提供）
+      - name: Package windows exe (zip)
+        run: |
+          set -euo pipefail
+          cd dist/pkg
+          mv gateway-windows-amd64 spawn-gateway.exe
+          zip -q -9 ../spawn-gateway-nightly-windows-amd64.zip spawn-gateway.exe
+          cd ..
+
+      # msi：wixl（msitools）离线编译 WiX v3 源，不依赖 Windows runner 的 WiX SDK。
+      # 若 runner 上装不上 msitools，msi 腿如实 BLOCKED（产物缺省），不硬造空包。
+      - name: Build msi (wixl)
+        id: msi
+        run: |
+          set -euo pipefail
+          if ! command -v wixl >/dev/null 2>&1; then
+            echo "::warning::wixl/msitools unavailable — msi leg BLOCKED (not fabricated)"
+            echo "built=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          DATE=$(date -u +%Y%m%d)
+          SHA7="${GITHUB_SHA::7}"
+          UPG=$(cat /proc/sys/kernel/random/uuid)
+          EXEG=$(python3 -c "import uuid;print(uuid.uuid4())")
+          CFGD=$(python3 -c "import uuid;print(uuid.uuid4())")
+          sed -e "s|@VER@|0.0.0|" -e "s|@UPG@|$UPG|" \
+              -e "s|@EXEGUID@|$EXEG|" -e "s|@CFGUID@|$CFGD|" \
+              -e "s|@BIN@|spawn-gateway.exe|" \
+              -e "s|@CFG@|gateway-api.yaml|" \
+              scripts/packaging/spawn-gateway.wxs > dist/pkg/gateway.wxs
+          cp services/api-gateway/etc/gateway-api.yaml dist/pkg/gateway-api.yaml
+          # -a x64：载荷是 PE32+ x64 二进制，Template 标 x64 与之一致
+          (cd dist/pkg && wixl -a x64 -o ../spawn-gateway-nightly-windows-amd64.msi gateway.wxs)
+          echo "built=true" >> "$GITHUB_OUTPUT"
+
+      # 冒烟：deb 包内二进制 --help（真实可执行）；rpm 校验元数据；msi 只验结构不安装。
+      - name: Smoke native packages
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/debx && mkdir /tmp/debx
+          dpkg-deb -x dist/spawn-gateway-nightly-linux-amd64.deb /tmp/debx
+          /tmp/debx/usr/local/bin/spawn-gateway --help
+          rpm -qip dist/spawn-gateway-nightly-linux-amd64.rpm | head -5
+          dpkg-deb -f dist/spawn-gateway-nightly-linux-amd64.deb Package Version Architecture
+          dpkg-deb -f dist/spawn-gateway-nightly-linux-arm64.deb Package Version Architecture
+          unzip -l dist/spawn-gateway-nightly-windows-amd64.zip
+          if [ "${{ steps.msi.outputs.built }}" = "true" ]; then
+            msiinfo tables dist/spawn-gateway-nightly-windows-amd64.msi
+            msiinfo suminfo dist/spawn-gateway-nightly-windows-amd64.msi | head -8
+          fi
+
+      - name: Clean package intermediates
+        run: rm -rf dist/pkg
+
       - name: Generate SHA256SUMS
         run: |
           cd dist
@@ -84,6 +175,9 @@ jobs:
             echo
             echo "- \`spawn-<服务名>-linux-amd64\` ×7：后端服务二进制（CGO 构建，内嵌 SQLite 驱动）。下载后 \`chmod +x\` 直接运行，配置文件在仓库各服务 \`etc/\` 目录；\`DATASOURCE\` 注入 MySQL 连接串可切换存储。"
             echo "- \`spawn-web-client-linux-amd64.tar.gz\`：Web 主站静态产物，解压后任意静态服务器可托管。"
+            echo "- \`spawn-gateway-nightly-linux-{amd64,arm64}.deb|.rpm\`：api-gateway 原生安装包（systemd unit + \`/etc/spawn-gateway/gateway-api.yaml\`）。\`sudo dpkg -i\` / \`sudo rpm -i\` 安装，装后 \`systemctl start spawn-gateway\`；卸载 \`dpkg -r\` / \`rpm -e\`。"
+            echo "- \`spawn-gateway-nightly-windows-amd64.zip\`：api-gateway Windows 原生 exe（解压即可运行，配置同仓库 \`services/api-gateway/etc/gateway-api.yaml\`）。"
+            echo "- \`spawn-gateway-nightly-windows-amd64.msi\`：api-gateway Windows 安装包（安装到 Program Files\\spawn-gateway，含配置样例）。"
             echo "- \`SHA256SUMS.txt\`：全部资产校验和，下载后于同目录 \`sha256sum -c SHA256SUMS.txt\` 核对。"
             echo
             echo "## 口径说明"
@@ -91,6 +185,8 @@ jobs:
             echo "- tag 固定为 \`nightly\`，滚动覆盖，无兼容性与可用性保障，不建议生产使用。"
             echo "- 移动端 APK 不在本交付面（Android 出包依赖本地 gradle 流程，见开发指南）。"
             echo "- 服务容器镜像不在此发布，按 \`services/*/Dockerfile\` 自行构建。"
+            echo "- 原生安装包只覆盖 api-gateway（纯 Go，可静态交叉编译）；其余六个服务内嵌 SQLite 驱动（CGO），以 amd64 裸二进制提供，不单独出安装包。"
+            echo "- 安装包版本号为 \`0.0.0~nightly<日期>.<sha7>\`（deb）/ \`0.0.0-nightly<日期>.<sha7>\`（rpm），属滚动构建标记，不构成正式版本。"
             echo "- Actions 的 workflow artifacts 为构建中间产物，交付面以本 Release 资产为准。"
           } > notes.md
 
