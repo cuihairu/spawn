@@ -154,6 +154,14 @@ jobs:
           dpkg-deb -x dist/spawn-gateway-nightly-linux-amd64.deb /tmp/debx
           /tmp/debx/usr/local/bin/spawn-gateway --help
           rpm -qip dist/spawn-gateway-nightly-linux-amd64.rpm | head -5
+          # 逐架构断言：载荷 arch 对而元数据错（rpmbuild 漏传 --target）会让 arm64
+          # 主机拒装。生成时脚本已挡一道，这里再验一次交付面资产本身。
+          for arch in amd64 arm64; do
+            exp=$( [ "$arch" = amd64 ] && echo x86_64 || echo aarch64 )
+            got=$(rpm -qp --queryformat '%{ARCH}\n' "dist/spawn-gateway-nightly-linux-${arch}.rpm")
+            echo "rpm ${arch}: ${got}（期望 ${exp}）"
+            [ "$got" = "$exp" ] || { echo "::error::rpm 架构不符 ${got} != ${exp}"; exit 1; }
+          done
           dpkg-deb -f dist/spawn-gateway-nightly-linux-amd64.deb Package Version Architecture
           dpkg-deb -f dist/spawn-gateway-nightly-linux-arm64.deb Package Version Architecture
           unzip -l dist/spawn-gateway-nightly-windows-amd64.zip

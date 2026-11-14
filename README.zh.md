@@ -20,7 +20,7 @@
 | `spawn-gateway-nightly-windows-amd64.msi` | api-gateway 的 Windows 安装包，安装到 `Program Files\spawn-gateway`，含配置样例 |
 | `SHA256SUMS.txt` | 全部资产校验和，同目录 `sha256sum -c SHA256SUMS.txt` 核对 |
 
-原生安装包只覆盖 api-gateway：它不依赖 CGO SQLite 驱动（user-service-rpc 是另一个不依赖的服务），可静态交叉编译出两个 Linux 架构与 Windows。其余六个服务只提供 amd64 二进制，不出安装包。包版本号为 `0.0.0~nightly<日期>.<sha7>`（deb）与 `0.0.0-nightly<日期>.<sha7>`（rpm），属滚动构建标记，不构成正式版本。当前 arm64 的 rpm 内部架构元数据仍是 x86_64（打包脚本未向 rpmbuild 传构建目标），在 arm64 主机上需 `rpm -i --force` 安装；deb 侧无此问题。移动端 APK 与服务容器镜像不在 nightly 交付面（Android 出包依赖本地 gradle 流程；镜像按 `services/*/Dockerfile` 自行构建）。正式版本尚未发布；文档站见 <https://cuihairu.github.io/spawn/zh/>。
+原生安装包只覆盖 api-gateway：它不依赖 CGO SQLite 驱动（user-service-rpc 是另一个不依赖的服务），可静态交叉编译出两个 Linux 架构与 Windows。其余六个服务只提供 amd64 二进制，不出安装包。包版本号为 `0.0.0~nightly<日期>.<sha7>`（deb）与 `0.0.0-nightly<日期>.<sha7>`（rpm），属滚动构建标记，不构成正式版本。arm64 的 rpm 元数据标 `aarch64`、deb 标 `arm64`，两个架构各自正常安装。移动端 APK 与服务容器镜像不在 nightly 交付面（Android 出包依赖本地 gradle 流程；镜像按 `services/*/Dockerfile` 自行构建）。正式版本尚未发布；文档站见 <https://cuihairu.github.io/spawn/zh/>。
 
 ## Monorepo 目录规划
 

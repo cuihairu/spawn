@@ -151,9 +151,19 @@ if [ \$1 -eq 0 ]; then
 fi
 SPEC
 
-rpmbuild -bb --define "_topdir $TOP" "$TOP/SPECS/$NAME.spec" >/dev/null
-# RPM 文件名由 spec 的 Name/Version/Release/Arch 拼出，直接按扩展名找
+# 必须传 --target：spec 无合法 Arch tag（rpm 会报 Unknown tag），不传则 rpmbuild
+# 用构建机架构出包，arm64 包会被打成 x86_64——载荷虽是真 aarch64，元数据却是 x86_64，
+# arm64 主机 rpm -i 会因架构不符拒装（G2-29）。
+rpmbuild -bb --define "_topdir $TOP" --target "$RPM_ARCH" "$TOP/SPECS/$NAME.spec" >/dev/null
+# 传了 --target 后产物文件名确定，按扩展名取（同一 spec 只会出一个二进制包）
 find "$TOP/RPMS" -name "*.rpm" -exec mv {} "$OUT/${NAME}-nightly-${OSARCH}.rpm" \;
+# 架构断言：打包产出后立即核对元数据。载荷对了而元数据错（--target 漏传时）
+# 这类缺陷，下游要装到 arm64 主机上才会暴露，必须在这里当场红。
+rpm -qp --queryformat '%{ARCH}\n' "$OUT/${NAME}-nightly-${OSARCH}.rpm" >/tmp/rpmarch.$$
+got=$(cat /tmp/rpmarch.$$)
+echo "rpm arch: ${got} (期望 ${RPM_ARCH})"
+[ "$got" = "$RPM_ARCH" ] || { echo "rpm 架构不符，拒绝产出" >&2; rm -f "$OUT/${NAME}-nightly-${OSARCH}.rpm" /tmp/rpmarch.$$; exit 3; }
+rm -f /tmp/rpmarch.$$
 rm -rf "$TOP"
 
 ls -lh "$OUT" | tail -5
