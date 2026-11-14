@@ -145,7 +145,8 @@ jobs:
           (cd dist/pkg && wixl -a x64 -o ../spawn-gateway-nightly-windows-amd64.msi gateway.wxs)
           echo "built=true" >> "$GITHUB_OUTPUT"
 
-      # 冒烟：deb 包内二进制 --help（真实可执行）；rpm 校验元数据；msi 只验结构不安装。
+      # 冒烟：deb 包内二进制 --help（真实可执行）；rpm 校验元数据；
+      # msi 验结构 + 验载荷真在包内（不安装）。
       - name: Smoke native packages
         run: |
           set -euo pipefail
@@ -159,6 +160,22 @@ jobs:
           if [ "${{ steps.msi.outputs.built }}" = "true" ]; then
             msiinfo tables dist/spawn-gateway-nightly-windows-amd64.msi
             msiinfo suminfo dist/spawn-gateway-nightly-windows-amd64.msi | head -8
+            # 结构校验会放过空壳：wixl 少写 <Media EmbedCab="yes"> 时编译照样 0 退出，
+            # 产物 ~9K 且装不出任何文件。必须解包数文件，并核对载荷字节数与源 exe 一致。
+            rm -rf /tmp/msix && mkdir /tmp/msix
+            msiextract -C /tmp/msix dist/spawn-gateway-nightly-windows-amd64.msi
+            found=$(find /tmp/msix -type f | wc -l)
+            echo "msi 解出 ${found} 个文件"
+            [ "$found" -ge 2 ] || { echo "::error::msi 无载荷（解出 ${found} 个文件）"; exit 1; }
+            # 与同批 zip 里的 exe 比字节数：两者是同一个二进制，应当严格相等。
+            rm -rf /tmp/zpx && mkdir /tmp/zpx
+            unzip -q -o dist/spawn-gateway-nightly-windows-amd64.zip -d /tmp/zpx
+            exe_path=$(find /tmp/msix -type f -name spawn-gateway.exe | sort | head -1)
+            [ -f "$exe_path" ] || { echo "::error::msi 内未找到 spawn-gateway.exe"; exit 1; }
+            exe_size=$(stat -c%s "$exe_path")
+            zip_size=$(stat -c%s /tmp/zpx/spawn-gateway.exe)
+            echo "载荷 exe ${exe_size} 字节（zip 内 ${zip_size} 字节）"
+            [ "$exe_size" = "$zip_size" ] || { echo "::error::msi 载荷与 zip 内 exe 不一致"; exit 1; }
           fi
 
       - name: Clean package intermediates

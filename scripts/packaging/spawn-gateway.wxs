@@ -6,6 +6,9 @@
   <Product Id="*" Name="spawn-gateway" Language="1033"
            Version="@VER@" Manufacturer="spawn" UpgradeCode="@UPG@">
     <Package InstallerVersion="300" Compressed="yes" InstallScope="perMachine" />
+    <!-- EmbedCab 必须显式声明：wixl 的隐式 Media 行只填 File 表，不写 cabinet 流，
+         产物会是个 ~9K 的空壳安装器（编译不报错，载荷在但装不出任何文件）。 -->
+    <Media Id="1" Cabinet="spawn-gateway.cab" EmbedCab="yes" />
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFilesFolder">
         <Directory Id="INSTALLDIR" Name="spawn-gateway">
