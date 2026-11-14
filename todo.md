@@ -212,4 +212,8 @@ HEAD：`bc9866d596d7c2e16fe65b08dda2a4af0a6e7596`。完整清单见 `docs/archit
   - 完成：三份 README 按既有风格（概述/运行/端点/结构/角色或关系）落档——user-service（8888，认证/资料/推荐 + JWT 共享密钥模型）、game-catalog（8890，目录/版本下载/提审流/合作方与角色单一事实源 /me）、data-panel（8896，战绩面板与经营分析双域口径 + /internal/events S2S 摄入边界）。
 - [x] CLN-003 [P2] 网关 1153 行集成测试按代理族拆分，避免单个文件成为全路由变更的耦合点（`services/api-gateway/internal/handler/routes_integration_test.go:1`）。
   - 完成：与 LAY-003 同一改动（ee50ef6），见该条。
-- [ ] CLN-004 [P2] 统一跨服务客户端韧性抽象；目前仅 content→game-catalog 具备重试/熔断/指标，user→game-catalog 与网关聚合策略未共享（`services/content-service/client/breaker.go:22`）。
+- [x] CLN-004 [P2] 统一跨服务客户端韧性抽象；目前仅 content→game-catalog 具备重试/熔断/指标，user→game-catalog 与网关聚合策略未共享（`services/content-service/client/breaker.go:22`）。（2026-11-14 完成）
+  - 交付:新共享模块 pkg/resilience（github.com/tappi/tappi/pkg/resilience，入 go.work）——Breaker 连续失败熔断（closed/half-open 单探测/open、SetOnTransition 指标回调）、Kind 错误四分类（transient/bad_request/canceled/contract，WrapError 保留 errors.As 链）、确定性指数退避 RetryConfig、泛型 Call 调用环（熔断检查→单次调用→分类重试→退避，OnResult/OnRetry 指标钩子）。
+  - 迁移:content→game-catalog 客户端改为消费共享核（client/{breaker,retry,gamecatalog,metrics}.go 变别名+指标接线层，34 测试行为不变，ErrBreakerOpen 身份与 Prometheus 标签全保留）；user→game-catalog GetRecommendations 接入熔断+重试（integration/gamecatalog_client.go，ResolvePromoClick 保持单次——注册路径不重试）；api-gateway GetFeatured 接入熔断+重试（integration/game_client.go，logic 层单组降级聚合策略不变）。
+  - 验收:pkg/resilience -race 全绿（breaker 7 态迁移+Call 环 7 用例等）；content-service 11 包 / user-service 10 包 / api-gateway 13 包 -race 全绿；user-service routes_integration_test.go 推荐链路用例因熔断语义重排序（clamp 先于 err-trigger，带注释）。
+  - 证据:commit 8191e31；pkg/resilience/{breaker,errors,retry,call}.go、services/content-service/client/retry.go（别名层）、services/user-service/internal/integration/gamecatalog_client.go:44。
