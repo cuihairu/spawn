@@ -25,7 +25,7 @@
 - [x] GP-104 建立游戏版本/渠道包记录：包名、versionCode/versionName、签名指纹、大小、哈希、存储地址、更新说明、审核/发布/撤回；避免低版本包覆盖已发布更新（F07；game_versions 扩 6 列 + 发布/撤回路由 409 防回退 + 网关反代 + web 表单；go test -race 全绿，web tsc/eslint/build 绿）
 - [ ] GP-105 接入包体存储与受控下载，移动端补 Android 下载队列、进度、暂停续传、校验、安装/更新和失败重试；完成真机验收，非 Android 暂以适用商店链接承接（F08/F28）。
   - 代码完成（d8b7eba）：game-catalog 本地包体存储（2 GiB 上限、临时文件+原子改名、扩展名清洗，PACKAGE_DIR 未配置则 500）+ 合作方上传端点（仅 draft/pending/rejected 可传/重传，approved 后锁定 409，写入 storage_url=package:// + sha256 + size_bytes + 审计）+ latest 已发布版本端点 + 受控下载端点（登录、仅已发布+平台托管，ServeContent 支持 Range 断点续传/ETag/X-Package-Sha256/416）；集成测试 TestRoutes_PackageDownload 全流程（匿名 401/越权 403/上传→提审→过审→发布→latest→下载→Range 206→坏 Range 416→发布后重传 409→撤回 404）+ 存储单测；go test -race 全绿。api-gateway 增流式透传通道（不缓冲请求体、无整体超时，承载 GB 级上传/下载，1 MiB+1 直通测试）；go test -race 全绿。mobile 补下载队列（进度/暂停续传/重试/取消/size_bytes 截断校验/Android ACTION_VIEW 安装）+ latest 拉取 + REQUEST_INSTALL_PACKAGES 权限；tsc/eslint 绿、expo export android 包成功。
-  - 未完，保持未勾：真机验收未做（验收以实际走查/真实使用为准）；SHA-256 完整性校验需原生文件哈希模块（JS 侧暂只有大小校验，服务端 X-Package-Sha256 已下发可对）；App 重启后跨会话续传（savable 落盘）留待补齐；非 Android 商店链接承接入口未动。
+  - 未完，保持未勾：真机验收未做（验收以实际走查/真实使用为准）；SHA-256 完整性校验需原生文件哈希模块（expo-crypto 无流式/文件 digest 接口，2 GiB 包体整读内存不可行；JS 侧暂只有大小校验，服务端 X-Package-Sha256 已下发可对）——原生模块开发+真机验证与真机验收同一 BLOCKED（缺真机）；App 重启后跨会话续传已落地（暂停时 task.savable() 落盘 resume-<文件名>.json，挂载时 DownloadTask.fromSavable 重建暂停态任务，URL 匹配当前版本才恢复，新 Authorization 头覆盖注入，完成/取消/重开下载即清快照，251dafa）；非 Android 商店链接承接已落地（PackageDownload 非 Android 渲染商店承接提示不显示 APK 下载控件，入口区「应用商店」按钮承接，251dafa）。
 
 ### M2：复用 Courier 完成交易与发货
 
