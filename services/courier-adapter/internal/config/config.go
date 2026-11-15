@@ -39,6 +39,16 @@ type Config struct {
 		Timeout int64  `json:",default=5000,env=USER_SERVICE_TIMEOUT"`
 	}
 
+	// Payments 订单事实权威（GP-307 售后工单 orderId 归属强校验）：经
+	// GET /internal/orders/:orderId（X-Internal-Token）核验订单属于当前
+	// 用户/游戏。Token 未配置或上游不可达 fail-open 保留卫生透传（校验为
+	// 增强事实，不阻断提单）；订单明确不属于本人/本游戏 → 400。
+	Payments struct {
+		BaseURL       string `json:",default=http://localhost:8898,env=PAYMENTS_URL"`
+		InternalToken string `json:",env=INTERNAL_TOKEN,optional"`
+		Timeout       int64  `json:",default=3000,env=PAYMENTS_TIMEOUT"`
+	}
+
 	// Ticket 启动票据 TTL（秒）：短期、一次性，重启即失效（不落盘）
 	Ticket struct {
 		TTLSeconds int64 `json:",default=120"`

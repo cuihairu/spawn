@@ -133,6 +133,10 @@ services:
       COURIER_GATEWAY_URL: "${COURIER_GATEWAY_URL:-http://courier-gateway:8080}"
       GAMECATALOG_BASE_URL: http://game-catalog:8890
       USER_SERVICE_URL: http://user-service:8888
+      # GP-307 售后工单 orderId 归属强校验：订单事实权威在 payments。
+      # 令牌与 payments 侧 INTERNAL_TOKEN 同值；未配置 = 校验跳过（fail-open）。
+      PAYMENTS_URL: http://payments:8898
+      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-}"
     depends_on:
       - user-service
       - game-catalog
@@ -160,6 +164,9 @@ services:
       # SECRET 与 promotions 侧同值；未配置 URL = 不入队不分发。
       PROMOTIONS_URL: http://promotions:8902
       PROMOTIONS_REWARD_SECRET: "${PROMOTIONS_REWARD_SECRET:-tappi-promotions-reward-secret-2026}"
+      # GP-307 S2S 订单事实查询（courier-adapter 售后工单归属校验的事实源）。
+      # 未配置 = 恒 403（fail-closed）；与 courier-adapter 侧同值。
+      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-}"
     depends_on:
       - user-service
       - game-catalog

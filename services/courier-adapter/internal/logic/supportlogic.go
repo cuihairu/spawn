@@ -5,8 +5,9 @@ package logic
 //   - 工单归属账号 = 平台用户 ↔ Courier 一对一绑定（GP-201 同款绑定/代登录）；
 //   - context 关联事实由 Spawn 侧构建：spawn_user_id / courier_account_id /
 //     game_id 自动附加且不可被业务覆盖（契约 Client Requirements 口径）；
-//     serverId 经 game-catalog 公开区服表校验归属后入 context；orderId 基础
-//     卫生检查后透传（Courier 契约 context 开集零解释）；
+//     serverId 经 game-catalog 公开区服表校验归属后入 context；orderId 经
+//     payments S2S 订单事实校验归属（本人+本游戏）后透传（Courier 契约
+//     context 开集零解释）；
 //   - 处理记录 = Courier 工单消息流（PLAYER/AGENT/SYSTEM，详情升序）+
 //     Spawn 侧审计（创建/追加）。
 // 坐席侧（回复/关单）走 Courier 管理面，不经本服务（契约边界）。
@@ -18,6 +19,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -177,7 +180,8 @@ func (l *SupportLogic) session(mapping *model.GameMapping, authHeader string, us
 // buildContext 关联事实构建：业务 context 先铺底（键形/值型预检，越限即
 // 400），Spawn 自动附加事实覆盖保留键（契约：自动附加键不可被业务覆盖）；
 // serverId 经 game-catalog 区服表校验（不存在或不属于该游戏 → 400）；
-// orderId 基础卫生检查后透传；总量 ≤10 键（契约上限）。
+// orderId 经 payments 订单事实校验归属（不存在/不属于本人或本游戏 → 400）；
+// 总量 ≤10 键（契约上限）。
 func (l *SupportLogic) buildContext(mapping *model.GameMapping, courierAccountID string, req *types.CreateSupportTicketRequest, userID int64) (map[string]any, error) {
 	ctxMap := map[string]any{}
 	for k, v := range req.Context {
@@ -209,6 +213,9 @@ func (l *SupportLogic) buildContext(mapping *model.GameMapping, courierAccountID
 	if oid := strings.TrimSpace(req.OrderId); oid != "" {
 		if utf8.RuneCountInString(oid) > 64 {
 			return nil, newAPIError(http.StatusBadRequest, "orderId 过长")
+		}
+		if err := l.validateOrderOwnership(mapping, oid, userID); err != nil {
+			return nil, err
 		}
 		ctxMap["order_id"] = oid
 	}
@@ -249,6 +256,59 @@ func serverIDOf(s map[string]any) string {
 		return v
 	}
 	return ""
+}
+
+// validateOrderOwnership GP-307 订单归属强校验：经 payments S2S 订单事实
+// （GET /internal/orders/:orderId，X-Internal-Token）核验 orderId 属于当前
+// 平台用户与本游戏（此前仅卫生检查透传，用户可提交任意 order_id）。
+// 校验为增强事实：BaseURL/令牌未配置、上游不可达或拒绝（含令牌未配 403）
+// fail-open 保留卫生透传（与区服校验同款，不阻断提单）；订单明确不存在
+// 或不属于本人/本游戏 → 400（404 与归属不符同一口径，不泄露存在性）。
+func (l *SupportLogic) validateOrderOwnership(mapping *model.GameMapping, orderID string, userID int64) error {
+	pc := paymentsClient(l.svcCtx)
+	if pc.base == "" || pc.token == "" {
+		return nil
+	}
+	req, err := http.NewRequestWithContext(l.ctx, http.MethodGet,
+		pc.base+"/internal/orders/"+url.PathEscape(orderID), nil)
+	if err != nil {
+		l.Errorf("build payments order query %s failed: %v", orderID, err)
+		return nil
+	}
+	req.Header.Set("X-Internal-Token", pc.token)
+	resp, err := pc.hc.Do(req)
+	if err != nil {
+		l.Errorf("payments order query %s failed: %v", orderID, err)
+		return nil
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		return newAPIError(http.StatusBadRequest, "订单不存在或不属于当前用户")
+	default:
+		l.Errorf("payments order query %s status %d, skip ownership validation", orderID, resp.StatusCode)
+		return nil
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		l.Errorf("read payments order %s failed: %v", orderID, err)
+		return nil
+	}
+	var body struct {
+		Order struct {
+			GameId    string `json:"game_id"`
+			AccountId string `json:"account_id"`
+		} `json:"order"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		l.Errorf("decode payments order %s failed: %v", orderID, err)
+		return nil
+	}
+	if body.Order.GameId != mapping.SpawnGameId || body.Order.AccountId != strconv.FormatInt(userID, 10) {
+		return newAPIError(http.StatusBadRequest, "订单不存在或不属于当前用户")
+	}
+	return nil
 }
 
 // fetchCatalogServers GET {game-catalog}/games/:id/servers（公开读）。

@@ -8,6 +8,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -132,5 +133,81 @@ func TestRoutes_OrdersProjectionAndRefund(t *testing.T) {
 	code, body = do(t, http.MethodGet, env.base+"/admin/audit?order_id="+orderID, admin, "")
 	if code != http.StatusOK || !strings.Contains(body, "refund_request") {
 		t.Fatalf("audit lacks refund_request: %s", body)
+	}
+}
+
+// TestRoutes_InternalOrderQuery GP-307 S2S 订单事实查询：courier-adapter
+// 售后工单 orderId 归属强校验的事实源。X-Internal-Token 先于解析严格比对，
+// 未配置恒 403（fail-closed）；带令牌返回投影事实（game_id/account_id 供
+// 归属判定）；未知订单 404。S2S 专用不进网关。
+func TestRoutes_InternalOrderQuery(t *testing.T) {
+	env := newDeliveryServer(t)
+	admin := env.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
+	player := env.sign(utils.JWTClaims{UserId: 7, Username: "bob"})
+
+	code, body := do(t, http.MethodPost, env.base+"/admin/products/sku-iq-1", admin,
+		`{"product_id":"iq-1","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"game-a","partner_id":2}`)
+	if code != http.StatusOK {
+		t.Fatalf("create product = %d body=%s", code, body)
+	}
+	orderID := createOrder(t, env, player, `{"sku_id":"sku-iq-1","server_id":1}`)
+
+	get := func(token string) (int, string) {
+		req, _ := http.NewRequest(http.MethodGet, env.base+"/internal/orders/"+orderID, nil)
+		if token != "" {
+			req.Header.Set("X-Internal-Token", token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("internal order query: %v", err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(raw)
+	}
+
+	// 1. 令牌未配置：任何令牌都 403（fail-closed）
+	if code, _ := get("whatever"); code != http.StatusForbidden {
+		t.Fatalf("unconfigured token = %d, want 403", code)
+	}
+
+	// 2. 配置令牌：缺失 403 / 错误 403 / 正确 200 且事实齐全
+	env.svcCtx.Config.Internal.Token = "gp307-orders-token"
+	if code, _ := get(""); code != http.StatusForbidden {
+		t.Fatalf("missing token = %d, want 403", code)
+	}
+	if code, _ := get("wrong-token"); code != http.StatusForbidden {
+		t.Fatalf("wrong token = %d, want 403", code)
+	}
+	code, body = get("gp307-orders-token")
+	if code != http.StatusOK {
+		t.Fatalf("valid token = %d body=%s", code, body)
+	}
+	var respBody struct {
+		Order struct {
+			OrderId     string `json:"order_id"`
+			GameId      string `json:"game_id"`
+			AccountId   string `json:"account_id"`
+			Status      string `json:"status"`
+			AmountCents int64  `json:"amount_cents"`
+		} `json:"order"`
+	}
+	if err := json.Unmarshal([]byte(body), &respBody); err != nil ||
+		respBody.Order.OrderId != orderID || respBody.Order.GameId != "game-a" ||
+		respBody.Order.AccountId != "7" || respBody.Order.Status != "CREATED" ||
+		respBody.Order.AmountCents != 1000 {
+		t.Fatalf("order facts = %s err=%v", body, err)
+	}
+
+	// 3. 未知订单 404
+	req, _ := http.NewRequest(http.MethodGet, env.base+"/internal/orders/order_missing", nil)
+	req.Header.Set("X-Internal-Token", "gp307-orders-token")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("missing order query: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing order = %d, want 404", resp.StatusCode)
 	}
 }

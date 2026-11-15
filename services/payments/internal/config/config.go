@@ -70,4 +70,11 @@ type Config struct {
 		Token   string `json:",env=DATA_PANEL_INTERNAL_TOKEN,optional"`
 		Timeout int64  `json:",default=3000,env=DATA_PANEL_TIMEOUT"`
 	}
+
+	// Internal S2S 订单事实查询守卫（GP-307 售后工单 orderId 归属强校验）：
+	// GET /internal/orders/:orderId 供 courier-adapter 验证订单属于当前用户/
+	// 游戏。Token 空 = 恒 403（fail-closed）；S2S 专用不进网关反代。
+	Internal struct {
+		Token string `json:",env=INTERNAL_TOKEN,optional"`
+	}
 }

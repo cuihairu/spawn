@@ -25,6 +25,9 @@ import (
 	"github.com/zeromicro/go-zero/rest/httpx"
 )
 
+// supportPaymentsToken GP-307 订单事实 S2S 令牌（payments stub 与 adapter 配置同值）。
+const supportPaymentsToken = "gp307-payments-token"
+
 type supportCourierStub struct {
 	mu         sync.Mutex
 	regN       int
@@ -140,7 +143,40 @@ func supportCatalogStub() http.HandlerFunc {
 	}
 }
 
+// supportPaymentsStub GP-307 订单事实权威（S2S）：令牌校验 + 三单事实，
+// 用于订单归属强校验测试。
+func supportPaymentsStub(token string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Internal-Token") != token {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":"internal order query disabled"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch strings.TrimPrefix(r.URL.Path, "/internal/orders/") {
+		case "ord_mine":
+			_, _ = w.Write([]byte(`{"order":{"order_id":"ord_mine","game_id":"g1","account_id":"77","status":"PAID","amount_cents":1000}}`))
+		case "ord_other_user":
+			_, _ = w.Write([]byte(`{"order":{"order_id":"ord_other_user","game_id":"g1","account_id":"78","status":"PAID","amount_cents":1000}}`))
+		case "ord_other_game":
+			_, _ = w.Write([]byte(`{"order":{"order_id":"ord_other_game","game_id":"g2","account_id":"77","status":"PAID","amount_cents":1000}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"order not found"}`))
+		}
+	}
+}
+
+// newSupportEnv 标准装配：payments stub 配正确令牌（订单归属强校验生效）。
 func newSupportEnv(t *testing.T) (string, *supportCourierStub) {
+	t.Helper()
+	payURL := httptest.NewServer(supportPaymentsStub(supportPaymentsToken)).URL
+	return newSupportEnvPayments(t, payURL, supportPaymentsToken)
+}
+
+// newSupportEnvPayments 自定 payments 接线（fail-open 用例：不可达地址/
+// 错误令牌）。
+func newSupportEnvPayments(t *testing.T, paymentsURL, paymentsToken string) (string, *supportCourierStub) {
 	t.Helper()
 	stub := &supportCourierStub{}
 
@@ -164,6 +200,9 @@ func newSupportEnv(t *testing.T) (string, *supportCourierStub) {
 	cfg.GameCatalog.Timeout = 2000
 	cfg.UserService.BaseURL = httptest.NewServer(userStub()).URL
 	cfg.UserService.Timeout = 2000
+	cfg.Payments.BaseURL = paymentsURL
+	cfg.Payments.InternalToken = paymentsToken
+	cfg.Payments.Timeout = 2000
 	cfg.Ticket.TTLSeconds = 120
 
 	svcCtx := svc.NewServiceContext(cfg)
@@ -220,7 +259,7 @@ func TestRoutes_SupportTickets(t *testing.T) {
 
 	// 3. 提单：区服归属校验 + 订单透传 + 保留键不可覆盖（spawn_user_id/game_id）
 	code, body := doJSON(t, http.MethodPost, base+"/games/g1/support/tickets", player,
-		`{"title":"订单未到账","body":"充值后未收到","category":"PAYMENT","serverId":"5","orderId":"ord-9","context":{"level":42,"spawn_user_id":1,"game_id":"fake"}}`)
+		`{"title":"订单未到账","body":"充值后未收到","category":"PAYMENT","serverId":"5","orderId":"ord_mine","context":{"level":42,"spawn_user_id":1,"game_id":"fake"}}`)
 	if code != http.StatusOK {
 		t.Fatalf("create ticket = %d body=%s", code, body)
 	}
@@ -250,7 +289,7 @@ func TestRoutes_SupportTickets(t *testing.T) {
 		"game_id":            "cg1",
 		"server_id":          "5", // 区服校验通过后入 context
 		"server_name":        "S1",
-		"order_id":           "ord-9",
+		"order_id":           "ord_mine",
 		"level":              float64(42),
 	}
 	for k, v := range want {
@@ -321,5 +360,75 @@ func TestRoutes_SupportTickets(t *testing.T) {
 	// 10. scope 只走 header：无 URL 泄漏违规
 	if len(stub.violations) > 0 {
 		t.Fatalf("scope violations: %v", stub.violations)
+	}
+}
+
+// TestRoutes_SupportOrderOwnership GP-307 订单归属强校验：orderId 须经
+// payments S2S 订单事实核验属于本人+本游戏（此前仅卫生检查透传，用户可
+// 提交任意 order_id 字符串）；订单不存在/他人订单/跨游戏订单 → 400；
+// 上游不可达或令牌不配 fail-open 保留卫生透传（增强事实不阻断提单）。
+func TestRoutes_SupportOrderOwnership(t *testing.T) {
+	base, stub := newSupportEnv(t)
+	player := signToken(t, 77, "player")
+	operator := signToken(t, 42, "ops")
+
+	if code, body := doJSON(t, http.MethodPut, base+"/admin/games/g1/mapping", operator,
+		`{"courierGameId":"cg1","env":"prod","partnerId":1,"capabilities":{"login":true,"support":true}}`); code != http.StatusOK {
+		t.Fatalf("upsert g1 = %d body=%s", code, body)
+	}
+
+	// 1. 本人本游戏订单 → 200，order_id 入 context（正向在
+	//    TestRoutes_SupportTickets #3 已断言 context 全量，此处只看放行）
+	if code, body := doJSON(t, http.MethodPost, base+"/games/g1/support/tickets", player,
+		`{"title":"t","body":"b","orderId":"ord_mine"}`); code != http.StatusOK {
+		t.Fatalf("own order create = %d body=%s", code, body)
+	}
+	bodies := stub.createBodies()
+	if len(bodies) != 1 || !strings.Contains(bodies[0], `"order_id":"ord_mine"`) {
+		t.Fatalf("own order context missing: %v", bodies)
+	}
+
+	// 2. 他人订单 → 400（account_id 不符）
+	if code, _ := doJSON(t, http.MethodPost, base+"/games/g1/support/tickets", player,
+		`{"title":"t","body":"b","orderId":"ord_other_user"}`); code != http.StatusBadRequest {
+		t.Fatalf("other user order = %d, want 400", code)
+	}
+
+	// 3. 跨游戏订单 → 400（game_id 不符）
+	if code, _ := doJSON(t, http.MethodPost, base+"/games/g1/support/tickets", player,
+		`{"title":"t","body":"b","orderId":"ord_other_game"}`); code != http.StatusBadRequest {
+		t.Fatalf("other game order = %d, want 400", code)
+	}
+
+	// 4. 订单不存在（404）→ 400（与归属不符同一口径，不泄露存在性）
+	if code, _ := doJSON(t, http.MethodPost, base+"/games/g1/support/tickets", player,
+		`{"title":"t","body":"b","orderId":"ord_never"}`); code != http.StatusBadRequest {
+		t.Fatalf("unknown order = %d, want 400", code)
+	}
+
+	// 5. fail-open：payments 不可达（closed port）→ 卫生透传放行
+	downBase, downStub := newSupportEnvPayments(t, "http://127.0.0.1:1", supportPaymentsToken)
+	if code, body := doJSON(t, http.MethodPut, downBase+"/admin/games/g1/mapping", operator,
+		`{"courierGameId":"cg1","env":"prod","partnerId":1,"capabilities":{"login":true,"support":true}}`); code != http.StatusOK {
+		t.Fatalf("upsert g1 (down env) = %d body=%s", code, body)
+	}
+	if code, body := doJSON(t, http.MethodPost, downBase+"/games/g1/support/tickets", player,
+		`{"title":"t","body":"b","orderId":"ord_mine"}`); code != http.StatusOK {
+		t.Fatalf("payments down create = %d body=%s", code, body)
+	}
+	if bodies := downStub.createBodies(); len(bodies) != 1 || !strings.Contains(bodies[0], `"order_id":"ord_mine"`) {
+		t.Fatalf("payments down context missing: %v", bodies)
+	}
+
+	// 6. fail-open：令牌不匹配（payments 403）→ 同样放行（校验为增强事实）
+	misURL := httptest.NewServer(supportPaymentsStub(supportPaymentsToken)).URL
+	misBase, _ := newSupportEnvPayments(t, misURL, "wrong-token")
+	if code, body := doJSON(t, http.MethodPut, misBase+"/admin/games/g1/mapping", operator,
+		`{"courierGameId":"cg1","env":"prod","partnerId":1,"capabilities":{"login":true,"support":true}}`); code != http.StatusOK {
+		t.Fatalf("upsert g1 (mis env) = %d body=%s", code, body)
+	}
+	if code, _ := doJSON(t, http.MethodPost, misBase+"/games/g1/support/tickets", player,
+		`{"title":"t","body":"b","orderId":"ord_other_user"}`); code != http.StatusOK {
+		t.Fatalf("wrong token create = %d, want 200 (fail-open)", code)
 	}
 }

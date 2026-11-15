@@ -15,10 +15,12 @@ import (
 // 平台侧辅助：角色权威在 game-catalog（/me），用户邮箱在 user-service
 // （仅本人可见，故透传本人令牌）。适配服务不复制角色/用户数据。
 
-// platformClient 简单 JSON GET 客户端。
+// platformClient 简单 JSON GET 客户端（token 非空时随请求携带
+// X-Internal-Token，供 S2S 端点使用）。
 type platformClient struct {
-	base string
-	hc   *http.Client
+	base  string
+	token string
+	hc    *http.Client
 }
 
 func newPlatformClient(base string, timeoutMs int64) *platformClient {
@@ -35,6 +37,13 @@ func catalogClient(svcCtx *svc.ServiceContext) *platformClient {
 
 func userClient(svcCtx *svc.ServiceContext) *platformClient {
 	return newPlatformClient(svcCtx.Config.UserService.BaseURL, svcCtx.Config.UserService.Timeout)
+}
+
+// paymentsClient 订单事实权威（GP-307 售后工单 orderId 归属校验）。
+func paymentsClient(svcCtx *svc.ServiceContext) *platformClient {
+	pc := newPlatformClient(svcCtx.Config.Payments.BaseURL, svcCtx.Config.Payments.Timeout)
+	pc.token = svcCtx.Config.Payments.InternalToken
+	return pc
 }
 
 // platformRole 经 game-catalog GET /me 读取平台角色（单一事实源）。

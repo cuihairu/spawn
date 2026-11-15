@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/tappi/tappi/services/payments/internal/logic"
 	"github.com/tappi/tappi/services/payments/internal/svc"
 	"github.com/tappi/tappi/services/payments/internal/types"
+	"github.com/tappi/tappi/services/payments/model"
 
 	"github.com/zeromicro/go-zero/rest"
 	"github.com/zeromicro/go-zero/rest/httpx"
@@ -92,6 +94,12 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 	// 专用，不进网关反代；验签先于 body 解析。
 	server.AddRoutes([]rest.Route{
 		{Method: http.MethodPost, Path: "/internal/deliveries", Handler: DispatchHandler(svcCtx)},
+	})
+
+	// S2S 订单事实查询（GP-307）：courier-adapter 售后工单 orderId 归属
+	// 强校验，专用不进网关反代。
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/internal/orders/:orderId", Handler: InternalGetOrderHandler(svcCtx)},
 	})
 }
 
@@ -299,6 +307,37 @@ func DispatchHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 		httpx.OkJsonCtx(r.Context(), w, struct{}{})
+	}
+}
+
+// InternalGetOrderHandler S2S 订单事实查询（GP-307）：courier-adapter 售后
+// 工单校验 orderId 归属（game_id/account_id）。X-Internal-Token 先于解析
+// 严格比对，未配置恒 403（fail-closed）；404 不泄露更多（订单不存在与
+// 不属于本人同一口径由调用方判定）。
+func InternalGetOrderHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("X-Internal-Token")
+		if svcCtx.Config.Internal.Token == "" || token != svcCtx.Config.Internal.Token {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":"internal order query disabled"}`))
+			return
+		}
+		var req types.OrderPathRequest
+		if err := httpx.ParsePath(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		order, err := svcCtx.ProjectionDB.Get(req.OrderId)
+		if errors.Is(err, model.ErrOrderProjectionNotFound) {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"order not found"}`))
+			return
+		}
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, logic.NewAPIError(http.StatusInternalServerError, "查询订单失败"))
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, map[string]any{"order": order})
 	}
 }
 
