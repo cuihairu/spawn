@@ -7,7 +7,7 @@ toolchain go1.27.3
 require (
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/mattn/go-sqlite3 v1.14.52
+	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/zeromicro/go-zero v1.10.3
 )
 
