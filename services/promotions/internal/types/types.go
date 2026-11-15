@@ -340,3 +340,41 @@ type RedeemGiftPackRequest struct {
 	CodeId int64 `json:"code_id"`
 	PackId int64 `json:"pack_id"`
 }
+
+// ---- GP-301 活动快照运行时消费（玩家侧/游戏服侧读取） ----
+
+// RuntimeActivity 玩家侧活动展示摘要（已发布版本快照解析，窗口内）。
+// 不含预算（budget_cents 为财务口径不下发）、不含人群/触发明细。
+type RuntimeActivity struct {
+	Id         int64          `json:"id"`
+	Version    int64          `json:"version"`
+	Name       string         `json:"name"`
+	StartAt    string         `json:"start_at"`
+	EndAt      string         `json:"end_at"`
+	Stackable  bool           `json:"stackable"`
+	StackGroup string         `json:"stack_group,omitempty"`
+	Rewards    map[string]any `json:"rewards"`
+	Limits     map[string]any `json:"limits,omitempty"`
+}
+
+// RuntimeActivityListResponse 玩家侧活动列表（公开读）。
+type RuntimeActivityListResponse struct {
+	Items []RuntimeActivity `json:"items"`
+}
+
+// RuntimeSnapshot 游戏服侧活动快照（S2S 全量：快照原文不可变 JSON）。
+type RuntimeSnapshot struct {
+	ActivityId int64           `json:"activity_id"`
+	Version    int64           `json:"version"`
+	Snapshot   json.RawMessage `json:"snapshot"`
+}
+
+// RuntimeSnapshotListResponse 游戏服侧活动快照列表。
+type RuntimeSnapshotListResponse struct {
+	Items []RuntimeSnapshot `json:"items"`
+}
+
+// RuntimeGamePathRequest path gameId（运行时活动读取）。
+type RuntimeGamePathRequest struct {
+	GameId string `path:"gameId"`
+}

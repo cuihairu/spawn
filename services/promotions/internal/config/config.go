@@ -44,4 +44,11 @@ type Config struct {
 		Token   string `json:",env=DATA_PANEL_INTERNAL_TOKEN,optional"`
 		Timeout int64  `json:",default=3000,env=DATA_PANEL_TIMEOUT"`
 	}
+
+	// Internal 游戏服侧活动快照读取守卫（GP-301 运行时消费接口）：
+	// GET /internal/games/:gameId/activities。Token 空 = 恒 403
+	//（fail-closed）；与 INTERNAL_TOKEN 同值，S2S 专用不进网关。
+	Internal struct {
+		Token string `json:",env=INTERNAL_TOKEN,optional"`
+	}
 }

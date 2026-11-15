@@ -65,6 +65,16 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodPost, Path: "/internal/reward-evaluations", Handler: EvaluateRewardHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/internal/gift-pack-redemptions", Handler: RedeemGiftPackHandler(svcCtx)},
 	})
+
+	// GP-301 玩家侧活动列表（公开读，仅全体人群展示摘要）
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/games/:gameId/activities", Handler: ListPlayerActivitiesHandler(svcCtx)},
+	})
+
+	// GP-301 游戏服侧活动快照（S2S，X-Internal-Token fail-closed，不进网关）
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/internal/games/:gameId/activities", Handler: InternalListActivitiesHandler(svcCtx)},
+	})
 }
 
 // AuthMiddleware 平台 JWT 认证（user-service 签发，本服务仅校验；注入原始

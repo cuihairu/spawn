@@ -56,5 +56,9 @@ func RegisterPromotionsRoutes(server *rest.Server, serverCtx *svc.ServiceContext
 		{Method: http.MethodGet, Path: "/gift-packs/:id", Handler: h},
 		{Method: http.MethodPost, Path: "/gift-packs/:id/claim", Handler: h},
 		{Method: http.MethodGet, Path: "/gift-claims/me", Handler: h},
+		// GP-301 运行时消费：玩家侧活动列表（公开读，仅全体人群展示摘要）。
+		// /internal/games/:gameId/activities 为游戏服 S2S（X-Internal-Token），
+		// 不进网关。
+		{Method: http.MethodGet, Path: "/games/:gameId/activities", Handler: h},
 	})
 }
