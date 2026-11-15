@@ -81,7 +81,7 @@ func setupGP401(t *testing.T, base string, sign func(utils.JWTClaims) string) (s
 func TestRoutes_GameRatingsAndReviews(t *testing.T) {
 	stub := newCommunityStub()
 	defer stub.srv.Close()
-	base, sign := newReservationTestServer(t, stub.srv.URL)
+	base, sign, _ := newReservationTestServer(t, stub.srv.URL)
 	gameID, partner, otherPartner := setupGP401(t, base, sign)
 	admin := sign(claimsFor(1, "admin"))
 	player7 := sign(claimsFor(7, "bob"))

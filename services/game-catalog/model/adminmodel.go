@@ -202,8 +202,11 @@ type AdminStore interface {
 	UpdateGameServer(s *GameServer) (*GameServer, error)
 
 	// GP-306 开服计划与预约：预约幂等（UNIQUE(server_id,user_id)）、取消幂等；
-	// 开服提醒只发一次（notified_at 置位），游戏维度去重人群供版本/活动通知。
+	// 开服提醒只发一次（notified_at 置位），游戏维度去重人群供版本/活动通知；
+	// 排期到点由定时扫描自动开服（条件 UPDATE 幂等，不依赖合作方手动 PATCH）。
 	ReserveServer(r *ServerReservation) (*ServerReservation, bool, error)
+	ListScheduledServers(limit int) ([]*GameServer, error)
+	OpenServerIfDue(id int64, currentStatus, plannedOpenAt string) (bool, error)
 	GetReservation(serverId, userId int64) (*ServerReservation, error)
 	CancelReservation(serverId, userId int64) error
 	ListMyReservations(userId int64, limit int) ([]*ServerReservation, error)

@@ -340,19 +340,20 @@ func (l *PartnerLogic) UpdateServer(req *types.UpdateServerRequest) (*types.Game
 	// GP-306 开服提醒：非 open → open 过渡触发预约人群通知（只发一次，
 	// notified_at 置位）；通知失败仅记日志，不影响状态变更本身。
 	if beforeStatus != model.ServerStatusOpen && updated.Status == model.ServerStatusOpen {
-		l.notifyServerOpen(updated)
+		NotifyServerOpen(l, l.svcCtx, updated)
 	}
 	l.audit("game_server_update", "game_server", strconvFormatInt(updated.Id), toJSON(toTypesServer(current)), toJSON(toTypesServer(updated)))
 	return toTypesServer(updated), nil
 }
 
-// notifyServerOpen GP-306 开服提醒：拉该服未提醒预约 → community 扇出
+// NotifyServerOpen GP-306 开服提醒：拉该服未提醒预约 → community 扇出
 // （站内信 + realtime-hub 远程推送）→ 置已提醒。community 未配置时跳过。
-func (l *PartnerLogic) notifyServerOpen(s *model.GameServer) {
-	if !l.svcCtx.Notify.Enabled() {
+// 手动 PATCH 与排期到点扫描两条开服路径共用（notified_at 保证只发一次）。
+func NotifyServerOpen(l logx.Logger, svcCtx *svc.ServiceContext, s *model.GameServer) {
+	if !svcCtx.Notify.Enabled() {
 		return
 	}
-	reservations, err := l.svcCtx.AdminRepository.ListUnnotifiedReservations(s.Id)
+	reservations, err := svcCtx.AdminRepository.ListUnnotifiedReservations(s.Id)
 	if err != nil {
 		l.Errorf("list reservations for server %d failed: %v", s.Id, err)
 		return
@@ -364,12 +365,26 @@ func (l *PartnerLogic) notifyServerOpen(s *model.GameServer) {
 	for _, r := range reservations {
 		ids = append(ids, r.UserId)
 	}
-	l.svcCtx.Notify.Publish(notify.Notification{
+	svcCtx.Notify.Publish(notify.Notification{
 		UserIds: ids, Type: "server_open", TargetId: s.Id,
 		Content: "您预约的区服「" + s.Name + "」已开服，欢迎进入游戏",
 	})
-	if err := l.svcCtx.AdminRepository.MarkReservationsNotified(s.Id); err != nil {
+	if err := svcCtx.AdminRepository.MarkReservationsNotified(s.Id); err != nil {
 		l.Errorf("mark reservations notified server %d failed: %v", s.Id, err)
+	}
+}
+
+// AuditServerAutoOpen 记到点自动开服审计（无操作人：actor=0 / role=system，
+// 与手动 PATCH 的 game_server_update 区分，可追溯哪次开服来自排期调度）。
+func AuditServerAutoOpen(l logx.Logger, svcCtx *svc.ServiceContext, serverID int64) {
+	before := toJSON(map[string]any{"status": model.ServerStatusClosed})
+	after := toJSON(map[string]any{"status": model.ServerStatusOpen})
+	if err := svcCtx.AdminRepository.WriteAudit(&model.AuditLog{
+		ActorId: 0, ActorRole: "system", Action: "game_server_auto_open",
+		ResourceType: "game_server", ResourceId: strconvFormatInt(serverID),
+		BeforeJson: before, AfterJson: after,
+	}); err != nil {
+		l.Errorf("write audit failed: %v", err)
 	}
 }
 

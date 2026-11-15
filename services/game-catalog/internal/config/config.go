@@ -38,6 +38,13 @@ type Config struct {
 		Token string `json:",env=INTERNAL_TOKEN,optional"`
 	}
 
+	// GP-306 开服排期到点自动开服：定时扫描 planned_open_at 已到点且仍为
+	// closed 的区服，置 open 并触发预约提醒（此前排期只是展示字段，需合作方
+	// 手动 PATCH 才开服）。间隔默认 60 秒。
+	OpenScan struct {
+		IntervalSeconds int64 `json:",default=60,env=OPEN_SCAN_INTERVAL_SECONDS"`
+	}
+
 	// Internal 本服务 S2S 端点守卫（/internal/games/:id/reservation-users，
 	// 供 promotions 拉活动通知受众）；Token 空 = 恒 403（fail-closed）。
 	Internal struct {

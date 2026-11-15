@@ -94,6 +94,59 @@ func (m *AdminModel) UpdateGameServer(s *GameServer) (*GameServer, error) {
 
 // ---- GP-306 开服预约 ----
 
+// GP-306 开服排期到点自动开服。
+
+// ListScheduledServers 已排期且未开服的区服（planned_open_at 非空、status
+// 仍为 closed）。**不在 SQL 里比较时间**：planned_open_at 是带时区偏移的
+// RFC3339，跨偏移的字符串比较不成立（"+08:00" 与 "Z" 的字典序错位），
+// 是否到点由调用方按时刻精确判定。排序按排期升序，故先到期者总排在
+// 窗口内，limit 不会把已到期行挤出（无饥饿）。
+func (m *AdminModel) ListScheduledServers(limit int) ([]*GameServer, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 200
+	}
+	rows, err := m.db.Query(
+		`SELECT `+serverColumns+` FROM game_servers
+		  WHERE planned_open_at != '' AND status = ?
+		  ORDER BY planned_open_at ASC, id ASC LIMIT ?`,
+		ServerStatusClosed, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*GameServer, 0, 8)
+	for rows.Next() {
+		var s GameServer
+		if err := rows.Scan(scanServer(&s)...); err != nil {
+			return nil, err
+		}
+		out = append(out, &s)
+	}
+	return out, rows.Err()
+}
+
+// OpenServerIfDue 到点开服的条件 UPDATE（幂等防双开）：仅当状态仍为
+// closed 且排期未被改动才置 open；返回 false 表示已被手动开服、改过排期
+// 或被下线，扫描与手动 PATCH 并发时以先到者为准。
+func (m *AdminModel) OpenServerIfDue(id int64, currentStatus, plannedOpenAt string) (bool, error) {
+	if currentStatus != ServerStatusClosed || strings.TrimSpace(plannedOpenAt) == "" {
+		return false, nil
+	}
+	res, err := m.db.Exec(
+		`UPDATE game_servers SET status = ?, updated_at = ?
+		  WHERE id = ? AND status = ? AND planned_open_at = ?`,
+		ServerStatusOpen, nowUTC(), id, ServerStatusClosed, plannedOpenAt,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 const reservationColumns = "id, game_id, server_id, user_id, notified_at, created_at"
 
 func scanReservation(r *ServerReservation) []any {

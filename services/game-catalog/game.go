@@ -4,13 +4,18 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/tappi/tappi/services/game-catalog/internal/config"
 	"github.com/tappi/tappi/services/game-catalog/internal/handler"
 	"github.com/tappi/tappi/services/game-catalog/internal/logic"
+	"github.com/tappi/tappi/services/game-catalog/internal/openscan"
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 
 	"github.com/zeromicro/go-zero/core/conf"
@@ -45,6 +50,12 @@ func run() error {
 
 	ctx := svc.NewServiceContext(c)
 	handler.RegisterHandlers(server, ctx)
+
+	// GP-306 排期到点自动开服：周期扫描（账号信号面，与 payments 发货恢复
+	// 同款），ctx 取消即退出。
+	scanCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go openscan.NewRunner(ctx, time.Second*time.Duration(c.OpenScan.IntervalSeconds)).Run(scanCtx)
 
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()

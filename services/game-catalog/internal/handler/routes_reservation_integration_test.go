@@ -10,6 +10,7 @@ package handler
 // 推送在 community 侧完成并有独立验收测试）。
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net"
@@ -24,6 +25,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/tappi/tappi/services/game-catalog/internal/config"
 	"github.com/tappi/tappi/services/game-catalog/internal/logic"
+	"github.com/tappi/tappi/services/game-catalog/internal/openscan"
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 	"github.com/tappi/tappi/services/game-catalog/utils"
 
@@ -81,8 +83,9 @@ func (c *communityStub) Last() ([]byte, string) {
 }
 
 // newReservationTestServer 与 newAuthedTestServer 同款装配，额外接
-// community stub（Notify）与内部令牌（Internal）。
-func newReservationTestServer(t *testing.T, communityURL string) (string, func(utils.JWTClaims) string) {
+// community stub（Notify）与内部令牌（Internal）。返回 svcCtx 供调用方直接
+// 驱动进程内组件（如到点扫描器）——那些路径无 HTTP 面，只能进程内验收。
+func newReservationTestServer(t *testing.T, communityURL string) (string, func(utils.JWTClaims) string, *svc.ServiceContext) {
 	t.Helper()
 	httpx.SetErrorHandlerCtx(logic.ErrorHandler)
 
@@ -135,13 +138,13 @@ func newReservationTestServer(t *testing.T, communityURL string) (string, func(u
 		}
 		return signed
 	}
-	return base, sign
+	return base, sign, svcCtx
 }
 
 func TestRoutes_ServerReservations(t *testing.T) {
 	stub := newCommunityStub()
 	defer stub.srv.Close()
-	base, sign := newReservationTestServer(t, stub.srv.URL)
+	base, sign, _ := newReservationTestServer(t, stub.srv.URL)
 	admin := sign(claimsFor(1, "admin"))
 	player := sign(claimsFor(7, "bob"))
 	player2 := sign(claimsFor(8, "carol"))
@@ -339,4 +342,171 @@ func TestRoutes_ServerReservations(t *testing.T) {
 	if code != http.StatusOK || !strings.Contains(body, `"items":[]`) {
 		t.Fatalf("my reservations after cancel = %d body=%s", code, body)
 	}
+}
+
+// TestRoutes_ScheduledAutoOpen GP-306 排期到点自动开服：扫描把已到点的 closed
+// 区服置 open 并发一次预约提醒 + 落审计（actor=system）；未到点不开服；
+// 扫描不覆盖合作方手动置 open 的状态；再扫不重开不重发。
+func TestRoutes_ScheduledAutoOpen(t *testing.T) {
+	stub := newCommunityStub()
+	defer stub.srv.Close()
+	base, sign, svcCtx := newReservationTestServer(t, stub.srv.URL)
+	admin := sign(claimsFor(1, "admin"))
+	player := sign(claimsFor(7, "bob"))
+
+	gameBody := `{"title":"自动开服GP306","description":"gp-306-openscan","genres":["MMO"],"platforms":["Android"],"release_date":"2026-11-09","developer":"d","publisher":"p","tags":[],"score":8,"cover_image":"https://example.com/cover.jpg"}`
+	code, body := doAuthed(t, http.MethodPost, base+"/games", admin, gameBody)
+	if code != http.StatusOK {
+		t.Fatalf("create game = %d body=%s", code, body)
+	}
+	var gameResp struct {
+		Game struct {
+			Id string `json:"id"`
+		} `json:"game"`
+	}
+	if err := json.Unmarshal([]byte(body), &gameResp); err != nil || gameResp.Game.Id == "" {
+		t.Fatalf("decode game: %v body=%s", err, body)
+	}
+	gameID := gameResp.Game.Id
+	_, body = doAuthed(t, http.MethodPost, base+"/admin/partners", admin, `{"name":"自动开服厂GP306"}`)
+	var partnerResp struct {
+		Id int64 `json:"id"`
+	}
+	_ = json.Unmarshal([]byte(body), &partnerResp)
+	partnerUserID := partnerResp.Id + 100
+	partnerIDStr := strconv.FormatInt(partnerResp.Id, 10)
+	if code, _ := doAuthed(t, http.MethodPost, base+"/admin/roles", admin,
+		`{"user_id":`+strconv.FormatInt(partnerUserID, 10)+`,"role":"partner","partner_id":`+partnerIDStr+`}`); code != http.StatusOK {
+		t.Fatalf("grant partner = %d", code)
+	}
+	if code, _ := doAuthed(t, http.MethodPost, base+"/admin/games/"+gameID+"/ownership", admin,
+		`{"partner_id":`+partnerIDStr+`}`); code != http.StatusOK {
+		t.Fatalf("assign ownership = %d", code)
+	}
+	partner := sign(claimsFor(partnerUserID, "partner-gp306-openscan"))
+
+	// 1. 建两个已排期未开服区服：A 已到点，B 未到点
+	code, body = doAuthed(t, http.MethodPost, base+"/partner/games/"+gameID+"/servers", partner,
+		`{"name":"A1","region":"华东","status":"closed","planned_open_at":"2026-11-01T10:00:00+08:00"}`)
+	if code != http.StatusOK {
+		t.Fatalf("create A = %d body=%s", code, body)
+	}
+	var aResp struct {
+		Id int64 `json:"id"`
+	}
+	_ = json.Unmarshal([]byte(body), &aResp)
+	if aResp.Id <= 0 {
+		t.Fatalf("server A id missing: %s", body)
+	}
+	code, body = doAuthed(t, http.MethodPost, base+"/partner/games/"+gameID+"/servers", partner,
+		`{"name":"B1","region":"华南","status":"closed","planned_open_at":"2099-01-01T10:00:00+08:00"}`)
+	if code != http.StatusOK {
+		t.Fatalf("create B = %d body=%s", code, body)
+	}
+	var bResp struct {
+		Id int64 `json:"id"`
+	}
+	_ = json.Unmarshal([]byte(body), &bResp)
+	if bResp.Id <= 0 {
+		t.Fatalf("server B id missing: %s", body)
+	}
+
+	// 2. 玩家预约 A（提醒受众）
+	if code, _ = doAuthed(t, http.MethodPost,
+		base+"/games/"+gameID+"/servers/"+strconv.FormatInt(aResp.Id, 10)+"/reserve", player, ""); code != http.StatusOK {
+		t.Fatalf("reserve A = %d", code)
+	}
+
+	// 3. 扫描第一轮：A 到点 → 置 open + 发一次提醒；B 未到点不动
+	runner := openscan.NewRunner(svcCtx, time.Second)
+	if n := runner.OpenOnce(context.Background()); n != 1 {
+		t.Fatalf("first scan opened=%d, want 1", n)
+	}
+	items := partnerServerItems(t, base, partner, gameID)
+	if got := serverStatusOf(items, aResp.Id); got != "open" {
+		t.Fatalf("server A status = %q, want open", got)
+	}
+	if got := serverStatusOf(items, bResp.Id); got != "closed" {
+		t.Fatalf("server B status = %q, want closed", got)
+	}
+	if stub.Calls() != 1 {
+		t.Fatalf("auto open should notify once, got %d calls", stub.Calls())
+	}
+	raw, token := stub.Last()
+	var fanout struct {
+		UserIds []int64 `json:"user_ids"`
+		Type    string  `json:"type"`
+		Target  int64   `json:"target_id"`
+	}
+	if err := json.Unmarshal(raw, &fanout); err != nil || token != gp306Token ||
+		fanout.Type != "server_open" || fanout.Target != aResp.Id ||
+		len(fanout.UserIds) != 1 || fanout.UserIds[0] != 7 {
+		t.Fatalf("auto open fanout = %s token=%s err=%v", raw, token, err)
+	}
+
+	// 4. 审计留痕：game_server_auto_open（actor=system）
+	code, body = doAuthed(t, http.MethodGet,
+		base+"/admin/audit?resource_type=game_server&limit=100", admin, "")
+	if code != http.StatusOK || !strings.Contains(body, "game_server_auto_open") {
+		t.Fatalf("audit missing auto open = %d body=%s", code, body)
+	}
+	if !strings.Contains(body, `"actor_role":"system"`) {
+		t.Fatalf("auto open audit actor = %s", body)
+	}
+
+	// 5. 扫描第二轮：A 已 open、B 未到点 → 不重开不重发
+	if n := runner.OpenOnce(context.Background()); n != 0 {
+		t.Fatalf("second scan opened=%d, want 0", n)
+	}
+	if stub.Calls() != 1 {
+		t.Fatalf("rescan must not re-notify, got %d calls", stub.Calls())
+	}
+
+	// 6. 扫描不覆盖合作方手动置的状态：B 排期未到、手动开后再关（maintenance），
+	//    扫描不得把 manual 状态改回 open
+	if code, _ = doAuthed(t, http.MethodPatch, base+"/partner/games/"+gameID+"/servers/"+strconv.FormatInt(bResp.Id, 10),
+		partner, `{"status":"open"}`); code != http.StatusOK {
+		t.Fatalf("manually open B = %d", code)
+	}
+	if code, _ = doAuthed(t, http.MethodPatch, base+"/partner/games/"+gameID+"/servers/"+strconv.FormatInt(bResp.Id, 10),
+		partner, `{"status":"maintenance"}`); code != http.StatusOK {
+		t.Fatalf("manually to maintenance B = %d", code)
+	}
+	runner.OpenOnce(context.Background())
+	if got := serverStatusOf(partnerServerItems(t, base, partner, gameID), bResp.Id); got != "maintenance" {
+		t.Fatalf("scan overrode manual status: B = %q, want maintenance", got)
+	}
+}
+
+// partnerServerItems 取合作方视角区服列表（closed 亦可见）。
+func partnerServerItems(t *testing.T, base string, partner, gameID string) []json.RawMessage {
+	t.Helper()
+	code, body := doAuthed(t, http.MethodGet, base+"/partner/games/"+gameID+"/servers", partner, "")
+	if code != http.StatusOK {
+		t.Fatalf("partner list servers = %d body=%s", code, body)
+	}
+	var listResp struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &listResp); err != nil {
+		t.Fatalf("decode partner servers: %v body=%s", err, body)
+	}
+	return listResp.Items
+}
+
+// serverStatusOf 从合作方区服列表取指定区服状态（无则返回 ""）。
+func serverStatusOf(items []json.RawMessage, id int64) string {
+	for _, item := range items {
+		var s struct {
+			Id     int64  `json:"id"`
+			Status string `json:"status"`
+		}
+		if err := json.Unmarshal(item, &s); err != nil {
+			continue
+		}
+		if s.Id == id {
+			return s.Status
+		}
+	}
+	return ""
 }
