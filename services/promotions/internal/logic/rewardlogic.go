@@ -227,7 +227,7 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 				continue
 			}
 		}
-		// 限次消费（per_user_count / global_count；budget 扣减不在本项）
+		// 限次消费（per_user_count / global_count；budget_cents 运行时扣减）
 		if w.Limits.PerUserCount > 0 {
 			n, err := l.svcCtx.RewardDB.CountGrantsByUser(w.ActivityId, req.AccountId)
 			if err != nil {
@@ -247,6 +247,20 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 			}
 			if n >= w.Limits.GlobalCount {
 				skipped[w.ActivityId] = "global-limit-reached"
+				continue
+			}
+		}
+		// 预算消费（GP-301 limits.budget_cents 运行时扣减）：已发放账本的
+		// 去重订单实付合计 + 本单实付超过预算即跳过（预算耗尽）。累计净额
+		// 已发放档位被退款撤销时不再计入，即预算随之释放。
+		if w.Limits.BudgetCents > 0 {
+			spent, err := l.svcCtx.RewardDB.SumGrantedPaidCents(w.ActivityId)
+			if err != nil {
+				l.Errorf("sum budget spent activity=%d failed: %v", w.ActivityId, err)
+				return nil, newAPIError(http.StatusInternalServerError, "预算查询失败")
+			}
+			if spent+req.PaidCents > w.Limits.BudgetCents {
+				skipped[w.ActivityId] = "budget-exhausted"
 				continue
 			}
 		}

@@ -14,9 +14,10 @@ package logic
 //     （平票取 id 小者），其余全部排除；
 //   - 否则同一 stack_group 内互斥：组内挑额外量最大者（平票 id 小），
 //     不同组/无组可叠加求和。
-// 限次：per_user_count > 0 时该活动对单用户发放条数达上限即跳过；
-// global_count > 0 时该活动发放总条数达上限即跳过。budget_cents 运行时
-// 扣减不在本项（GP-301 口径延续）。
+// 限次与预算：per_user_count > 0 时该活动对单用户发放条数达上限即跳过；
+// global_count > 0 时该活动发放总条数达上限即跳过；budget_cents > 0 时
+// 已发放账本的去重订单实付合计（SUM(paid_cents) WHERE status='granted'，
+// 撤销行不计）达上限即跳过（预算耗尽）。
 
 import (
 	"encoding/json"
@@ -179,11 +180,14 @@ func parseTrigger(trigger map[string]any) (triggerSpec, error) {
 	return spec, nil
 }
 
-// limitsSpec 限次（运行时消费 per_user_count/global_count；budget_cents
-// 配置面校验，运行时扣减不在本项）。
+// limitsSpec 限次与预算（运行时全部消费：per_user_count / global_count /
+// budget_cents）。budget_cents 语义=本活动可带动的**去重订单实付上限**：
+// 赠币无数额价值，GMV（订单实付合计）是唯一可算的活动效果口径，与 GP-402
+// reward_granted 事件金额口径一致；0 = 不设预算。
 type limitsSpec struct {
 	PerUserCount int64
 	GlobalCount  int64
+	BudgetCents  int64
 }
 
 func parseLimits(limits map[string]any) (limitsSpec, error) {
@@ -204,6 +208,13 @@ func parseLimits(limits map[string]any) (limitsSpec, error) {
 			return spec, newAPIError(http.StatusBadRequest, "限次 global_count 必须为非负整数")
 		}
 		spec.GlobalCount = n
+	}
+	if v, ok := limits["budget_cents"]; ok {
+		n, ok := toInt64(v)
+		if !ok || n < 0 {
+			return spec, newAPIError(http.StatusBadRequest, "预算 budget_cents 必须为非负整数")
+		}
+		spec.BudgetCents = n
 	}
 	return spec, nil
 }

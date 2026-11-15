@@ -244,6 +244,24 @@ func (m *RewardGrantModel) CountGrantsByActivity(activityID int64) (int64, error
 	return n, err
 }
 
+// SumGrantedPaidCents 单活动已发放（未撤销）账本的订单实付合计（budget_cents
+// 预算消费记账）。**按去重订单号聚合**：同一订单可能命中本活动的多个档位/
+// 多个活动，活动效果口径是「发放所带动的订单实付」，同一订单只计一次
+// （与 GP-402/F24 的 reward_granted 事件金额口径一致）。撤销行不计入——
+// 退款后档位撤销即释放已占预算。
+func (m *RewardGrantModel) SumGrantedPaidCents(activityID int64) (int64, error) {
+	var sum int64
+	err := m.db.QueryRow(
+		`SELECT COALESCE(SUM(c.cents), 0) FROM (
+			 SELECT order_id, MAX(paid_cents) AS cents
+			 FROM reward_grants
+			 WHERE activity_id = ? AND status = ?
+			 GROUP BY order_id
+		 ) c`,
+		activityID, RewardStatusGranted).Scan(&sum)
+	return sum, err
+}
+
 // CountGrantsByUserRule 单用户单活动指定规则类型的已发放条数
 // （first_purchase 全局一次的判定依据）。
 func (m *RewardGrantModel) CountGrantsByUserRule(activityID int64, accountID, ruleType string) (int64, error) {

@@ -290,3 +290,78 @@ func readAllBody(t *testing.T, resp *http.Response) string {
 	raw, _ := io.ReadAll(resp.Body)
 	return string(raw)
 }
+
+// TestRoutes_BudgetCentsConsumption GP-301 limits.budget_cents 运行时扣减：
+// 已发放账本的去重订单实付合计达预算即停发（budget-exhausted），撤销行不计。
+func TestRoutes_BudgetCentsConsumption(t *testing.T) {
+	env := newActivityServer(t)
+	admin := env.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
+
+	// 预算 2000 分，额外倍率 5000（加赠 50%），触发满 1000 分。
+	id := publishActivity(t, env, admin, `{
+		"name":"预算活动","game_id":"game-a","timezone":"Asia/Shanghai",
+		"start_at":"2026-11-01T00:00:00+08:00","end_at":"2026-11-30T23:59:59+08:00",
+		"server_ids":[1],"channel":"sandbox","audience":{"type":"all"},
+		"trigger":{"type":"order","min_amount_cents":1000},
+		"limits":{"budget_cents":2000},
+		"stackable":true,"rewards":{"type":"multiplier","mode":"extra","rate_bp":5000}
+	}`)
+	if id == 0 {
+		t.Fatal("bad activity id")
+	}
+
+	// 1. 首单实付 1000 → 发放（累计 1000 ≤ 2000）
+	code, body := evaluate(t, env, evalBody("b-order-1", 100, 1000), "")
+	if code != http.StatusOK {
+		t.Fatalf("evaluate b-order-1 = %d body=%s", code, body)
+	}
+	var r1 evalResp
+	_ = json.Unmarshal([]byte(body), &r1)
+	if len(r1.Grants) != 1 || r1.Grants[0].ActivityId != id {
+		t.Fatalf("b-order-1 grants = %+v body=%s", r1.Grants, body)
+	}
+
+	// 2. 第二单（换账号）累计 2000 = 预算上限，含等号仍发放
+	bodyU2 := strings.Replace(evalBody("b-order-2", 100, 1000), `"u1"`, `"u2"`, 1)
+	code, body = evaluate(t, env, bodyU2, "")
+	if code != http.StatusOK {
+		t.Fatalf("evaluate b-order-2 = %d body=%s", code, body)
+	}
+	var r2 evalResp
+	_ = json.Unmarshal([]byte(body), &r2)
+	if len(r2.Grants) != 1 || r2.Grants[0].ExtraQuantity != 50 {
+		t.Fatalf("b-order-2 grants = %+v body=%s", r2.Grants, body)
+	}
+
+	// 3. 第三单累计 3000 > 2000 → 预算耗尽跳过，不发
+	bodyU3 := strings.Replace(evalBody("b-order-3", 100, 1000), `"u1"`, `"u3"`, 1)
+	code, body = evaluate(t, env, bodyU3, "")
+	if code != http.StatusOK {
+		t.Fatalf("evaluate b-order-3 = %d body=%s", code, body)
+	}
+	var r3 evalResp
+	_ = json.Unmarshal([]byte(body), &r3)
+	if len(r3.Grants) != 0 {
+		t.Fatalf("b-order-3 grants = %+v", r3.Grants)
+	}
+	exhausted := false
+	for _, s := range r3.Skipped {
+		if s.ActivityId == id && s.Reason == "budget-exhausted" {
+			exhausted = true
+		}
+	}
+	if !exhausted {
+		t.Fatalf("b-order-3 skipped = %+v", r3.Skipped)
+	}
+
+	// 4. 预算耗尽后同订单重放仍是重放语义（已有账本行 → replay）
+	code, body = evaluate(t, env, bodyU2, "")
+	if code != http.StatusOK {
+		t.Fatalf("replay b-order-2 = %d", code)
+	}
+	var r4 evalResp
+	_ = json.Unmarshal([]byte(body), &r4)
+	if !r4.Replay || len(r4.Grants) != 1 {
+		t.Fatalf("replay = %+v", r4)
+	}
+}
