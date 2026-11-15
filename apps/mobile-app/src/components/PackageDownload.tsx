@@ -1,9 +1,10 @@
 // GP-105 平台包体下载区：受控下载（登录）→ 进度/暂停/续传/重试 → 大小校验 → 安装。
 // 服务端只放行「已发布 + 平台托管」版本；下载通道经网关流式透传（GET
 // /games/:id/versions/:versionId/download），Bearer 头由本组件注入。
-// 非 Android 不显示安装按钮（系统商店链接承接由入口区负责，F08）。
+// 跨会话续传：挂载时读取暂停快照（resume-*.json）重建暂停态任务。
+// 非 Android 不做应用内 APK 下载，暂以适用商店链接承接（入口区，F08）。
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
@@ -11,6 +12,8 @@ import { GAME_SERVICE_URL, type LatestGameVersion } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import {
   createPackageDownload,
+  createResumablePackageDownload,
+  loadResumable,
   type DownloadSnapshot,
   type PackageDownloadHandle,
 } from '../lib/downloads';
@@ -32,10 +35,15 @@ export function PackageDownload({ gameId, pkg }: { gameId: string; pkg: LatestGa
     [gameId, pkg],
   );
 
+  const downloadUrl = useMemo(
+    () => `${GAME_SERVICE_URL}/games/${encodeURIComponent(gameId)}/versions/${encodeURIComponent(pkg.id)}/download`,
+    [gameId, pkg],
+  );
+
   const ensureHandle = useCallback((): PackageDownloadHandle => {
     if (!handleRef.current) {
       handleRef.current = createPackageDownload({
-        url: `${GAME_SERVICE_URL}/games/${encodeURIComponent(gameId)}/versions/${encodeURIComponent(pkg.id)}/download`,
+        url: downloadUrl,
         fileName,
         expectedSize: pkg.size_bytes,
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -43,7 +51,27 @@ export function PackageDownload({ gameId, pkg }: { gameId: string; pkg: LatestGa
       });
     }
     return handleRef.current;
-  }, [gameId, pkg, fileName, token]);
+  }, [downloadUrl, fileName, pkg.size_bytes, token]);
+
+  // 跨会话续传：挂载时恢复上次暂停的下载（快照 URL 与当前版本一致才恢复；
+  // 已有句柄不覆盖）。重建任务为 paused 相位，续传走既有 resume()。
+  useEffect(() => {
+    if (handleRef.current || Platform.OS !== 'android') {
+      return;
+    }
+    const saved = loadResumable(fileName);
+    if (!saved || saved.url !== downloadUrl) {
+      return;
+    }
+    handleRef.current = createResumablePackageDownload(saved, {
+      url: downloadUrl,
+      fileName,
+      expectedSize: pkg.size_bytes,
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      onUpdate: setSnap,
+    });
+    setSnap(handleRef.current.snapshot);
+  }, [fileName, downloadUrl, pkg.size_bytes, token]);
 
   const phase = snap?.phase ?? 'idle';
 
@@ -65,6 +93,19 @@ export function PackageDownload({ gameId, pkg }: { gameId: string; pkg: LatestGa
   }, []);
 
   const percent = snap ? Math.round(snap.progress * 100) : 0;
+
+  // 非 Android：不做应用内 APK 下载，暂以适用商店链接承接（入口区按钮）
+  if (Platform.OS !== 'android') {
+    return (
+      <View style={styles.wrap}>
+        <Text style={styles.meta}>
+          平台安装包 v{pkg.version}
+          {pkg.version_code ? ` · build ${pkg.version_code}` : ''} · {fmtBytes(pkg.size_bytes)}
+        </Text>
+        <Text style={styles.hint}>该平台暂不提供应用内下载，请通过应用商店链接安装。</Text>
+      </View>
+    );
+  }
   const primaryLabel =
     phase === 'idle'
       ? `下载安装包（${fmtBytes(pkg.size_bytes)}）`

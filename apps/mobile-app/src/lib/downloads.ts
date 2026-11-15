@@ -4,15 +4,17 @@
 // - 走 gateway 流式透传通道 GET /games/:id/versions/:versionId/download，
 //   带 Bearer 头（服务端只放行已发布+平台托管版本）。
 // - 暂停/续传用 expo-file-system 新版 DownloadTask（pauseAsync/resumeAsync，
-//   原生断点续传）；本次会话内恢复，App 重启后的跨会话续传留待原生补齐
-//   （DownloadPauseState.savable() 已可序列化，此处先不落盘）。
+//   原生断点续传）；跨会话续传：暂停时 task.savable() 落盘
+//   （resume-<文件名>.json），重启后 DownloadTask.fromSavable 重建暂停态
+//   任务再 resumeAsync（见 loadResumable/createResumablePackageDownload）。
 // - 完整性校验：下载完成后比对 Content-Length 与 size_bytes（截断检测）。
-//   SHA-256 校验（X-Package-Sha256）需原生文件哈希模块，JS 侧无逐块哈希
-//   能力，作为已知缺口记录（真机验收时以 X-Package-Sha256 比对）。
+//   SHA-256 校验（X-Package-Sha256）需原生文件哈希模块：expo-crypto 仅
+//   支持整块 digest（无流式/文件接口，2 GiB 包体读入内存不可行），作为
+//   已知缺口记录（真机验收时以 X-Package-Sha256 比对）。
 // - 安装：Android 经 IntentLauncher ACTION_VIEW 打开 APK（需要用户允许
 //   未知来源安装，REQ_INSTALL_PACKAGES 权限在 app.json 声明）。
 
-import { Directory, File, Paths, DownloadTask, type DownloadTaskOptions } from 'expo-file-system';
+import { Directory, File, Paths, DownloadTask, type DownloadPauseState, type DownloadTaskOptions } from 'expo-file-system';
 import { getContentUriAsync } from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { Platform } from 'react-native';
@@ -50,6 +52,15 @@ export interface PackageDownloadHandle {
   get snapshot(): DownloadSnapshot;
 }
 
+/** 跨会话续传的落盘快照（暂停时写入，恢复/取消/完成后清除） */
+export interface SavedDownloadState {
+  url: string;
+  fileName: string;
+  expectedSize?: number;
+  savedAt: number;
+  pauseState: DownloadPauseState;
+}
+
 const DL_DIR = 'spawn-downloads';
 
 function downloadsDir(): Directory {
@@ -64,6 +75,38 @@ function safeFileName(name: string): string {
   // 只留字母数字._-，避免路径穿越
   const cleaned = name.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 128);
   return cleaned || `pkg-${Date.now()}.apk`;
+}
+
+function resumeStateFile(fileName: string): File {
+  return new File(downloadsDir(), `resume-${safeFileName(fileName)}.json`);
+}
+
+/** 读取某包体的跨会话续传快照（无/损坏/字段缺失 → null） */
+export function loadResumable(fileName: string): SavedDownloadState | null {
+  const stateFile = resumeStateFile(fileName);
+  if (!stateFile.exists) {
+    return null;
+  }
+  try {
+    const saved = JSON.parse(stateFile.textSync()) as SavedDownloadState;
+    if (!saved || typeof saved.url !== 'string' || !saved.pauseState || typeof saved.pauseState.url !== 'string') {
+      return null;
+    }
+    return saved;
+  } catch {
+    return null;
+  }
+}
+
+function clearResumable(fileName: string): void {
+  try {
+    const stateFile = resumeStateFile(fileName);
+    if (stateFile.exists) {
+      stateFile.delete();
+    }
+  } catch {
+    // 清理失败不影响主流程
+  }
 }
 
 class PackageDownload implements PackageDownloadHandle {
@@ -105,10 +148,11 @@ class PackageDownload implements PackageDownloadHandle {
     }
     const name = safeFileName(this.opts.fileName);
     this.file = new File(downloadsDir(), name);
-    // 上次失败/取消的残留：从头重来
+    // 上次失败/取消的残留：从头重来（跨会话续传快照一并清除）
     if (this.file.exists) {
       this.file.delete();
     }
+    clearResumable(this.opts.fileName);
     this.error = undefined;
     await this.run(this.file);
   }
@@ -121,6 +165,19 @@ class PackageDownload implements PackageDownloadHandle {
     if (this.task && this.phase === 'downloading') {
       await this.task.pauseAsync();
       this.phase = 'paused';
+      // 跨会话续传：savable 快照落盘（仅暂停态可取；失败不阻断暂停）
+      try {
+        const saved: SavedDownloadState = {
+          url: this.opts.url,
+          fileName: this.opts.fileName,
+          expectedSize: this.opts.expectedSize,
+          savedAt: Date.now(),
+          pauseState: this.task.savable(),
+        };
+        resumeStateFile(this.opts.fileName).write(JSON.stringify(saved));
+      } catch {
+        // 落盘失败退化为会话内续传
+      }
       this.emit();
     }
   }
@@ -142,11 +199,13 @@ class PackageDownload implements PackageDownloadHandle {
     this.task?.cancel();
     this.phase = 'idle';
     this.bytesWritten = 0;
+    clearResumable(this.opts.fileName);
     this.emit();
   }
 
-  private async run(dest: File): Promise<void> {
-    const options: DownloadTaskOptions = {
+  /** 进度回调/头注入（start 与 fromSavable 重建共用；savable 不序列化回调） */
+  private progressOptions(): DownloadTaskOptions {
+    return {
       headers: this.opts.headers,
       onProgress: (p) => {
         this.bytesWritten = p.bytesWritten;
@@ -157,9 +216,12 @@ class PackageDownload implements PackageDownloadHandle {
         this.emit();
       },
     };
+  }
+
+  private async run(dest: File): Promise<void> {
     this.phase = 'downloading';
     this.emit();
-    this.task = File.createDownloadTask(this.opts.url, dest, options);
+    this.task = File.createDownloadTask(this.opts.url, dest, this.progressOptions());
     try {
       const result = await this.task.downloadAsync();
       await this.onFinished(result);
@@ -174,12 +236,24 @@ class PackageDownload implements PackageDownloadHandle {
     }
   }
 
+  // restore 由落盘快照重建暂停态任务（跨会话续传入口）：目标文件与
+  // 暂停态保留，回调经 progressOptions 重挂（新头覆盖旧 Authorization）。
+  static restore(saved: SavedDownloadState, opts: PackageDownloadOptions): PackageDownloadHandle {
+    const inst = new PackageDownload(opts);
+    inst.file = new File(downloadsDir(), safeFileName(saved.fileName));
+    inst.task = DownloadTask.fromSavable(saved.pauseState, inst.progressOptions());
+    inst.phase = 'paused';
+    return inst;
+  }
+
   // onFinished 处理下载完成结果：null = 被暂停（phase 由 pause() 置
   // paused）；否则截断校验 + 落 done。start 与 resume 共用（P1-4）。
   private async onFinished(result: File | null): Promise<void> {
     if (result === null) {
       return;
     }
+    // 下载完成：跨会话续传快照已失效
+    clearResumable(this.opts.fileName);
     this.phase = 'verifying';
     this.emit();
     // 截断校验：字节数必须等于服务端登记的 size_bytes（GP-104 登记值）
@@ -219,4 +293,16 @@ class PackageDownload implements PackageDownloadHandle {
 
 export function createPackageDownload(opts: PackageDownloadOptions): PackageDownloadHandle {
   return new PackageDownload(opts);
+}
+
+/**
+ * 由落盘快照重建暂停态下载（App 重启后的跨会话续传）。
+ * snapshot 为 paused 相位；续传走既有 resume()（fromSavable 任务 +
+ * 新注入的头，Authorization 以本次登录态为准）。
+ */
+export function createResumablePackageDownload(
+  saved: SavedDownloadState,
+  opts: PackageDownloadOptions,
+): PackageDownloadHandle {
+  return PackageDownload.restore(saved, opts);
 }
