@@ -62,6 +62,9 @@ func validatePack(cfg *types.GiftPackConfig) error {
 	if cfg.PerUserLimit <= 0 {
 		return newAPIError(http.StatusBadRequest, "per_user_limit 必须为正整数")
 	}
+	if cfg.TotalLimit < 0 {
+		return newAPIError(http.StatusBadRequest, "total_limit 不能为负数（0 为不限量）")
+	}
 	for _, s := range cfg.ServerIds {
 		if s <= 0 {
 			return newAPIError(http.StatusBadRequest, "区服标识必须为正整数")
@@ -86,7 +89,7 @@ func (l *GiftPackLogic) Create(req *types.CreateGiftPackRequest, authHeader stri
 		Name: req.Name, GameId: req.GameId, Description: req.Description,
 		Status: model.GiftPackStatusDraft, Timezone: req.Timezone,
 		StartAt: req.StartAt, EndAt: req.EndAt, Channel: req.Channel,
-		PerUserLimit: req.PerUserLimit, CodeRequired: req.CodeRequired,
+		PerUserLimit: req.PerUserLimit, TotalLimit: req.TotalLimit, CodeRequired: req.CodeRequired,
 		CreatedBy: userID,
 	}
 	if p.ServerIds, err = marshalInts(req.ServerIds); err != nil {
@@ -129,7 +132,7 @@ func (l *GiftPackLogic) Update(req *types.UpdateGiftPackRequest, authHeader stri
 	p := &model.GiftPack{
 		Id: req.Id, Name: req.Name, GameId: req.GameId, Description: req.Description,
 		Timezone: req.Timezone, StartAt: req.StartAt, EndAt: req.EndAt,
-		Channel: req.Channel, PerUserLimit: req.PerUserLimit, CodeRequired: req.CodeRequired,
+		Channel: req.Channel, PerUserLimit: req.PerUserLimit, TotalLimit: req.TotalLimit, CodeRequired: req.CodeRequired,
 	}
 	if p.ServerIds, err = marshalInts(req.ServerIds); err != nil {
 		return nil, newAPIError(http.StatusBadRequest, "区服配置不合法")
@@ -405,7 +408,18 @@ func (l *GiftPackLogic) Claim(req *types.ClaimGiftPackRequest, authHeader string
 		ServerId: req.ServerId, RoleId: req.RoleId,
 		ClaimIndex: count + 1, RequestId: req.RequestId, Status: model.ClaimStatusClaimed,
 	}
-	if err := l.svcCtx.GiftPackDB.InsertClaim(claim); err != nil {
+	// 全量上限（库存预算）：total_limit>0 时走条件 INSERT 原子判定（直发包
+	// 并发不超额）；0=不限量走普通插入。
+	var insertErr error
+	if p.TotalLimit > 0 {
+		insertErr = l.svcCtx.GiftPackDB.InsertClaimCapped(claim, p.TotalLimit)
+		if errors.Is(insertErr, model.ErrGiftPackClaimTotalReached) {
+			return nil, newAPIError(http.StatusConflict, "礼包已领完")
+		}
+	} else {
+		insertErr = l.svcCtx.GiftPackDB.InsertClaim(claim)
+	}
+	if insertErr != nil {
 		// 唯一冲突：请求键幂等 / 槽位限额并发
 		if existing, e2 := l.svcCtx.GiftPackDB.GetClaimByRequest(p.Id, accountID, req.RequestId); e2 == nil {
 			resp := &types.ClaimGiftPackResponse{Claim: toClaimView(existing)}
@@ -622,7 +636,7 @@ func toPackView(p *model.GiftPack) types.GiftPackView {
 		Status: p.Status, Timezone: p.Timezone, StartAt: p.StartAt, EndAt: p.EndAt,
 		ServerIds: unmarshalInts(p.ServerIds), Channel: p.Channel,
 		Audience: unmarshalJSON(p.Audience), PerUserLimit: p.PerUserLimit,
-		CodeRequired: p.CodeRequired, Content: unmarshalJSON(p.Content),
+		TotalLimit: p.TotalLimit, CodeRequired: p.CodeRequired, Content: unmarshalJSON(p.Content),
 		CreatedBy: p.CreatedBy, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
 }

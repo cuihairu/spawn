@@ -203,6 +203,7 @@ type GiftPackConfig struct {
 	Channel      string         `json:"channel,optional"`
 	Audience     map[string]any `json:"audience,optional"`
 	PerUserLimit int64          `json:"per_user_limit,optional"`
+	TotalLimit   int64          `json:"total_limit,optional"` // 全量领取上限（库存预算，0=不限）
 	CodeRequired bool           `json:"code_required,optional"`
 	Content      map[string]any `json:"content"`
 }
@@ -239,6 +240,7 @@ type GiftPackView struct {
 	Channel      string         `json:"channel"`
 	Audience     map[string]any `json:"audience"`
 	PerUserLimit int64          `json:"per_user_limit"`
+	TotalLimit   int64          `json:"total_limit"`
 	CodeRequired bool           `json:"code_required"`
 	Content      map[string]any `json:"content"`
 	CreatedBy    int64          `json:"created_by"`

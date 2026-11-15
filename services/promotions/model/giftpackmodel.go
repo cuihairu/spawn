@@ -18,9 +18,10 @@ import (
 )
 
 var (
-	ErrGiftPackNotFound      = errors.New("gift pack not found")
-	ErrGiftPackCodeNotFound  = errors.New("gift pack code not found")
-	ErrGiftPackClaimNotFound = errors.New("gift pack claim not found")
+	ErrGiftPackNotFound          = errors.New("gift pack not found")
+	ErrGiftPackCodeNotFound      = errors.New("gift pack code not found")
+	ErrGiftPackClaimNotFound     = errors.New("gift pack claim not found")
+	ErrGiftPackClaimTotalReached = errors.New("gift pack claim total limit reached")
 )
 
 // GiftPackStatus / CodeStatus / ClaimStatus 状态常量。
@@ -52,6 +53,7 @@ type GiftPack struct {
 	Channel      string `json:"channel"`
 	Audience     string `json:"audience"` // JSON 对象
 	PerUserLimit int64  `json:"per_user_limit"`
+	TotalLimit   int64  `json:"total_limit"` // 全量领取上限（0=不限）
 	CodeRequired bool   `json:"code_required"`
 	Content      string `json:"content"` // JSON 对象（items 等）
 	CreatedBy    int64  `json:"created_by"`
@@ -113,6 +115,7 @@ func (m *GiftPackModel) CreateTables() error {
 				channel VARCHAR(32) NOT NULL DEFAULT '',
 				audience TEXT NOT NULL DEFAULT '{}',
 				per_user_limit INTEGER NOT NULL DEFAULT 1,
+				total_limit INTEGER NOT NULL DEFAULT 0,
 				code_required INTEGER NOT NULL DEFAULT 0,
 				content TEXT NOT NULL,
 				created_by INTEGER NOT NULL DEFAULT 0,
@@ -132,6 +135,7 @@ func (m *GiftPackModel) CreateTables() error {
 				channel VARCHAR(32) NOT NULL DEFAULT '',
 				audience TEXT NOT NULL,
 				per_user_limit BIGINT NOT NULL DEFAULT 1,
+				total_limit BIGINT NOT NULL DEFAULT 0,
 				code_required TINYINT(1) NOT NULL DEFAULT 0,
 				content TEXT NOT NULL,
 				created_by BIGINT NOT NULL DEFAULT 0,
@@ -212,12 +216,12 @@ func (m *GiftPackModel) CreateTables() error {
 	return nil
 }
 
-const giftPackColumns = "id, name, game_id, description, status, timezone, start_at, end_at, server_ids, channel, audience, per_user_limit, code_required, content, created_by, created_at, updated_at"
+const giftPackColumns = "id, name, game_id, description, status, timezone, start_at, end_at, server_ids, channel, audience, per_user_limit, total_limit, code_required, content, created_by, created_at, updated_at"
 
 func scanGiftPack(p *GiftPack) []any {
 	return []any{&p.Id, &p.Name, &p.GameId, &p.Description, &p.Status, &p.Timezone,
 		&p.StartAt, &p.EndAt, &p.ServerIds, &p.Channel, &p.Audience, &p.PerUserLimit,
-		&p.CodeRequired, &p.Content, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt}
+		&p.TotalLimit, &p.CodeRequired, &p.Content, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt}
 }
 
 const giftPackCodeColumns = "id, pack_id, code, status, account_id, claim_id, issued_at, used_at, expires_at, created_at"
@@ -239,10 +243,10 @@ func (m *GiftPackModel) Create(p *GiftPack) error {
 	now := nowUTC()
 	p.CreatedAt, p.UpdatedAt = now, now
 	res, err := m.db.Exec(
-		`INSERT INTO gift_packs (name, game_id, description, status, timezone, start_at, end_at, server_ids, channel, audience, per_user_limit, code_required, content, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO gift_packs (name, game_id, description, status, timezone, start_at, end_at, server_ids, channel, audience, per_user_limit, total_limit, code_required, content, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.Name, p.GameId, p.Description, p.Status, p.Timezone, p.StartAt, p.EndAt,
-		p.ServerIds, p.Channel, p.Audience, p.PerUserLimit, p.CodeRequired, p.Content,
+		p.ServerIds, p.Channel, p.Audience, p.PerUserLimit, p.TotalLimit, p.CodeRequired, p.Content,
 		p.CreatedBy, now, now,
 	)
 	if err != nil {
@@ -257,9 +261,9 @@ func (m *GiftPackModel) Create(p *GiftPack) error {
 // Update 更新草稿配置（不改变 status/created_at）。
 func (m *GiftPackModel) Update(p *GiftPack) error {
 	_, err := m.db.Exec(
-		`UPDATE gift_packs SET name=?, description=?, timezone=?, start_at=?, end_at=?, server_ids=?, channel=?, audience=?, per_user_limit=?, code_required=?, content=?, updated_at=? WHERE id=?`,
+		`UPDATE gift_packs SET name=?, description=?, timezone=?, start_at=?, end_at=?, server_ids=?, channel=?, audience=?, per_user_limit=?, total_limit=?, code_required=?, content=?, updated_at=? WHERE id=?`,
 		p.Name, p.Description, p.Timezone, p.StartAt, p.EndAt, p.ServerIds, p.Channel,
-		p.Audience, p.PerUserLimit, p.CodeRequired, p.Content, nowUTC(), p.Id,
+		p.Audience, p.PerUserLimit, p.TotalLimit, p.CodeRequired, p.Content, nowUTC(), p.Id,
 	)
 	return err
 }
@@ -505,6 +509,30 @@ func (m *GiftPackModel) InsertClaim(c *GiftPackClaim) error {
 		c.ClaimIndex, c.RequestId, c.Status, c.CreatedAt)
 	if err != nil {
 		return err
+	}
+	if id, err := res.LastInsertId(); err == nil && id > 0 {
+		c.Id = id
+	}
+	return nil
+}
+
+// InsertClaimCapped 全量上限下的原子落领取：INSERT...SELECT 条件守卫
+// （当前已领总数 < totalLimit 才插入，单语句判定+写入，直发包并发不超额）。
+// affected=0 说明全量已领完。派生表种子 FROM (SELECT 1) 兼容 SQLite 与
+// MySQL 两方言同一语句。
+func (m *GiftPackModel) InsertClaimCapped(c *GiftPackClaim, totalLimit int64) error {
+	c.CreatedAt = nowUTC()
+	res, err := m.db.Exec(
+		`INSERT INTO gift_pack_claims (pack_id, account_id, game_id, server_id, role_id, code_id, claim_index, request_id, status, created_at)
+		 SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM (SELECT 1) AS seed
+		 WHERE (SELECT COUNT(*) FROM gift_pack_claims WHERE pack_id=?) < ?`,
+		c.PackId, c.AccountId, c.GameId, c.ServerId, c.RoleId, c.CodeId,
+		c.ClaimIndex, c.RequestId, c.Status, c.CreatedAt, c.PackId, totalLimit)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrGiftPackClaimTotalReached
 	}
 	if id, err := res.LastInsertId(); err == nil && id > 0 {
 		c.Id = id

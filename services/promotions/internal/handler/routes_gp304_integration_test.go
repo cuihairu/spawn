@@ -210,3 +210,78 @@ func TestRoutes_GiftPacks(t *testing.T) {
 		t.Fatalf("audit = %d body=%s", code, body)
 	}
 }
+
+func gpPackBodyTotal(name string, perUser, total int64) string {
+	return fmt.Sprintf(`{
+		"name":%q,"game_id":"game-a","description":"capped pack",
+		"timezone":"Asia/Shanghai",
+		"start_at":"2026-01-01T00:00:00+08:00","end_at":"2026-12-31T23:59:59+08:00",
+		"server_ids":[1],"channel":"sandbox","audience":{"type":"all"},
+		"per_user_limit":%d,"total_limit":%d,"code_required":false,
+		"content":{"items":[{"sku":"gem-50","qty":1}]}
+	}`, name, perUser, total)
+}
+
+// TestRoutes_GiftPackTotalLimit 直发包全量上限（库存预算）：total_limit
+// 条件 INSERT 原子判定，跨账号并发不超额；幂等重放优先于上限判定。
+func TestRoutes_GiftPackTotalLimit(t *testing.T) {
+	env := newActivityServer(t)
+	admin := env.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
+	playerA := env.sign(utils.JWTClaims{UserId: 7, Username: "bob"})
+	playerB := env.sign(utils.JWTClaims{UserId: 8, Username: "carl"})
+	playerC := env.sign(utils.JWTClaims{UserId: 9, Username: "dan"})
+
+	// 1. 负 total_limit → 400
+	code, _ := do(t, http.MethodPost, env.base+"/admin/gift-packs", admin, gpPackBodyTotal("负上限", 5, -1))
+	if code != http.StatusBadRequest {
+		t.Fatalf("negative total_limit = %d, want 400", code)
+	}
+
+	// 2. 建直发包 total_limit=2 并发布；视图回显 total_limit
+	packID := gpCreate(t, env, admin, gpPackBodyTotal("限量直发", 5, 2))
+	code, body := do(t, http.MethodGet, fmt.Sprintf("%s/admin/gift-packs/%d", env.base, packID), admin, "")
+	if code != http.StatusOK || !strings.Contains(body, `"total_limit":2`) {
+		t.Fatalf("pack view total_limit = %d body=%s", code, body)
+	}
+	gpPublish(t, env, admin, packID, http.StatusOK)
+
+	// 3. 玩家侧展示含 total_limit
+	code, body = do(t, http.MethodGet, env.base+"/gift-packs?game_id=game-a&server_id=1", playerA, "")
+	if code != http.StatusOK || !strings.Contains(body, `"total_limit":2`) {
+		t.Fatalf("player list total_limit = %d body=%s", code, body)
+	}
+
+	claim := func(token, reqID string, want int) string {
+		code, body := do(t, http.MethodPost, fmt.Sprintf("%s/gift-packs/%d/claim", env.base, packID), token,
+			fmt.Sprintf(`{"server_id":1,"request_id":%q}`, reqID))
+		if code != want {
+			t.Fatalf("claim req=%s = %d (want %d) body=%s", reqID, code, want, body)
+		}
+		return body
+	}
+
+	// 4. 前两名玩家领满全量上限
+	claim(playerA, "t1", http.StatusOK)
+	claim(playerB, "t2", http.StatusOK)
+
+	// 5. 第三名玩家 → 409 礼包已领完（全量上限而非限领）
+	body = claim(playerC, "t3", http.StatusConflict)
+	if !strings.Contains(body, "礼包已领完") {
+		t.Fatalf("total cap conflict body=%s", body)
+	}
+
+	// 6. 已领玩家再领新请求 → 同样撞全量上限
+	claim(playerA, "t4", http.StatusConflict)
+
+	// 7. 幂等重放优先于上限：同请求键返回既有领取
+	body = claim(playerA, "t1", http.StatusOK)
+	if !strings.Contains(body, `"claim_index":1`) || !strings.Contains(body, `"account_id":"7"`) {
+		t.Fatalf("idempotent replay under cap body=%s", body)
+	}
+
+	// 8. 领取记录恰 2 条
+	code, body = do(t, http.MethodGet, fmt.Sprintf("%s/admin/gift-packs/%d/claims", env.base, packID), admin, "")
+	if code != http.StatusOK || strings.Count(body, `"account_id":`) != 2 {
+		t.Fatalf("capped claims = %d body=%s", code, body)
+	}
+}
