@@ -3,7 +3,9 @@ version: "3.9"
 services:
   api-gateway:
     build:
-      context: ./services/api-gateway
+      # 根上下文：go.mod replace ../../pkg/resilience 需要仓库布局（见 Dockerfile）
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
     environment:
       USER_SERVICE_URL: http://user-service:8888
       GAME_SERVICE_URL: http://game-catalog:8890
@@ -59,7 +61,9 @@ services:
 
   content-service:
     build:
-      context: ./services/content-service
+      # 根上下文：go.mod replace ../../pkg/resilience 需要仓库布局（见 Dockerfile）
+      context: .
+      dockerfile: services/content-service/Dockerfile
     environment:
       JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
       GAMECATALOG_BASE_URL: http://game-catalog:8890
@@ -71,7 +75,9 @@ services:
 
   user-service:
     build:
-      context: ./services/user-service
+      # 根上下文：go.mod replace ../../pkg/resilience 需要仓库布局（见 Dockerfile）
+      context: .
+      dockerfile: services/user-service/Dockerfile
     environment:
       DATASOURCE: file:/app/data/users.db
       GAMECATALOG_BASE_URL: http://game-catalog:8890
