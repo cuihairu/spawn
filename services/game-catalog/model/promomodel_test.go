@@ -187,3 +187,51 @@ func TestIsClickWithinWindow(t *testing.T) {
 		})
 	}
 }
+
+func TestPrunePromoClicks(t *testing.T) {
+	m := newTestAdminModel(t)
+	ch, err := m.CreatePromoChannel("kol-li", "主播李", 72)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// 三旧两新：旧 = 保留窗口前，新 = 窗口内
+	old := "2026-01-01T00:00:00Z"
+	new := "2026-11-12T10:00:00Z"
+	for i, at := range []string{old, old, old, new, new} {
+		if _, err := m.RecordPromoClick("p-"+string(rune('a'+i)), ch, PromoClickClick, "g-1", at); err != nil {
+			t.Fatalf("record %d: %v", i, err)
+		}
+	}
+
+	// 时间窗口清理：cutoff 之前删除（3 旧），新保留
+	n, err := m.PrunePromoClicks("2026-06-01T00:00:00Z", 0)
+	if err != nil || n != 3 {
+		t.Fatalf("prune by time = %d/%v, want 3", n, err)
+	}
+	// 无容量裁剪 + 无过期的再跑 = 0
+	if n, err := m.PrunePromoClicks("2026-06-01T00:00:00Z", 0); err != nil || n != 0 {
+		t.Fatalf("prune nothing = %d/%v, want 0", n, err)
+	}
+
+	// 容量裁剪：上限 1，剩 2 条 → 删最早 1 条（occurred_at 最早者）
+	n, err = m.PrunePromoClicks("", 1)
+	if err != nil || n != 1 {
+		t.Fatalf("prune by cap = %d/%v, want 1", n, err)
+	}
+	if cnt := m.countPromoClicks(t); cnt != 1 {
+		t.Fatalf("after cap count = %d, want 1", cnt)
+	}
+	// 空 cutoff + 超大上限 = 不删
+	if n, err := m.PrunePromoClicks("", 1000000); err != nil || n != 0 {
+		t.Fatalf("prune noop = %d/%v, want 0", n, err)
+	}
+}
+
+func (m *AdminModel) countPromoClicks(t *testing.T) int64 {
+	t.Helper()
+	var cnt int64
+	if err := m.db.QueryRow(`SELECT COUNT(*) FROM promo_clicks`).Scan(&cnt); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	return cnt
+}

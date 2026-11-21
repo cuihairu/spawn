@@ -252,6 +252,7 @@ type AdminStore interface {
 	GetPromoClick(clickId string) (*PromoClick, error)
 	MarkClickAttributed(clickId string, userId int64) (bool, error)
 	ChannelStats(channelCode, from, to string) (*ChannelStats, error)
+	PrunePromoClicks(cutoff string, maxRows int64) (int64, error)
 
 	WriteAudit(entry *AuditLog) error
 	ListAuditLogs(resourceType string, limit, offset int) ([]*AuditLog, int, error)

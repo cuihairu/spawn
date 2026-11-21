@@ -16,6 +16,7 @@ import (
 	"github.com/tappi/tappi/services/game-catalog/internal/handler"
 	"github.com/tappi/tappi/services/game-catalog/internal/logic"
 	"github.com/tappi/tappi/services/game-catalog/internal/openscan"
+	"github.com/tappi/tappi/services/game-catalog/internal/promoprune"
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 
 	"github.com/zeromicro/go-zero/core/conf"
@@ -70,6 +71,14 @@ func run() error {
 	if ctx.NotifyRelay != nil {
 		go ctx.NotifyRelay.Run(scanCtx)
 	}
+
+	// GP-403 渠道点击归档：周期清理过期/超量 promo_clicks（纯本地 DB，无外部
+	// 依赖，恒启动；retention/maxRows 取 0 时 PruneOnce 为 no-op）。
+	pruner := promoprune.NewPruner(ctx,
+		time.Hour*24*time.Duration(c.Promo.PruneRetentionDays),
+		c.Promo.PruneMaxRows,
+		time.Hour*time.Duration(c.Promo.PruneIntervalHours))
+	go pruner.Run(scanCtx)
 
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()

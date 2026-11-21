@@ -76,4 +76,15 @@ type Config struct {
 		// OutboxRetentionHours 已终态行保留窗口（默认 168h=7 天）。
 		OutboxRetentionHours int64 `json:",default=168,env=DATA_PANEL_OUTBOX_RETENTION_HOURS"`
 	}
+
+	// GP-403 渠道点击归档：promo_clicks 长期追加（点击/下载各一条），无清理
+	// 会无限膨胀。按时间窗口删除过期点击（归因只依赖窗口内的点击，过期者对
+	// 业绩统计已无意义），并以容量上限兜底极端流量（超出按最早发生者裁剪）。
+	// PruneRetentionDays 取 0 关闭时间清理；PruneMaxRows 取 0 关闭容量裁剪。
+	Promo struct {
+		PruneRetentionDays int64 `json:",default=180,env=PROMO_PRUNE_RETENTION_DAYS"`
+		PruneMaxRows       int64 `json:",default=1000000,env=PROMO_PRUNE_MAX_ROWS"`
+		// PruneIntervalHours 清理扫描周期（默认 6h；清理非实时诉求）。
+		PruneIntervalHours int64 `json:",default=6,env=PROMO_PRUNE_INTERVAL_HOURS"`
+	}
 }

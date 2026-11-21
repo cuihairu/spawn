@@ -278,6 +278,50 @@ func (m *AdminModel) ChannelStats(channelCode string, from, to string) (*Channel
 	return s, nil
 }
 
+// PrunePromoClicks 渠道点击归档：先按 occurred_at < cutoff 删除过期行（时间
+// 保留窗口），再若剩余行数超 maxRows，按最早发生者裁剪到上限（容量兜底，
+// 防极端流量下长期追加无限膨胀）。cutoff 空 = 不做时间清理；maxRows <= 0 =
+// 不做容量裁剪。返回本轮总删除行数。occurred_at 为定宽 RFC3339，字符串比较
+// 即时间序（与 ChannelStats 同口径）。容量裁剪用嵌套派生表（SQLite/MySQL
+// 双方言同一形态；MySQL 不允许 UPDATE/DELETE 的目标表出现在子查询 FROM 直接
+// 层，故多包一层）。
+func (m *AdminModel) PrunePromoClicks(cutoff string, maxRows int64) (int64, error) {
+	var total int64
+	if cutoff != "" {
+		res, err := m.db.Exec(`DELETE FROM promo_clicks WHERE occurred_at < ?`, cutoff)
+		if err != nil {
+			return total, err
+		}
+		if n, err := res.RowsAffected(); err == nil {
+			total += n
+		}
+	}
+	if maxRows <= 0 {
+		return total, nil
+	}
+	var cnt int64
+	if err := m.db.QueryRow(`SELECT COUNT(*) FROM promo_clicks`).Scan(&cnt); err != nil {
+		return total, err
+	}
+	excess := cnt - maxRows
+	if excess <= 0 {
+		return total, nil
+	}
+	res, err := m.db.Exec(
+		`DELETE FROM promo_clicks WHERE id IN (
+			SELECT id FROM (
+				SELECT id FROM promo_clicks ORDER BY occurred_at ASC, id ASC LIMIT ?
+			) t
+		)`, excess)
+	if err != nil {
+		return total, err
+	}
+	if n, err := res.RowsAffected(); err == nil {
+		total += n
+	}
+	return total, nil
+}
+
 // IsClickWithinWindow 归因窗口判定：点击时刻 + 窗口小时数 ≥ 发生时刻。
 // occurred 为空视为"刚刚"（调用方兜底）。解析失败按窗口外处理（fail-closed，
 // 避免把无法定界的注册算进渠道业绩）。
