@@ -33,8 +33,11 @@ type Config struct {
 	// GP-402 经营分析事实投递（F24）：register/login 事实事件 → data-panel
 	// /internal/events。BaseURL 未配置 = no-op（数据面板未部署时行为不变）。
 	Analytics struct {
-		BaseURL string `json:",env=DATA_PANEL_URL,optional"`
-		Token   string `json:",env=DATA_PANEL_INTERNAL_TOKEN,optional"`
-		Timeout int64  `json:",default=3000,env=DATA_PANEL_TIMEOUT"`
+		BaseURL               string `json:",env=DATA_PANEL_URL,optional"`
+		Token                 string `json:",env=DATA_PANEL_INTERNAL_TOKEN,optional"`
+		Timeout               int64  `json:",default=3000,env=DATA_PANEL_TIMEOUT"`
+		OutboxIntervalSeconds int64  `json:",default=30,env=DATA_PANEL_OUTBOX_INTERVAL_SECONDS"`
+		OutboxMaxAttempts     int64  `json:",default=10,env=DATA_PANEL_OUTBOX_MAX_ATTEMPTS"`
+		OutboxRetentionHours  int64  `json:",default=168,env=DATA_PANEL_OUTBOX_RETENTION_HOURS"`
 	}
 }

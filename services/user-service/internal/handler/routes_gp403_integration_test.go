@@ -70,7 +70,7 @@ func TestRoutes_RegisterChannelAttribution(t *testing.T) {
 	client := integration.NewGameCatalogClient(catalog.URL, 2*time.Second)
 	client.SetInternalToken("s2s-token")
 	svcCtx.GameCatalogClient = client
-	svcCtx.AnalyticsSvc = analytics.NewClient(panel.URL, "panel-token", 1000)
+	svcCtx.AnalyticsSvc = analytics.NewClient(panel.URL, "panel-token", 1000, svcCtx.AnalyticsOutbox)
 
 	body := `{"username":"dave","email":"dave@example.com","password":"pw-dave","click_id":"click-1"}`
 	status, respBody, raw := do(t, http.MethodPost, base+"/auth/register", "", body)
@@ -126,7 +126,7 @@ func TestRoutes_RegisterChannelAbsent(t *testing.T) {
 
 	base, svcCtx := newUserHandlerServer(t, gameStubHandler(t, nil))
 	svcCtx.GameCatalogClient = integration.NewGameCatalogClient(catalog.URL, 2*time.Second)
-	svcCtx.AnalyticsSvc = analytics.NewClient(panel.URL, "panel-token", 1000)
+	svcCtx.AnalyticsSvc = analytics.NewClient(panel.URL, "panel-token", 1000, svcCtx.AnalyticsOutbox)
 
 	body := `{"username":"erin","email":"erin@example.com","password":"pw-erin"}`
 	status, respBody, raw := do(t, http.MethodPost, base+"/auth/register", "", body)
@@ -157,7 +157,7 @@ func TestRoutes_RegisterChannelResolveFailure(t *testing.T) {
 	client := integration.NewGameCatalogClient(catalog.URL, 2*time.Second)
 	// 故意不设置令牌 → S2S 解析 403
 	svcCtx.GameCatalogClient = client
-	svcCtx.AnalyticsSvc = analytics.NewClient("http://127.0.0.1:1", "panel-token", 500)
+	svcCtx.AnalyticsSvc = analytics.NewClient("http://127.0.0.1:1", "panel-token", 500, svcCtx.AnalyticsOutbox)
 
 	body := `{"username":"frank","email":"frank@example.com","password":"pw-frank","click_id":"click-1"}`
 	status, respBody, raw := do(t, http.MethodPost, base+"/auth/register", "", body)

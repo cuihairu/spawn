@@ -29,6 +29,11 @@ type ServiceContext struct {
 	// AnalyticsSvc GP-402 经营分析事实投递口（data-panel /internal/events）；
 	// DATA_PANEL_URL 未配置时为 no-op。
 	AnalyticsSvc analytics.Client
+	// AnalyticsRelay GP-402 outbox 重投循环；nil = DATA_PANEL_URL 未配置
+	//（no-op，不启动扫描）。
+	AnalyticsRelay *analytics.Relay
+	// AnalyticsOutbox GP-402 事实事件 outbox（始终建表，未启用时不写行）。
+	AnalyticsOutbox *model.AnalyticsOutboxModel
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -81,12 +86,28 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		panic(fmt.Sprintf("创建用户表失败: %v", err))
 	}
 
+	// GP-402 经营分析事实投递（DATA_PANEL_URL 未配置 = no-op）：失败先落
+	// outbox（幂等持久化），由 Relay 定时重投；outbox 表始终建（后续部署
+	// 补数据面板时免迁移），未启用时不写行。
+	analyticsOutbox := model.NewAnalyticsOutboxModel(db)
+	if err := analyticsOutbox.CreateTables(); err != nil {
+		panic(fmt.Sprintf("create analytics outbox tables: %v", err))
+	}
+	analyticsClient := analytics.NewClient(c.Analytics.BaseURL, c.Analytics.Token, c.Analytics.Timeout,
+		analyticsOutbox)
+	analyticsRelay := analytics.NewRelay(analyticsOutbox, analyticsClient,
+		time.Second*time.Duration(c.Analytics.OutboxIntervalSeconds),
+		int(c.Analytics.OutboxMaxAttempts),
+		time.Hour*time.Duration(c.Analytics.OutboxRetentionHours))
+
 	return &ServiceContext{
 		Config:            c,
 		DB:                db,
 		UserModel:         userModel,
 		Auth:              auth,
 		GameCatalogClient: gameClient,
-		AnalyticsSvc:      analytics.NewClient(c.Analytics.BaseURL, c.Analytics.Token, c.Analytics.Timeout),
+		AnalyticsSvc:      analyticsClient,
+		AnalyticsRelay:    analyticsRelay,
+		AnalyticsOutbox:   analyticsOutbox,
 	}
 }

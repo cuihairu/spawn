@@ -90,6 +90,11 @@ services:
       GAMECATALOG_TIMEOUT: "5000"
       # GP-403 渠道归因 S2S 令牌（与 game-catalog INTERNAL_TOKEN 同值）。
       GAMECATALOG_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
+      # GP-402 经营分析事实投递：register/login 事实 → data-panel
+      # /internal/events。本地 outbox 补偿（DATA_PANEL_URL 未配置 = no-op）；
+      # 令牌与 data-panel 侧 INTERNAL_TOKEN 同值。
+      DATA_PANEL_URL: http://data-panel:8896
+      DATA_PANEL_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
       JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
     depends_on:
       - game-catalog
