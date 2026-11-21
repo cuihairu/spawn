@@ -31,7 +31,8 @@ compose 栈内可跑的部分由 `deploy/sandbox/seed-example-game.sh` 全链路
 任何装了 Docker 的机器可复现：
 
 - 管理员引导、合作方授权、游戏/归属创建
-- 版本提审 → 过审 → 游戏+版本发布
+- 版本提审 → 过审 → 游戏+版本发布（含草稿期平台托管包体上传）
+- 网关受控下载（匿名 401，Bearer 命中包体内容，流式通道）
 - 区服创建与玩家预约
 - Courier 映射与能力声明（adapter 管理面，本地侧）
 - 支付商品配置、礼包领取（单人/全量上限）、倍率活动评估面
@@ -57,11 +58,11 @@ compose 网络前以 502 呈现——沙箱钉住的是接口契约，不是活�
 
 ## 验收清单
 
-`seed-example-game.sh` 跑通后，在全新沙箱上逐项核验：
+`seed-example-game.sh` 跑通后，在全新沙箱上逐项核验。1/2 由 seed 脚本内置断言（草稿期上传包体，网关可见性、匿名 401、Bearer 下载内容一致）；1/2/3/5 已于 2026-11-21 本机沙箱实测（3：单人第 3 次 409、全量领完 409、同 request_id 重放返回同领取 id；5：无 croupier 时会话端点 502）。4/6 需活的 croupier 实例——下单经 Courier `POST /v1/payments/orders`——归 GP-206 外部资产 ①。
 
-- [ ] 示例游戏玩家可见（经网关 8800 `GET /games/:id`）
-- [ ] 已发布版本可经网关流式路由下载（需 Bearer）
-- [ ] 礼包领取遵守单人/全量上限（领完 409，幂等重放优先）
-- [ ] 支付订单触发活动奖励评估（payments → promotions S2S）
-- [ ] Courier 会话端点：无 croupier 时 502；有 croupier 时票据链路走通
-- [ ] 沙箱支付回调（`POST /callback/sandbox/...`）以合法 HMAC 将订单推至 PAID
+- [x] 示例游戏玩家可见（经网关 8800 `GET /games/:id`）
+- [x] 已发布版本可经网关流式路由下载（需 Bearer）
+- [x] 礼包领取遵守单人/全量上限（领完 409，幂等重放优先）
+- [ ] 支付订单触发活动奖励评估（payments → promotions S2S）——需活的 croupier
+- [x] Courier 会话端点：无 croupier 时 502；有 croupier 时票据链路走通归 GP-206
+- [ ] 沙箱支付回调（`POST /callback/sandbox/...`）以合法 HMAC 将订单推至 PAID——需活的 croupier

@@ -23,7 +23,8 @@ Seed accounts produced by the bootstrap script: `sandbox-admin` (platform_admin 
 Everything that runs inside the compose stack is exercised by `deploy/sandbox/seed-example-game.sh` and is repeatable on any machine with Docker:
 
 - admin bootstrap, partner role grant, game/ownership creation
-- version submission → review approval → game + version publish
+- version submission → review approval → game + version publish (package upload to platform hosting while in draft)
+- controlled download through the gateway (anonymous 401, Bearer gets the uploaded bytes, streaming route)
 - game server creation and player reservation
 - Courier mapping + capability declaration (adapter admin, local side)
 - payment product configuration, gift pack claim (per-user and total caps), multiplier activity evaluation surfaces
@@ -45,13 +46,13 @@ These acceptance steps require assets no repo config can mint. They are recorded
 
 ## Acceptance checklist
 
-Run on a fresh sandbox after `seed-example-game.sh` succeeds:
+Run on a fresh sandbox after `seed-example-game.sh` succeeds. Items 1/2 are asserted by the seed itself (upload in draft, then gateway visibility, anonymous 401 and Bearer download match); 1/2/3/5 were verified live on 2026-11-21 (caps: per-user 3rd claim 409, total-exhausted 409, idempotent replay returns the same claim id; session endpoints answer 502 without croupier). Items 4/6 need a live croupier instance — order creation goes through Courier `POST /v1/payments/orders` — and stay gated on GP-206 asset ①.
 
-- [ ] Example game visible to players (`GET /games/:id` via gateway 8800)
-- [ ] Published version downloadable through the gateway streaming route (Bearer required)
-- [ ] Gift pack claim honors per-user and total caps (409 on exhaustion, idempotent replay wins)
-- [ ] Activity reward evaluation fires on paid orders (payments → promotions S2S)
-- [ ] Courier session endpoints answer 502 (no croupier) or complete the ticket flow (with croupier)
-- [ ] Sandbox payment callback (`POST /callback/sandbox/...`) flips an order to PAID with valid HMAC
+- [x] Example game visible to players (`GET /games/:id` via gateway 8800)
+- [x] Published version downloadable through the gateway streaming route (Bearer required)
+- [x] Gift pack claim honors per-user and total caps (409 on exhaustion, idempotent replay wins)
+- [ ] Activity reward evaluation fires on paid orders (payments → promotions S2S) — needs live croupier
+- [x] Courier session endpoints answer 502 (no croupier); ticket flow with croupier belongs to GP-206
+- [ ] Sandbox payment callback (`POST /callback/sandbox/...`) flips an order to PAID with valid HMAC — needs live croupier
 
 Items needing the external dependencies above belong to GP-105/GP-202/GP-206 acceptance and are tracked there, not in this page.

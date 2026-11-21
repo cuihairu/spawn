@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # GP-005 联合沙箱：一款示例游戏的端到端装配（示例游戏 = 沙箱验收最小资产集）。
 #
-# 链路：注册管理员/合作方账号 → 建游戏 → 指派归属 → 合作方提报版本 → 平台审核
-# 通过 → 发布游戏 → 发布版本 → 建区服 → Courier 映射与能力 → 支付商品 →
-# 礼包（全量上限）→ 活动（倍率赠送）→ 玩家侧冒烟（活动列表/预约/礼包领取）。
+# 链路：注册管理员/合作方账号 → 建游戏 → 指派归属 → 合作方提报版本并上传包体 →
+# 平台审核通过 → 发布游戏 → 发布版本 → 建区服 → Courier 映射与能力 → 支付商品 →
+# 礼包（全量上限）→ 活动（倍率赠送）→ 玩家侧冒烟（网关可见/受控下载/活动列表/
+# 预约/礼包领取）。
 #
 # 管理面走各服务业务端口直连：POST /games 等管理面路由不经 api-gateway 代理
 # （网关只反代玩家侧与只读运营面），沙箱引导工具不走网关。
@@ -84,6 +85,23 @@ assert() {
   echo "$v"
 }
 
+# upload URL TOKEN FIELD FILENAME FILE_PATH [HINT] —— multipart 包体上传，
+# 错误处理与 call() 同口径（非 2xx 失败回显），成功时响应体写 stdout。
+upload() {
+  local url="$1" token="$2" field="$3" filename="$4" path="$5" hint="${6:-}"
+  local out code
+  out="$(curl -sS -m 300 -X POST "$url" -H "Authorization: Bearer $token" \
+    -F "$field=@$path;filename=$filename" -w '\n%{http_code}')" || exit 1
+  code="${out##*$'\n'}"
+  out="${out%$'\n'*}"
+  case "$code" in
+    2*) printf '%s' "$out" ;;
+    *) echo "[FAIL] POST $url -> HTTP $code $out" >&2
+       if [ -n "$hint" ]; then echo "       $hint" >&2; fi
+       exit 1 ;;
+  esac
+}
+
 step() { echo "[${1:-}] $2"; }
 
 # 先注册（已存在则忽略失败）再登录，返回 JWT。
@@ -141,6 +159,19 @@ call POST "$CATALOG/admin/games/$GAME_ID/ownership" "$ADMIN_TOKEN" "{\"partner_i
 VERSION_ID="$(call POST "$CATALOG/partner/games/$GAME_ID/versions" "$PARTNER_TOKEN" \
   '{"version":"1.0.0","changelog":"沙箱首版","package_name":"com.spawn.sandbox.example","version_code":1,"size_bytes":0,"hash":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}' \
   | assert '版本 id' '.id')"
+
+# 平台托管包体：草稿期上传（过审后上传锁定 409），服务端回填
+# storage_url=package:// 与 sha256/size_bytes，版本创建体的占位哈希被覆盖。
+PKG_FILE="$(mktemp)"
+trap 'rm -f "${PKG_FILE:-}"' EXIT
+printf 'spawn sandbox example package %s\n' "$SEED_TAG" > "$PKG_FILE"
+UPLOAD_HINT="HTTP 500 = game-catalog 未配 PACKAGE_DIR（compose 已带 /app/data/packages）；409 = 版本已过审锁定"
+UP_BODY="$(upload "$CATALOG/partner/games/$GAME_ID/versions/$VERSION_ID/package" \
+  "$PARTNER_TOKEN" file example.apk "$PKG_FILE" "$UPLOAD_HINT")"
+case "$(jq -r '.hash' <<<"$UP_BODY")" in
+  sha256:*) ;;
+  *) echo "[FAIL] 上传响应缺 sha256 哈希：$UP_BODY" >&2; exit 1 ;;
+esac
 
 REVIEW_ID="$(call POST "$CATALOG/partner/games/$GAME_ID/submit" "$PARTNER_TOKEN" \
   "{\"version_id\":\"$VERSION_ID\"}" | assert '提审 id' '.id')"
@@ -209,6 +240,20 @@ CLAIM_OK="$(call POST "$PROMOTIONS/gift-packs/$PACK_ID/claim" "$PLAYER_TOKEN" \
   "{\"server_id\":$SERVER_ID,\"request_id\":\"sandbox-seed-claim\"}" \
   | assert '礼包领取' '.claim.id')"
 
+# 网关面核验（GP-005 验收清单 1/2）：玩家可见 + 受控下载走网关流式通道
+GATEWAY="${SP_GATEWAY:-http://127.0.0.1:8800}"
+GW_ID="$(call GET "$GATEWAY/games/$GAME_ID" "" | jq -r '.game.id')"
+[ "$GW_ID" = "$GAME_ID" ] || { echo "[FAIL] 网关游戏详情 id 不符：$GW_ID" >&2; exit 1; }
+ANON_CODE="$(curl -sS -m 60 -o /dev/null -w '%{http_code}' \
+  "$GATEWAY/games/$GAME_ID/versions/$VERSION_ID/download")"
+[ "$ANON_CODE" = "401" ] || { echo "[FAIL] 匿名下载期望 401 实得 $ANON_CODE" >&2; exit 1; }
+DL_BODY="$(curl -sS -m 300 -H "Authorization: Bearer $PLAYER_TOKEN" \
+  "$GATEWAY/games/$GAME_ID/versions/$VERSION_ID/download")"
+if [ "$DL_BODY" != "$(cat "$PKG_FILE")" ]; then
+  echo "[FAIL] 网关下载内容与上传包体不符" >&2
+  exit 1
+fi
+
 echo
 echo "沙箱示例游戏装配完成"
 echo "  game_id       = $GAME_ID"
@@ -219,4 +264,5 @@ echo "  product       = $PRODUCT_ID（1000 分 / base_quantity 100）"
 echo "  gift_pack     = $PACK_ID（per_user 2 / total 5）"
 echo "  activity      = $ACTIVITY_ID（倍率 15000 bp，预算 100000）"
 echo "  player claim  = $CLAIM_OK"
+echo "  gateway       = 详情可见，下载匿名 401 / Bearer 命中包体"
 echo "  标签          = $SEED_TAG"
