@@ -32,6 +32,8 @@ type ServiceContext struct {
 	Dispatcher      *delivery.Dispatcher
 	PromotionBridge *promotion.Bridge
 	AnalyticsSvc    analytics.Client
+	AnalyticsRelay  *analytics.Relay // nil = DATA_PANEL_URL 未配置（no-op，不启动）
+	AnalyticsOutbox *model.AnalyticsOutboxModel
 	NotifySvc       notify.Client
 }
 
@@ -85,8 +87,19 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	// GP-302 奖励评估桥（PROMOTIONS_URL 未配置 = 不入队不分发）
 	bridge := promotion.NewBridge(evalDB, c.Promotions.BaseURL, c.Promotions.Secret,
 		c.Promotions.Timeout)
-	// GP-402 经营分析事实投递（DATA_PANEL_URL 未配置 = no-op）
-	analyticsClient := analytics.NewClient(c.Analytics.BaseURL, c.Analytics.Token, c.Analytics.Timeout)
+	// GP-402 经营分析事实投递（DATA_PANEL_URL 未配置 = no-op）：失败先落
+	// outbox（幂等持久化），由 Relay 定时重投；outbox 表始终建（后续部署
+	// 补数据面板时免迁移），未启用时不写行。
+	analyticsOutbox := model.NewAnalyticsOutboxModel(db)
+	if err := analyticsOutbox.CreateTables(); err != nil {
+		panic(fmt.Sprintf("create analytics outbox tables: %v", err))
+	}
+	analyticsClient := analytics.NewClient(c.Analytics.BaseURL, c.Analytics.Token, c.Analytics.Timeout,
+		analyticsOutbox)
+	analyticsRelay := analytics.NewRelay(analyticsOutbox, analyticsClient,
+		time.Second*time.Duration(c.Analytics.OutboxIntervalSeconds),
+		int(c.Analytics.OutboxMaxAttempts),
+		time.Hour*time.Duration(c.Analytics.OutboxRetentionHours))
 	// GP-404 异议复核结果回流合作方（COMMUNITY_URL 未配置 = no-op）
 	notifyClient := notify.NewClient(c.Notify.BaseURL, c.Notify.Token, c.Notify.Timeout)
 
@@ -112,6 +125,8 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		Dispatcher:      dispatcher,
 		PromotionBridge: bridge,
 		AnalyticsSvc:    analyticsClient,
+		AnalyticsRelay:  analyticsRelay,
+		AnalyticsOutbox: analyticsOutbox,
 		NotifySvc:       notifyClient,
 	}
 }

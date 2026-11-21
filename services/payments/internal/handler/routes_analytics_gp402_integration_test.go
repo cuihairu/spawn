@@ -9,6 +9,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/tappi/tappi/services/payments/model"
 	"github.com/tappi/tappi/services/payments/utils"
@@ -116,6 +118,71 @@ func TestPaymentsAnalyticsRefundRequestedEvent(t *testing.T) {
 	if got.EventType != "refund_requested" || got.EventId != "refund_requested:"+orderID+":REFUND" ||
 		got.AmountCents != 800 || got.OrderId != orderID || got.UserId != 7 {
 		t.Fatalf("event = %+v, want refund_requested/800/user 7", got)
+	}
+}
+
+// TestPaymentsAnalyticsOutboxRetry GP-402 本地 outbox 补偿：data-panel 短时
+// 不可达（503）→ order_paid 落 pending；Relay 重投失败按退避延期（立即再
+// 扫 0 尝试）；下游恢复后 Relay 补投成功标记 delivered，事实批次完整到达。
+func TestPaymentsAnalyticsOutboxRetry(t *testing.T) {
+	env := newPaymentsServer(t)
+	ctx := context.Background()
+
+	// 下游短时不可达：主流程不受影响（回调仍 200），事实先落 outbox
+	env.analyticsDown.Store(true)
+	orderID := "order_analytics-outbox"
+	seedProjection(t, env, orderID, "game-analytics", "7", 1500)
+	if code := postCallback(t, env, []byte(`{"orderId":"`+orderID+`","paidAt":"2026-11-12T09:00:00Z"}`)); code != http.StatusOK {
+		t.Fatalf("callback status = %d, want 200", code)
+	}
+	if len(env.analyticsSeen) != 0 {
+		t.Fatalf("down: analytics batches = %d, want 0", len(env.analyticsSeen))
+	}
+	rows, err := env.svcCtx.AnalyticsOutbox.ListRetry("9999-01-01T00:00:00Z", 100)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("outbox pending = %d err=%v, want 1", len(rows), err)
+	}
+	row := rows[0]
+	if row.EventId != "order_paid:"+orderID || row.EventType != "order_paid" ||
+		row.Status != model.AnalyticsOutboxPending || row.Attempts != 0 {
+		t.Fatalf("outbox row = %+v, want pending/0 attempts/derived event_id", row)
+	}
+
+	// Relay 首次重投：下游仍不可达 → 记失败 + 指数退避延期
+	attempted, delivered := env.svcCtx.AnalyticsRelay.RelayOnce(ctx)
+	if attempted != 1 || delivered != 0 {
+		t.Fatalf("relay down = %d/%d, want 1/0", attempted, delivered)
+	}
+	rows, _ = env.svcCtx.AnalyticsOutbox.ListRetry("9999-01-01T00:00:00Z", 100)
+	if len(rows) != 1 || rows[0].Attempts != 1 || rows[0].Status != model.AnalyticsOutboxPending {
+		t.Fatalf("outbox after failed relay = %+v, want attempts=1 pending", rows)
+	}
+	// 退避期内再扫：未到期不重投（backoff 生效）
+	attempted, delivered = env.svcCtx.AnalyticsRelay.RelayOnce(ctx)
+	if attempted != 0 || delivered != 0 {
+		t.Fatalf("relay within backoff = %d/%d, want 0/0", attempted, delivered)
+	}
+
+	// 下游恢复 + 退避到期（把 next_retry_at 拨回过去模拟时间推进）
+	env.analyticsDown.Store(false)
+	past := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano)
+	if err := env.svcCtx.AnalyticsOutbox.MarkFailed(row.EventId, 1, "模拟退避到期", past); err != nil {
+		t.Fatalf("rewind backoff: %v", err)
+	}
+	attempted, delivered = env.svcCtx.AnalyticsRelay.RelayOnce(ctx)
+	if attempted != 1 || delivered != 1 {
+		t.Fatalf("relay recovered = %d/%d, want 1/1", attempted, delivered)
+	}
+	if len(env.analyticsSeen) != 1 {
+		t.Fatalf("analytics batches after recovery = %d, want 1", len(env.analyticsSeen))
+	}
+	ev := decodeEvents(t, env.analyticsSeen[0])
+	if len(ev) != 1 || ev[0].EventId != "order_paid:"+orderID || ev[0].AmountCents != 1500 || ev[0].UserId != 7 {
+		t.Fatalf("relayed event = %+v, want order_paid/1500/user 7", ev)
+	}
+	rows, _ = env.svcCtx.AnalyticsOutbox.ListRetry("9999-01-01T00:00:00Z", 100)
+	if len(rows) != 0 {
+		t.Fatalf("outbox pending after delivered = %d, want 0", len(rows))
 	}
 }
 

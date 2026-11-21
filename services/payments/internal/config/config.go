@@ -62,13 +62,17 @@ type Config struct {
 	}
 
 	// Analytics 数据面板经营分析（GP-402/F24）：PAID/退款请求事实事件
-	// fire-and-forget 投递（data-panel /internal/events，X-Internal-Token
-	// 与 data-panel 侧 INTERNAL_TOKEN 同值）。BaseURL 未配置 = no-op，
-	// 部署面未带数据面板时行为不变。
+	// 投递（data-panel /internal/events，X-Internal-Token 与 data-panel 侧
+	// INTERNAL_TOKEN 同值）。同步首投失败先落本地 outbox，由定时 Relay 重投
+	// （data-panel 摄入按 event_id 幂等）。BaseURL 未配置 = no-op，部署面
+	// 未带数据面板时行为不变。
 	Analytics struct {
-		BaseURL string `json:",env=DATA_PANEL_URL,optional"`
-		Token   string `json:",env=DATA_PANEL_INTERNAL_TOKEN,optional"`
-		Timeout int64  `json:",default=3000,env=DATA_PANEL_TIMEOUT"`
+		BaseURL               string `json:",env=DATA_PANEL_URL,optional"`
+		Token                 string `json:",env=DATA_PANEL_INTERNAL_TOKEN,optional"`
+		Timeout               int64  `json:",default=3000,env=DATA_PANEL_TIMEOUT"`
+		OutboxIntervalSeconds int64  `json:",default=30,env=DATA_PANEL_OUTBOX_INTERVAL_SECONDS"`
+		OutboxMaxAttempts     int64  `json:",default=10,env=DATA_PANEL_OUTBOX_MAX_ATTEMPTS"`
+		OutboxRetentionHours  int64  `json:",default=168,env=DATA_PANEL_OUTBOX_RETENTION_HOURS"`
 	}
 
 	// Internal S2S 订单事实查询守卫（GP-307 售后工单 orderId 归属强校验）：

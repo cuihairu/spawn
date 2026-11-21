@@ -71,6 +71,13 @@ func run() error {
 		time.Second*time.Duration(c.Coupon.ReleaseIntervalSeconds))
 	go release.Run(recoveryCtx)
 
+	// GP-402 经营分析 outbox 重投：data-panel 短时不可达时补偿投递（本地
+	// 持久化，重启续扫），与发货恢复共用同一 ctx（进程信号面）；
+	// DATA_PANEL_URL 未配置时 NewRelay 返回 nil，不启动。
+	if ctx.AnalyticsRelay != nil {
+		go ctx.AnalyticsRelay.Run(recoveryCtx)
+	}
+
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()
 	return nil

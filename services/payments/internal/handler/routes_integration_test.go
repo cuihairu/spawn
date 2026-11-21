@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,9 +43,11 @@ type testEnv struct {
 	callbackSeen   int
 	// analyticsSeen GP-402 经营分析事实投递记录（data-panel /internal/events
 	// 存根收到的批次与令牌），analyticsBase 为空时投递客户端为 no-op。
+	// analyticsDown 置位 = data-panel 存根返回 503（模拟下游短时不可达）。
 	analyticsSeen []string
 	analyticsTok  string
 	analyticsBase string
+	analyticsDown atomic.Bool
 }
 
 func newPaymentsServer(t *testing.T) *testEnv {
@@ -100,10 +103,15 @@ func newPaymentsServer(t *testing.T) *testEnv {
 	}))
 	t.Cleanup(courier.Close)
 
-	// data-panel 存根：/internal/events 记录事实事件批次（GP-402）
+	// data-panel 存根：/internal/events 记录事实事件批次（GP-402）；
+	// analyticsDown 置位时返回 503（模拟下游短时不可达）。
 	datapanel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/internal/events" {
 			http.NotFound(w, r)
+			return
+		}
+		if env.analyticsDown.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		raw, _ := io.ReadAll(r.Body)
