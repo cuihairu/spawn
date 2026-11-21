@@ -103,7 +103,7 @@ func newReservationTestServer(t *testing.T, communityURL string) (string, func(u
 	c.MySQL.DataSource = "file:" + t.TempDir() + "/games.db"
 	c.Package.Dir = t.TempDir() + "/packages"
 	c.Auth.JWTSecret = testJWTSecret
-	c.Auth.AdminUserIds = []string{"1"}
+	c.Auth.AdminUserIds = "1"
 	c.Notify.Url = communityURL
 	c.Notify.Token = gp306Token
 	c.Internal.Token = gp306Token

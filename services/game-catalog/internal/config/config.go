@@ -25,9 +25,12 @@ type Config struct {
 	Auth struct {
 		JWTSecret string `json:",env=JWT_SECRET"`
 
-		// AdminUserIds 引导管理员账号（逗号分隔的 user-service 用户 id），
-		// 启动时写入 platform_roles 作为 platform_admin（幂等；首个管理员引导）。
-		AdminUserIds []string `json:",env=ADMIN_USER_IDS,optional"`
+		// AdminUserIds 引导管理员账号（逗号分隔的 user-service 用户 id，如
+		// "1" 或 "1,2"），启动时写入 platform_roles 作为 platform_admin
+		// （幂等；首个管理员引导）。用 string 而非 []string：go-zero 对无 yaml
+		// 同名字段的 []string 解析 env 会报 type mismatch（expect slice,
+		// actual number），单值 "1" 直接起不来。
+		AdminUserIds string `json:",env=ADMIN_USER_IDS,optional"`
 	}
 
 	// GP-306 开服提醒/版本通知：经 community /internal/notifications 扇出

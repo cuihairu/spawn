@@ -52,7 +52,7 @@ func newAuthedTestServerConfig(t *testing.T, mutate func(*config.Config)) (strin
 	c.Package.Dir = t.TempDir() + "/packages"
 	c.Auth.JWTSecret = testJWTSecret
 	// 引导 user 1 为 platform_admin，覆盖 GP-103 角色守卫与后台链路
-	c.Auth.AdminUserIds = []string{"1"}
+	c.Auth.AdminUserIds = "1"
 	if mutate != nil {
 		mutate(&c)
 	}

@@ -87,8 +87,8 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := adminModel.CreateAdminTables(); err != nil {
 		panic(fmt.Sprintf("创建运营后台表失败: %v", err))
 	}
-	// 引导管理员：配置的账号 id 幂等写为 platform_admin
-	for _, raw := range c.Auth.AdminUserIds {
+	// 引导管理员：配置的账号 id（逗号分隔）幂等写为 platform_admin
+	for _, raw := range strings.Split(c.Auth.AdminUserIds, ",") {
 		uid, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
 		if err != nil || uid <= 0 {
 			continue

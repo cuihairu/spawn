@@ -46,6 +46,10 @@ services:
       # GP-105 包体托管目录：持久卷，受控下载/合作方上传共用；
       # 生产纳入备份（接入设计 §4）。
       PACKAGE_DIR: /app/data/packages
+      # GP-005 沙箱引导管理员：user-service 账号 id 启动期幂等写为
+      # platform_admin（运营后台首个入口）。逗号分隔可多个（如 "1,2"）；
+      # 沙箱取 1 = 首个注册用户；生产必须改为真实运营账号 id（或留空禁用引导）。
+      ADMIN_USER_IDS: "${ADMIN_USER_IDS:-1}"
     volumes:
       - game-packages:/app/data/packages
     ports:
