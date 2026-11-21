@@ -94,7 +94,7 @@ func newPartnerAnalyticsTestServerCatalog(t *testing.T, catalogURL string) strin
 	c.Auth.JWTSecret = testSecret
 	c.MySQL.DataSource = "file:" + t.TempDir() + "/stats.db"
 	c.Internal.Token = analyticsToken
-	c.Analytics.AdminUserIds = []string{"7"}
+	c.Analytics.AdminUserIds = "7"
 	c.GameCatalog.BaseURL = catalogURL
 
 	svcCtx := svc.NewServiceContext(c)

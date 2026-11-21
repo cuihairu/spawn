@@ -25,8 +25,9 @@ type ServiceContext struct {
 	Auth   rest.Middleware
 	Jwt    *utils.Auth
 
-	StatsRepo    model.PlayerStatsStore
-	AnalyticsSvc model.AnalyticsStore
+	StatsRepo         model.PlayerStatsStore
+	AnalyticsSvc      model.AnalyticsStore
+	analyticsAdminIds []string
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -69,19 +70,28 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		panic(fmt.Sprintf("创建平台事件表失败: %v", err))
 	}
 
+	// GP-402 经营分析名单：逗号分隔串拆分为 []string（见 config 注释）
+	var analyticsAdminIds []string
+	for _, raw := range strings.Split(c.Analytics.AdminUserIds, ",") {
+		if id := strings.TrimSpace(raw); id != "" {
+			analyticsAdminIds = append(analyticsAdminIds, id)
+		}
+	}
+
 	return &ServiceContext{
-		Config:       c,
-		Auth:         middleware.NewAuthMiddleware(jwtTool).Handle,
-		Jwt:          jwtTool,
-		StatsRepo:    statsModel,
-		AnalyticsSvc: analyticsModel,
+		Config:            c,
+		Auth:              middleware.NewAuthMiddleware(jwtTool).Handle,
+		Jwt:               jwtTool,
+		StatsRepo:         statsModel,
+		AnalyticsSvc:      analyticsModel,
+		analyticsAdminIds: analyticsAdminIds,
 	}
 }
 
 // IsAnalyticsAdmin GP-402 经营分析查询权限：AdminUserIds 名单内才可查
 // 漏斗/留存/活动效果/账单核对（名单为空即全关，fail-closed）。
 func (sc *ServiceContext) IsAnalyticsAdmin(userID string) bool {
-	for _, id := range sc.Config.Analytics.AdminUserIds {
+	for _, id := range sc.analyticsAdminIds {
 		if id == userID {
 			return true
 		}

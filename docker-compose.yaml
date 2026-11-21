@@ -111,6 +111,8 @@ services:
     environment:
       # 与 user-service 的 Auth.JWTSecret 同值：战绩摄入 Bearer 校验。
       JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
+      # GP-402 经营分析查询名单（逗号分隔 user-service 用户 id，默认演示管理员 1）。
+      ADMIN_USER_IDS: "${ADMIN_USER_IDS:-1}"
     ports:
       - "8896:8896"
       - "9097:9097" # /metrics（deploy/ 观测栈抓取）

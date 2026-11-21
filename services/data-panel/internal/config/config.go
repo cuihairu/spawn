@@ -28,8 +28,11 @@ type Config struct {
 
 	// Analytics 经营分析查询权限（GP-402）：漏斗/留存/活动效果/账单核对
 	// 仅对 AdminUserIds 名单内的用户开放（社区 Moderation.AdminUserIds 同款）。
+	// 名单为逗号分隔串（"1" 或 "1,2"）。用 string 而非 []string：go-zero 对
+	// 无 yaml 同名字段的 []string 解析 env 会报 type mismatch（expect slice,
+	// actual number），单值 "1" 直接起不来（同 game-catalog Auth.AdminUserIds）。
 	Analytics struct {
-		AdminUserIds []string `json:",optional"`
+		AdminUserIds string `json:",env=ADMIN_USER_IDS,optional"`
 	}
 
 	// GameCatalog 角色权威（GP-404 合作方自助数据面）：合作方自助端点经

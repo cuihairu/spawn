@@ -50,7 +50,7 @@ func newAnalyticsTestServer(t *testing.T, internalToken string) (string, func(in
 	c.Auth.JWTSecret = testSecret
 	c.MySQL.DataSource = "file:" + t.TempDir() + "/stats.db"
 	c.Internal.Token = internalToken
-	c.Analytics.AdminUserIds = []string{"7"}
+	c.Analytics.AdminUserIds = "7"
 
 	svcCtx := svc.NewServiceContext(c)
 	server := rest.MustNewServer(conf)
