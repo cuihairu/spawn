@@ -672,3 +672,188 @@ export async function fetchPromoChannelStats(
     headers: adminHeaders(token),
   })
 }
+
+// ========== GP-404 合作方自助：对账单 + 经营数据（经网关反代） ==========
+// 账单域在 payments（/partner/statements*），数据域在 data-panel
+// （/api/v1/analytics/partner）。角色与归属在服务端判定（game-catalog /me
+// 为单一事实源），合作方只看到本人数据（行级隔离 fail-closed）。
+export interface PartnerStatement {
+  id: number
+  vendor: string
+  partnerId: number
+  periodStart: string
+  periodEnd: string
+  paidTotal: number
+  discountTotal: number
+  refundTotal: number
+  splitBase: number
+  splitRateBp: number
+  splitAmount: number
+  settlement: number
+  diff: number
+  orderCount: number
+  status: string
+  confirmedBy: number
+  confirmedAt: string
+  disputeBy: number
+  disputeAt: string
+  disputeReason: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PartnerAnalyticsRow {
+  eventType: string
+  events: number
+  users: number
+  amountCents: number
+}
+
+export interface PartnerAnalyticsOverview {
+  from: string
+  to: string
+  partnerId: number
+  items: PartnerAnalyticsRow[]
+}
+
+type PartnerStatementDto = {
+  id: number
+  vendor: string
+  partner_id: number
+  period_start: string
+  period_end: string
+  paid_total: number
+  discount_total: number
+  refund_total: number
+  split_base: number
+  split_rate_bp: number
+  split_amount: number
+  settlement: number
+  diff: number
+  order_count: number
+  status: string
+  confirmed_by: number
+  confirmed_at: string
+  dispute_by: number
+  dispute_at: string
+  dispute_reason: string
+  created_at: string
+  updated_at: string
+}
+
+function mapPartnerStatement(dto: PartnerStatementDto): PartnerStatement {
+  return {
+    id: dto.id,
+    vendor: dto.vendor,
+    partnerId: dto.partner_id,
+    periodStart: dto.period_start,
+    periodEnd: dto.period_end,
+    paidTotal: dto.paid_total,
+    discountTotal: dto.discount_total,
+    refundTotal: dto.refund_total,
+    splitBase: dto.split_base,
+    splitRateBp: dto.split_rate_bp,
+    splitAmount: dto.split_amount,
+    settlement: dto.settlement,
+    diff: dto.diff,
+    orderCount: dto.order_count,
+    status: dto.status,
+    confirmedBy: dto.confirmed_by,
+    confirmedAt: dto.confirmed_at,
+    disputeBy: dto.dispute_by,
+    disputeAt: dto.dispute_at,
+    disputeReason: dto.dispute_reason,
+    createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
+  }
+}
+
+export async function fetchPartnerStatements(
+  params: { vendor?: string; status?: string } | undefined,
+  token: string,
+): Promise<PartnerStatement[]> {
+  const search = new URLSearchParams()
+  if (params?.vendor) search.set('vendor', params.vendor)
+  if (params?.status) search.set('status', params.status)
+  const qs = search.toString()
+  const payload = await request<{ items: PartnerStatementDto[] }>(
+    gatewayBaseUrl,
+    `/partner/statements${qs ? `?${qs}` : ''}`,
+    { headers: adminHeaders(token) },
+  )
+  return (payload.items ?? []).map(mapPartnerStatement)
+}
+
+export async function fetchPartnerStatementDifferences(
+  params: { vendor?: string } | undefined,
+  token: string,
+): Promise<PartnerStatement[]> {
+  const search = new URLSearchParams()
+  if (params?.vendor) search.set('vendor', params.vendor)
+  const qs = search.toString()
+  const payload = await request<{ items: PartnerStatementDto[] }>(
+    gatewayBaseUrl,
+    `/partner/statements/differences${qs ? `?${qs}` : ''}`,
+    { headers: adminHeaders(token) },
+  )
+  return (payload.items ?? []).map(mapPartnerStatement)
+}
+
+export async function partnerConfirmStatement(id: number, token: string): Promise<PartnerStatement> {
+  return mapPartnerStatement(
+    await request<PartnerStatementDto>(gatewayBaseUrl, `/partner/statements/${id}/confirm`, {
+      method: 'POST',
+      headers: adminHeaders(token),
+    }),
+  )
+}
+
+export async function partnerDisputeStatement(id: number, reason: string, token: string): Promise<PartnerStatement> {
+  return mapPartnerStatement(
+    await request<PartnerStatementDto>(gatewayBaseUrl, `/partner/statements/${id}/dispute`, {
+      method: 'POST',
+      headers: adminHeaders(token),
+      body: JSON.stringify({ reason }),
+    }),
+  )
+}
+
+export async function fetchPartnerStatementExport(id: number, token: string): Promise<Blob> {
+  const resp = await fetch(`${gatewayBaseUrl}/partner/statements/${id}/export`, {
+    headers: adminHeaders(token),
+  })
+  if (!resp.ok) {
+    const text = await resp.text()
+    throw new Error(text || `导出失败（HTTP ${resp.status}）`)
+  }
+  return resp.blob()
+}
+
+export async function fetchPartnerAnalyticsOverview(
+  params: { from?: string; to?: string } | undefined,
+  token: string,
+): Promise<PartnerAnalyticsOverview> {
+  const search = new URLSearchParams()
+  if (params?.from) search.set('from', params.from)
+  if (params?.to) search.set('to', params.to)
+  const qs = search.toString()
+  const payload = await request<{
+    from: string
+    to: string
+    partner_id: number
+    items: { event_type: string; events: number; users: number; amount_cents: number }[]
+  }>(gatewayBaseUrl, `/api/v1/analytics/partner${qs ? `?${qs}` : ''}`, {
+    headers: adminHeaders(token),
+  })
+  return {
+    from: payload.from,
+    to: payload.to,
+    partnerId: payload.partner_id,
+    items: (payload.items ?? []).map((r) => ({
+      eventType: r.event_type,
+      events: r.events,
+      users: r.users,
+      amountCents: r.amount_cents,
+    })),
+  }
+}

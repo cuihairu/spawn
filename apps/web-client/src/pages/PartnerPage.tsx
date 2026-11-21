@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  fetchPartnerAnalyticsOverview,
   fetchPartnerGames,
+  fetchPartnerStatementDifferences,
+  fetchPartnerStatements,
+  fetchPartnerStatementExport,
   fetchPartnerVersions,
+  partnerConfirmStatement,
   partnerCreateVersion,
+  partnerDisputeStatement,
   partnerSubmitReview,
   type AdminGame,
   type GameVersionInfo,
+  type PartnerAnalyticsOverview,
+  type PartnerStatement,
 } from '../api/client'
 import './admin.css'
 
@@ -21,6 +29,8 @@ const STATUS_LABELS: Record<string, string> = {
   approved: '已过审',
   rejected: '已驳回',
   offline: '已下架',
+  confirmed: '已确认',
+  disputed: '有异议',
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -46,6 +56,14 @@ const PartnerPage = ({ token, partnerId }: Props) => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // GP-404 合作方自助：对账单确认/异议/导出 + 名下经营数据
+  const [statements, setStatements] = useState<PartnerStatement[]>([])
+  const [differences, setDifferences] = useState<PartnerStatement[]>([])
+  const [disputeId, setDisputeId] = useState<number | null>(null)
+  const [disputeReason, setDisputeReason] = useState('')
+  const [partAn, setPartAn] = useState<PartnerAnalyticsOverview | null>(null)
+  const [partFrom, setPartFrom] = useState('')
+  const [partTo, setPartTo] = useState('')
 
   const run = useCallback(async (fn: () => Promise<void>) => {
     setLoading(true)
@@ -79,9 +97,35 @@ const PartnerPage = ({ token, partnerId }: Props) => {
     [run, token],
   )
 
+  const loadStatements = useCallback(() => {
+    run(async () => {
+      const [items, diffs] = await Promise.all([
+        fetchPartnerStatements(undefined, token),
+        fetchPartnerStatementDifferences(undefined, token),
+      ])
+      setStatements(items)
+      setDifferences(diffs)
+    })
+  }, [run, token])
+
+  const loadPartnerAnalytics = useCallback(() => {
+    run(async () => {
+      setPartAn(
+        await fetchPartnerAnalyticsOverview(
+          { from: partFrom.trim() || undefined, to: partTo.trim() || undefined },
+          token,
+        ),
+      )
+    })
+  }, [partFrom, partTo, run, token])
+
   useEffect(() => {
     queueMicrotask(loadGames)
   }, [loadGames])
+
+  useEffect(() => {
+    queueMicrotask(loadStatements)
+  }, [loadStatements])
 
   return (
     <div className="admin-page">
@@ -283,6 +327,210 @@ const PartnerPage = ({ token, partnerId }: Props) => {
           </section>
         </>
       ) : null}
+
+      <section className="community-card">
+        <h2>经营数据（{partAn ? partAn.items.length : 0} 类）</h2>
+        <p className="admin-meta">只统计本人名下游戏事件（game-catalog 归属为单一事实源）；金额单位为分。</p>
+        <div className="admin-form">
+          <input value={partFrom} onChange={(e) => setPartFrom(e.target.value)} placeholder="起（YYYY-MM-DD / RFC3339）" />
+          <input value={partTo} onChange={(e) => setPartTo(e.target.value)} placeholder="止" />
+          <button type="button" className="primary-btn" onClick={loadPartnerAnalytics} disabled={loading}>
+            查询
+          </button>
+        </div>
+        {partAn ? (
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>事件</th>
+                  <th>次数</th>
+                  <th>去重用户</th>
+                  <th>金额（分）</th>
+                </tr>
+              </thead>
+              <tbody>
+                {partAn.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="admin-meta">
+                      区间内暂无事件
+                    </td>
+                  </tr>
+                ) : (
+                  partAn.items.map((row) => (
+                    <tr key={row.eventType}>
+                      <td>{row.eventType}</td>
+                      <td>{row.events}</td>
+                      <td>{row.users}</td>
+                      <td>{row.amountCents}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="admin-meta">选择区间后查询名下事件计数</div>
+        )}
+      </section>
+
+      <section className="community-card">
+        <h2>对账单（{statements.length}）</h2>
+        {statements.length === 0 ? (
+          <div className="admin-meta">暂无对账单</div>
+        ) : (
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>周期</th>
+                  <th>渠道</th>
+                  <th>订单</th>
+                  <th>实付</th>
+                  <th>优惠承担</th>
+                  <th>退款冲减</th>
+                  <th>分成基数</th>
+                  <th>分成金额</th>
+                  <th>结算</th>
+                  <th>差异</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {statements.map((s) => (
+                  <tr key={s.id}>
+                    <td>{s.id}</td>
+                    <td>
+                      {s.periodStart} ~ {s.periodEnd}
+                    </td>
+                    <td>{s.vendor}</td>
+                    <td>{s.orderCount}</td>
+                    <td>¥{(s.paidTotal / 100).toFixed(2)}</td>
+                    <td>¥{(s.discountTotal / 100).toFixed(2)}</td>
+                    <td>¥{(s.refundTotal / 100).toFixed(2)}</td>
+                    <td>¥{(s.splitBase / 100).toFixed(2)}</td>
+                    <td>¥{(s.splitAmount / 100).toFixed(2)}</td>
+                    <td>¥{(s.settlement / 100).toFixed(2)}</td>
+                    <td>
+                      <span className={s.diff !== 0 ? 'status-rejected' : ''}>{s.diff !== 0 ? `¥${(s.diff / 100).toFixed(2)}` : '—'}</span>
+                    </td>
+                    <td>
+                      <StatusBadge status={s.status} />
+                      {s.disputeReason ? <div className="admin-meta">异议：{s.disputeReason}</div> : null}
+                    </td>
+                    <td>
+                      <div className="admin-form">
+                        <button
+                          type="button"
+                          className="secondary-btn"
+                          disabled={loading || s.status !== 'draft'}
+                          onClick={() =>
+                            run(async () => {
+                              await partnerConfirmStatement(s.id, token)
+                              setNotice(`对账单 ${s.id} 已确认`)
+                              loadStatements()
+                            })
+                          }
+                        >
+                          确认
+                        </button>
+                        {disputeId === s.id ? (
+                          <div className="admin-form">
+                            <input
+                              value={disputeReason}
+                              onChange={(e) => setDisputeReason(e.target.value)}
+                              placeholder="异议理由（必填）"
+                            />
+                            <button
+                              type="button"
+                              className="secondary-btn"
+                              disabled={loading || !disputeReason.trim()}
+                              onClick={() =>
+                                run(async () => {
+                                  await partnerDisputeStatement(s.id, disputeReason.trim(), token)
+                                  setNotice(`对账单 ${s.id} 已提异议`)
+                                  setDisputeId(null)
+                                  setDisputeReason('')
+                                  loadStatements()
+                                })
+                              }
+                            >
+                              提交异议
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className="secondary-btn"
+                            disabled={loading || s.diff === 0 || s.status !== 'draft'}
+                            onClick={() => {
+                              setDisputeId(s.id)
+                              setDisputeReason('')
+                            }}
+                          >
+                            提异议
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="secondary-btn"
+                          disabled={loading}
+                          onClick={() =>
+                            run(async () => {
+                              const blob = await fetchPartnerStatementExport(s.id, token)
+                              const url = URL.createObjectURL(blob)
+                              const a = document.createElement('a')
+                              a.href = url
+                              a.download = `statement-${s.id}.csv`
+                              a.click()
+                              URL.revokeObjectURL(url)
+                            })
+                          }
+                        >
+                          导出
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {differences.length ? (
+          <>
+            <h3>差异清单（diff ≠ 0，按 |diff| 降序）</h3>
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>周期</th>
+                    <th>差异</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {differences.map((s) => (
+                    <tr key={s.id}>
+                      <td>{s.id}</td>
+                      <td>
+                        {s.periodStart} ~ {s.periodEnd}
+                      </td>
+                      <td>¥{(s.diff / 100).toFixed(2)}</td>
+                      <td>
+                        <StatusBadge status={s.status} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : null}
+      </section>
     </div>
   )
 }
