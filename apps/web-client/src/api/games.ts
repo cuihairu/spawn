@@ -402,3 +402,13 @@ export async function fetchMyReservations(id: string, token: string): Promise<Ga
     createdAt: r.created_at,
   }))
 }
+
+// GP-403 推广链接落地点击登记（单层渠道归因，F22）。
+// GET /promo/resolve 记录一次点击并返回归因窗口秒数；渠道无效或已停用返回
+// 404，调用方按 best-effort 静默（落地页通常先于登录打开，点击失败不影响浏览）。
+export async function recordPromoClick(channel: string, clickId: string, gameId?: string): Promise<void> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  const search = new URLSearchParams({ channel, click_id: clickId })
+  if (gameId) search.set('game_id', gameId)
+  await request(baseUrl, `/promo/resolve?${search.toString()}`)
+}

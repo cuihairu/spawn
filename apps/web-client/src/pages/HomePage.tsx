@@ -6,6 +6,7 @@ import {
   fetchRecommendations,
   login,
   register,
+  PROMO_CLICK_STORAGE_KEY,
   type GameSummary,
   type UserInfo,
 } from '../api/client'
@@ -52,8 +53,11 @@ const HomePage = ({ auth, onAuthChange }: Props) => {
           setBanner('注册需填写邮箱')
           return
         }
-        // 注册即建号（后端无邮箱验证环节）；成功后用同一凭据自动登录
-        await register({ username, email: form.email.trim(), password: form.password })
+        // 注册即建号（后端无邮箱验证环节）；成功后用同一凭据自动登录。
+        // GP-403：落地页缓存的 click_id 随注册提交（归因后清除，不重复归因）。
+        const clickId = localStorage.getItem(PROMO_CLICK_STORAGE_KEY) ?? undefined
+        await register({ username, email: form.email.trim(), password: form.password, clickId })
+        if (clickId) localStorage.removeItem(PROMO_CLICK_STORAGE_KEY)
       }
       const result = await login(username, form.password)
       onAuthChange({ token: result.token, user: result.userInfo })
