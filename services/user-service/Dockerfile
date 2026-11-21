@@ -4,6 +4,9 @@
 # ../../pkg/resilience 要求镜像内目录结构与仓库一致
 # （/src/pkg/resilience、/src/services/user-service），单服务上下文装不下。
 FROM golang:1.26 AS builder
+# 模块代理可用 --build-arg GOPROXY=... 覆盖（默认官方，不改默认行为）
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=$GOPROXY
 WORKDIR /src
 COPY pkg/resilience/go.mod pkg/resilience/go.mod
 COPY services/user-service/go.mod services/user-service/go.sum services/user-service/

@@ -52,6 +52,9 @@ services:
       # platform_admin（运营后台首个入口）。逗号分隔可多个（如 "1,2"）；
       # 沙箱取 1 = 首个注册用户；生产必须改为真实运营账号 id（或留空禁用引导）。
       ADMIN_USER_IDS: "${ADMIN_USER_IDS:-1}"
+      # GP-403 渠道归因 S2S 守卫（/internal/promo/clicks/:id/resolve）：
+      # 与 user-service 的 GAMECATALOG_INTERNAL_TOKEN 同值；空 = 恒 403。
+      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
     volumes:
       - game-packages:/app/data/packages
     ports:
@@ -82,6 +85,8 @@ services:
       DATASOURCE: file:/app/data/users.db
       GAMECATALOG_BASE_URL: http://game-catalog:8890
       GAMECATALOG_TIMEOUT: "5000"
+      # GP-403 渠道归因 S2S 令牌（与 game-catalog INTERNAL_TOKEN 同值）。
+      GAMECATALOG_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
       JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
     depends_on:
       - game-catalog
@@ -113,6 +118,9 @@ services:
       JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
       # GP-402 经营分析查询名单（逗号分隔 user-service 用户 id，默认演示管理员 1）。
       ADMIN_USER_IDS: "${ADMIN_USER_IDS:-1}"
+      # GP-404 合作方自助数据面：game-catalog 为角色权威（/me 判角色与归属）。
+      # 容器内须用 compose DNS 名，etc yaml 的 localhost 默认只适用于裸机本地开发。
+      GAMECATALOG_BASE_URL: "http://game-catalog:8890"
     ports:
       - "8896:8896"
       - "9097:9097" # /metrics（deploy/ 观测栈抓取）
