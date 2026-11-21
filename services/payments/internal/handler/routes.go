@@ -60,6 +60,7 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodPut, Path: "/admin/statements/:id/settlement", Handler: UpdateSettlementHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/admin/statements/:id/confirm", Handler: ConfirmStatementHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/admin/statements/:id/resolve", Handler: ResolveDisputeHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/admin/statements/:id/disputes", Handler: DisputeRoundsHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/statements/:id/export", Handler: ExportStatementHandler(svcCtx)},
 		// GP-305 优惠券管理面：定义/状态机/列表/详情（platform_admin/operator）
 		{Method: http.MethodPost, Path: "/admin/coupons", Handler: CreateCouponHandler(svcCtx)},
@@ -624,6 +625,23 @@ func ResolveDisputeHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 		resp, err := logic.NewStatementLogic(r.Context(), svcCtx).ResolveDispute(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// DisputeRoundsHandler 异议轮次时间线（管理面，GP-404 版本化留痕）。
+func DisputeRoundsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.StatementPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewStatementLogic(r.Context(), svcCtx).DisputeRounds(&req, authHeaderFrom(r))
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return

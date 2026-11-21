@@ -56,6 +56,8 @@ func RegisterPaymentsRoutes(server *rest.Server, serverCtx *svc.ServiceContext) 
 		{Method: http.MethodPut, Path: "/admin/statements/:id/settlement", Handler: h},
 		{Method: http.MethodPost, Path: "/admin/statements/:id/confirm", Handler: h},
 		{Method: http.MethodPost, Path: "/admin/statements/:id/resolve", Handler: h},
+		// GP-404 异议轮次时间线（版本化留痕查询，管理面）
+		{Method: http.MethodGet, Path: "/admin/statements/:id/disputes", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/statements/:id/export", Handler: h},
 		// GP-404 合作方自助账单确认与结算差异（角色 partner + partner_id 行级
 		// 隔离在 payments 侧；/internal/deliveries 仍不进网关）。

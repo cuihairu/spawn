@@ -70,6 +70,7 @@ func TestRegisterPaymentsRoutesGP404Passthrough(t *testing.T) {
 		{http.MethodPost, "/partner/statements/7/confirm"},
 		{http.MethodPost, "/partner/statements/7/dispute"},
 		{http.MethodPost, "/admin/statements/7/resolve"},
+		{http.MethodGet, "/admin/statements/7/disputes"},
 	}
 	for _, rc := range routes {
 		req, err := http.NewRequest(rc.method, base+rc.path, nil)

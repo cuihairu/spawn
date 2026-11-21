@@ -180,7 +180,13 @@ func (l *PartnerStatementLogic) Dispute(req *types.DisputeStatementRequest, auth
 		l.Errorf("partner dispute statement %d failed: %v", req.Id, err)
 		return nil, newAPIError(http.StatusInternalServerError, "提异议失败")
 	}
-	detail, _ := json.Marshal(map[string]any{"id": req.Id, "partner_id": partnerID, "diff": st.Diff, "reason": reason})
+	// GP-404 异议版本化留痕：每轮异议一条（含当时差异快照），主表只留
+	// 最新一轮；留痕失败不阻断异议主流程（时间线可事后按审计补）。
+	round, err := l.svcCtx.StatementDB.RecordDisputeRound(req.Id, userID, reason, st.Diff)
+	if err != nil {
+		l.Errorf("record dispute round statement %d failed: %v", req.Id, err)
+	}
+	detail, _ := json.Marshal(map[string]any{"id": req.Id, "partner_id": partnerID, "diff": st.Diff, "reason": reason, "round": round})
 	_ = l.svcCtx.ProjectionDB.LogAudit(&model.OrderAuditLog{
 		ActorId: userID, ActorRole: "partner", Action: "partner_statement_dispute", Detail: string(detail), Ip: ip,
 	})

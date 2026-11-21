@@ -355,6 +355,27 @@ type StatementListResponse struct {
 	Items []StatementView `json:"items"`
 }
 
+// StatementDisputeRoundView 异议轮次留痕（GP-404 版本化时间线）：主表
+// dispute_reason 覆盖式只留最新一轮，本视图按轮次回溯全部异议与复核人。
+type StatementDisputeRoundView struct {
+	Id            int64  `json:"id"`
+	StatementId   int64  `json:"statement_id"`
+	Round         int    `json:"round"`
+	DisputeBy     int64  `json:"dispute_by"`
+	DisputeAt     string `json:"dispute_at"`
+	DisputeReason string `json:"dispute_reason"`
+	DiffAtDispute int64  `json:"diff_at_dispute"`
+	ResolvedBy    int64  `json:"resolved_by"`
+	ResolvedAt    string `json:"resolved_at"`
+}
+
+// StatementDisputeRoundsResponse 异议轮次时间线（管理面查询）。
+type StatementDisputeRoundsResponse struct {
+	StatementId int64                       `json:"statement_id"`
+	Status      string                      `json:"status"`
+	Items       []StatementDisputeRoundView `json:"items"`
+}
+
 // ---- GP-404 合作方自助账单确认 / 结算差异 ----
 
 // DisputeStatementRequest 合作方对差异提异议（异议理由必填，留痕）。

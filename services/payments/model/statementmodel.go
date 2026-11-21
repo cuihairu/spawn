@@ -76,6 +76,29 @@ type StatementLineItem struct {
 	PaidAt      string
 }
 
+// StatementDisputeRound 异议轮次留痕（GP-404）：每次异议一条，版本化时间线。
+// 主表 dispute_reason 覆盖式只留最新一轮，本表保留全部异议轮次与其复核人，
+// 复核差异责任时可按轮次回溯「何时以何理由异议、当时差异多少、谁复核的」。
+type StatementDisputeRound struct {
+	Id            int64  `json:"id"`
+	StatementId   int64  `json:"statement_id"`
+	RoundNo       int    `json:"round"`
+	DisputeBy     int64  `json:"dispute_by"`
+	DisputeAt     string `json:"dispute_at"`
+	DisputeReason string `json:"dispute_reason"`
+	DiffAtDispute int64  `json:"diff_at_dispute"`
+	ResolvedBy    int64  `json:"resolved_by"`
+	ResolvedAt    string `json:"resolved_at"`
+	CreatedAt     string `json:"created_at"`
+}
+
+const disputeRoundColumns = "id, statement_id, round_no, dispute_by, dispute_at, dispute_reason, diff_at_dispute, resolved_by, resolved_at, created_at"
+
+func scanStatementDisputeRound(r *StatementDisputeRound) []any {
+	return []any{&r.Id, &r.StatementId, &r.RoundNo, &r.DisputeBy, &r.DisputeAt,
+		&r.DisputeReason, &r.DiffAtDispute, &r.ResolvedBy, &r.ResolvedAt, &r.CreatedAt}
+}
+
 // StatementModel 对账单数据访问。
 type StatementModel struct {
 	db *sql.DB
@@ -140,6 +163,33 @@ func (m *StatementModel) CreateTables() error {
 				updated_at VARCHAR(32) NOT NULL,
 				UNIQUE KEY uk_statement_key (vendor, partner_id, period_start, period_end),
 				KEY idx_statement_partner (partner_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			`CREATE TABLE IF NOT EXISTS statement_dispute_history (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				statement_id INTEGER NOT NULL,
+				round_no INTEGER NOT NULL,
+				dispute_by INTEGER NOT NULL,
+				dispute_at VARCHAR(32) NOT NULL,
+				dispute_reason VARCHAR(256) NOT NULL DEFAULT '',
+				diff_at_dispute INTEGER NOT NULL DEFAULT 0,
+				resolved_by INTEGER NOT NULL DEFAULT 0,
+				resolved_at VARCHAR(32) NOT NULL DEFAULT '',
+				created_at VARCHAR(32) NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS statement_dispute_history (
+				id BIGINT PRIMARY KEY AUTO_INCREMENT,
+				statement_id BIGINT NOT NULL,
+				round_no INT NOT NULL,
+				dispute_by BIGINT NOT NULL,
+				dispute_at VARCHAR(32) NOT NULL,
+				dispute_reason VARCHAR(256) NOT NULL DEFAULT '',
+				diff_at_dispute BIGINT NOT NULL DEFAULT 0,
+				resolved_by BIGINT NOT NULL DEFAULT 0,
+				resolved_at VARCHAR(32) NOT NULL DEFAULT '',
+				created_at VARCHAR(32) NOT NULL,
+				KEY idx_statement_dispute_history (statement_id, round_no)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 		},
 	}
@@ -355,6 +405,74 @@ func (m *StatementModel) ClearDispute(id int64) error {
 		nowUTC(), id,
 	)
 	return err
+}
+
+// RecordDisputeRound 记一轮异议（GP-404 版本化留痕）：round = 该单据既有
+// 最大轮次 + 1，落异议人/理由/当时差异快照。返回本轮轮次号。
+func (m *StatementModel) RecordDisputeRound(statementID, by int64, reason string, diff int64) (int, error) {
+	now := nowUTC()
+	var last int
+	err := m.db.QueryRow(
+		`SELECT COALESCE(MAX(round_no), 0) FROM statement_dispute_history WHERE statement_id = ?`,
+		statementID).Scan(&last)
+	if err != nil {
+		return 0, err
+	}
+	round := last + 1
+	_, err = m.db.Exec(
+		`INSERT INTO statement_dispute_history (statement_id, round_no, dispute_by, dispute_at, dispute_reason, diff_at_dispute, resolved_by, resolved_at, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 0, '', ?)`,
+		statementID, round, by, now, reason, diff, now,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return round, nil
+}
+
+// ResolveLatestDisputeRound 运营复核后结案最新一轮未结异议：填复核人与
+// 复核时间。返回是否命中（无未结轮次 = false，不报错）。
+func (m *StatementModel) ResolveLatestDisputeRound(statementID, by int64) (bool, error) {
+	now := nowUTC()
+	var round int
+	err := m.db.QueryRow(
+		`SELECT COALESCE(MAX(round_no), 0) FROM statement_dispute_history WHERE statement_id = ? AND resolved_at = ''`,
+		statementID).Scan(&round)
+	if err != nil {
+		return false, err
+	}
+	if round <= 0 {
+		return false, nil
+	}
+	res, err := m.db.Exec(
+		`UPDATE statement_dispute_history SET resolved_by = ?, resolved_at = ? WHERE statement_id = ? AND round_no = ? AND resolved_at = ''`,
+		by, now, statementID, round,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// ListDisputeRounds 异议轮次时间线（管理面）：按轮次升序，含未结案轮次。
+func (m *StatementModel) ListDisputeRounds(statementID int64) ([]*StatementDisputeRound, error) {
+	rows, err := m.db.Query(
+		`SELECT `+disputeRoundColumns+` FROM statement_dispute_history WHERE statement_id = ? ORDER BY round_no ASC`,
+		statementID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*StatementDisputeRound, 0, 8)
+	for rows.Next() {
+		var r StatementDisputeRound
+		if err := rows.Scan(scanStatementDisputeRound(&r)...); err != nil {
+			return nil, err
+		}
+		out = append(out, &r)
+	}
+	return out, rows.Err()
 }
 
 // ListDifferences 结算差异清单（GP-404）：该合作方名下 diff ≠ 0 的对账单，

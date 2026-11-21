@@ -247,6 +247,13 @@ func (l *StatementLogic) ResolveDispute(req *types.StatementPathRequest, authHea
 		l.Errorf("resolve dispute %d failed: %v", req.Id, err)
 		return nil, newAPIError(http.StatusInternalServerError, "处理异议失败")
 	}
+	// GP-404 异议版本化留痕：结案最新一轮未结异议（填复核人/时间）。无未结
+	// 轮次（存量单据在留痕上线前提的异议）不视为失败。
+	if ok, err := l.svcCtx.StatementDB.ResolveLatestDisputeRound(req.Id, userID); err != nil {
+		l.Errorf("resolve dispute round statement %d failed: %v", req.Id, err)
+	} else if !ok {
+		l.Infof("resolve dispute statement %d: no open dispute round", req.Id)
+	}
 	detail, _ := json.Marshal(map[string]any{"id": req.Id, "dispute_by": st.DisputeBy, "reason": st.DisputeReason, "diff": st.Diff})
 	_ = l.svcCtx.ProjectionDB.LogAudit(&model.OrderAuditLog{
 		ActorId: userID, ActorRole: role, Action: "statement_dispute_resolved", Detail: string(detail), Ip: ip,
@@ -262,6 +269,39 @@ func (l *StatementLogic) ResolveDispute(req *types.StatementPathRequest, authHea
 	}
 	got, _ := l.svcCtx.StatementDB.Get(req.Id)
 	return &types.StatementResponse{Statement: toStatementView(got)}, nil
+}
+
+// DisputeRounds 异议轮次时间线（GP-404 版本化留痕）：按轮次升序返回全部
+// 异议轮次（含未结案），供运营复核差异责任时回溯。仅运营/管理角色。
+func (l *StatementLogic) DisputeRounds(req *types.StatementPathRequest, authHeader string) (*types.StatementDisputeRoundsResponse, error) {
+	if _, err := requireAdmin(l.ctx, l.svcCtx, authHeader); err != nil {
+		return nil, err
+	}
+	st, err := l.svcCtx.StatementDB.Get(req.Id)
+	if errors.Is(err, model.ErrStatementNotFound) {
+		return nil, newAPIError(http.StatusNotFound, "对账单不存在")
+	}
+	if err != nil {
+		l.Errorf("get statement %d failed: %v", req.Id, err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询对账单失败")
+	}
+	rounds, err := l.svcCtx.StatementDB.ListDisputeRounds(st.Id)
+	if err != nil {
+		l.Errorf("list dispute rounds %d failed: %v", req.Id, err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询异议轮次失败")
+	}
+	items := make([]types.StatementDisputeRoundView, 0, len(rounds))
+	for _, r := range rounds {
+		items = append(items, types.StatementDisputeRoundView{
+			Id: r.Id, StatementId: r.StatementId, Round: r.RoundNo,
+			DisputeBy: r.DisputeBy, DisputeAt: r.DisputeAt,
+			DisputeReason: r.DisputeReason, DiffAtDispute: r.DiffAtDispute,
+			ResolvedBy: r.ResolvedBy, ResolvedAt: r.ResolvedAt,
+		})
+	}
+	return &types.StatementDisputeRoundsResponse{
+		StatementId: st.Id, Status: st.Status, Items: items,
+	}, nil
 }
 
 // Export 导出对账单 CSV（明细 + 汇总）；返回文件名与内容。

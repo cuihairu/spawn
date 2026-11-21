@@ -173,6 +173,33 @@ func TestRoutes_PartnerStatementSelfService(t *testing.T) {
 		t.Fatalf("notify body = %+v, want type=statement_dispute_resolved target=%d user=2", nbody, ownID)
 	}
 
+	// GP-404 异议轮次时间线（版本化留痕）：第一轮异议已落表并结案，diff 快照
+	// 为当时 700；管理面可查，partner 面 403。
+	code, body = do(t, http.MethodGet, fmt.Sprintf("%s/admin/statements/%d/disputes", env.base, ownID), admin, "")
+	if code != http.StatusOK || !strings.Contains(body, `"round":1`) ||
+		!strings.Contains(body, `"diff_at_dispute":700`) || !strings.Contains(body, `"dispute_by":2`) ||
+		!strings.Contains(body, `"resolved_at"`) {
+		t.Fatalf("dispute rounds round1 = %d body=%s", code, body)
+	}
+	code, _ = do(t, http.MethodGet, fmt.Sprintf("%s/admin/statements/%d/disputes", env.base, ownID), partner, "")
+	if code != http.StatusForbidden {
+		t.Fatalf("partner on dispute rounds = %d, want 403", code)
+	}
+	// 第二轮异议（复核后差异仍在，可再提）：轮次递增为 2，理由各自留痕
+	code, body = do(t, http.MethodPost, fmt.Sprintf("%s/partner/statements/%d/dispute", env.base, ownID), partner, `{"reason":"结算口径需再核对"}`)
+	if code != http.StatusOK || !strings.Contains(body, `"status":"disputed"`) {
+		t.Fatalf("second dispute = %d body=%s", code, body)
+	}
+	code, body = do(t, http.MethodGet, fmt.Sprintf("%s/admin/statements/%d/disputes", env.base, ownID), admin, "")
+	if code != http.StatusOK || !strings.Contains(body, `"round":2`) ||
+		!strings.Contains(body, `"dispute_reason":"结算口径需再核对"`) {
+		t.Fatalf("dispute rounds round2 = %d body=%s", code, body)
+	}
+	code, _ = do(t, http.MethodPost, fmt.Sprintf("%s/admin/statements/%d/resolve", env.base, ownID), admin, "")
+	if code != http.StatusOK {
+		t.Fatalf("resolve round2 = %d, want 200", code)
+	}
+
 	code, _ = do(t, http.MethodPost, fmt.Sprintf("%s/admin/statements/%d/resolve", env.base, ownID), admin, "")
 	if code != http.StatusConflict {
 		t.Fatalf("resolve again = %d, want 409", code)
