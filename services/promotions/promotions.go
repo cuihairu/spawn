@@ -55,6 +55,13 @@ func run() error {
 		go ctx.AnalyticsRelay.Run(bgCtx)
 	}
 
+	// GP-306 业务通知 outbox 重投：community 短时不可达时补偿投递（本地
+	// 持久化，重启续扫），共用同一 ctx（进程信号面）；COMMUNITY_URL 未配置
+	// 时 NewRelay 返回 nil，不启动。
+	if ctx.NotifyRelay != nil {
+		go ctx.NotifyRelay.Run(bgCtx)
+	}
+
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()
 	return nil

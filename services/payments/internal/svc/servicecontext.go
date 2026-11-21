@@ -35,6 +35,11 @@ type ServiceContext struct {
 	AnalyticsRelay  *analytics.Relay // nil = DATA_PANEL_URL 未配置（no-op，不启动）
 	AnalyticsOutbox *model.AnalyticsOutboxModel
 	NotifySvc       notify.Client
+	// NotifyRelay GP-404 业务通知 outbox 重投循环；nil = COMMUNITY_URL 未配置
+	//（no-op，不启动扫描）。
+	NotifyRelay *notify.Relay
+	// NotifyOutbox GP-404 业务通知 outbox（始终建表，未启用时不写行）。
+	NotifyOutbox *model.NotifyOutboxModel
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -100,8 +105,19 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		time.Second*time.Duration(c.Analytics.OutboxIntervalSeconds),
 		int(c.Analytics.OutboxMaxAttempts),
 		time.Hour*time.Duration(c.Analytics.OutboxRetentionHours))
-	// GP-404 异议复核结果回流合作方（COMMUNITY_URL 未配置 = no-op）
-	notifyClient := notify.NewClient(c.Notify.BaseURL, c.Notify.Token, c.Notify.Timeout)
+	// GP-404 异议复核结果回流合作方（COMMUNITY_URL 未配置 = no-op）：失败先落
+	// outbox（幂等持久化），由 Relay 定时重投；outbox 表始终建（后续部署
+	// 补 community 时免迁移），未启用时不写行。重投安全由 community 侧
+	// UNIQUE(user,actor,type,target) 去重保证。
+	notifyOutbox := model.NewNotifyOutboxModel(db)
+	if err := notifyOutbox.CreateTables(); err != nil {
+		panic(fmt.Sprintf("create notify outbox tables: %v", err))
+	}
+	notifyClient := notify.NewClient(c.Notify.BaseURL, c.Notify.Token, c.Notify.Timeout, notifyOutbox)
+	notifyRelay := notify.NewRelay(notifyOutbox, notifyClient,
+		time.Second*time.Duration(c.Notify.OutboxIntervalSeconds),
+		int(c.Notify.OutboxMaxAttempts),
+		time.Hour*time.Duration(c.Notify.OutboxRetentionHours))
 
 	timeout := time.Millisecond * time.Duration(c.Courier.Timeout)
 	courierClient := courier.NewClient(c.Courier.BaseURL, timeout)
@@ -128,5 +144,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		AnalyticsRelay:  analyticsRelay,
 		AnalyticsOutbox: analyticsOutbox,
 		NotifySvc:       notifyClient,
+		NotifyRelay:     notifyRelay,
+		NotifyOutbox:    notifyOutbox,
 	}
 }

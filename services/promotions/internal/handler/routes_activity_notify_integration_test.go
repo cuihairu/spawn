@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,12 +36,18 @@ type communityRecorder struct {
 	tokens []string
 	reqs   [][]byte
 	srv    *httptest.Server
+	// down 置位 = community 短时不可达（返回 503，模拟下游故障）。
+	down atomic.Bool
 }
 
 func newCommunityRecorder() *communityRecorder {
 	c := &communityRecorder{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /internal/notifications", func(w http.ResponseWriter, r *http.Request) {
+		if c.down.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		raw, _ := io.ReadAll(r.Body)
 		c.mu.Lock()
 		c.tokens = append(c.tokens, r.Header.Get("X-Internal-Token"))

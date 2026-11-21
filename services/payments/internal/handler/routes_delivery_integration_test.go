@@ -56,6 +56,8 @@ type notifyStub struct {
 	raw  [][]byte
 	sigs []string
 	srv  *httptest.Server
+	// down 置位 = community 短时不可达（返回 503，模拟下游故障）。
+	down atomic.Bool
 }
 
 func (n *notifyStub) Calls() int {
@@ -220,6 +222,10 @@ func newDeliveryServer(t *testing.T) *testDeliveryEnv {
 	// GP-404 站内通知存根（community /internal/notifications）：记录原始体+令牌
 	notify := &notifyStub{}
 	notify.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if notify.down.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		raw, _ := io.ReadAll(r.Body)
 		notify.mu.Lock()
 		notify.raw = append(notify.raw, raw)

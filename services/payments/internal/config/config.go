@@ -89,5 +89,11 @@ type Config struct {
 		BaseURL string `json:",env=COMMUNITY_URL,optional"`
 		Token   string `json:",env=COMMUNITY_INTERNAL_TOKEN,optional"`
 		Timeout int64  `json:",default=3000,env=COMMUNITY_TIMEOUT"`
+		// OutboxIntervalSeconds 重投扫描周期（默认 30s）。
+		OutboxIntervalSeconds int64 `json:",default=30,env=COMMUNITY_NOTIFY_OUTBOX_INTERVAL_SECONDS"`
+		// OutboxMaxAttempts 重试上限（默认 10，超出置 dropped 留痕）。
+		OutboxMaxAttempts int64 `json:",default=10,env=COMMUNITY_NOTIFY_OUTBOX_MAX_ATTEMPTS"`
+		// OutboxRetentionHours 已终态行保留窗口（默认 168h=7 天）。
+		OutboxRetentionHours int64 `json:",default=168,env=COMMUNITY_NOTIFY_OUTBOX_RETENTION_HOURS"`
 	}
 }

@@ -34,6 +34,12 @@ type Config struct {
 		CommunityUrl string `json:",env=COMMUNITY_URL,optional"`
 		CatalogUrl   string `json:",env=GAMECATALOG_BASE_URL,optional"`
 		Token        string `json:",env=INTERNAL_TOKEN,optional"`
+		// OutboxIntervalSeconds 重投扫描周期（默认 30s）。
+		OutboxIntervalSeconds int64 `json:",default=30,env=COMMUNITY_NOTIFY_OUTBOX_INTERVAL_SECONDS"`
+		// OutboxMaxAttempts 重试上限（默认 10，超出置 dropped 留痕）。
+		OutboxMaxAttempts int64 `json:",default=10,env=COMMUNITY_NOTIFY_OUTBOX_MAX_ATTEMPTS"`
+		// OutboxRetentionHours 已终态行保留窗口（默认 168h=7 天）。
+		OutboxRetentionHours int64 `json:",default=168,env=COMMUNITY_NOTIFY_OUTBOX_RETENTION_HOURS"`
 	}
 
 	// GP-402 经营分析事实投递（F24）：reward_granted 事实事件 → data-panel
