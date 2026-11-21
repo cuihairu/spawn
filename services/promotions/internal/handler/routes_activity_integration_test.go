@@ -35,9 +35,18 @@ type testActivityEnv struct {
 	base   string
 	svcCtx *svc.ServiceContext
 	sign   func(claims utils.JWTClaims) string
+	// analyticsSeen 非空 = 本环境接线了 data-panel 存根（新活动服务辅助构造）；
+	// 存根按到达顺序累积 {"events":[Event]} 原文。
+	analyticsSeen *[]string
 }
 
 func newActivityServer(t *testing.T) *testActivityEnv {
+	return newActivityServerAnalytics(t, "", "")
+}
+
+// newActivityServerAnalytics 同 newActivityServer，可选接线 data-panel
+// /internal/events（analyticsURL 空 = 不启用事实投递，行为与历史一致）。
+func newActivityServerAnalytics(t *testing.T, analyticsURL, analyticsToken string) *testActivityEnv {
 	t.Helper()
 
 	// game-catalog /me 存根：user 1 = platform_admin，其余 = player
@@ -67,6 +76,12 @@ func newActivityServer(t *testing.T) *testActivityEnv {
 	c.Auth.JWTSecret = testJWTSecret
 	c.GameCatalog.BaseURL = catalog.URL
 	c.Reward.Secret = testRewardSecret
+	if analyticsURL != "" {
+		c.Analytics.BaseURL = analyticsURL
+		c.Analytics.Token = analyticsToken
+		c.Analytics.OutboxIntervalSeconds = 1
+		c.Analytics.OutboxMaxAttempts = 3
+	}
 
 	svcCtx := svc.NewServiceContext(c)
 	httpx.SetErrorHandlerCtx(logic.ErrorHandler)

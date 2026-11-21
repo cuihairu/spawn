@@ -38,11 +38,15 @@ type Config struct {
 
 	// GP-402 经营分析事实投递（F24）：reward_granted 事实事件 → data-panel
 	// /internal/events（X-Internal-Token）。BaseURL 未配置 = no-op，
-	// 部署面未带数据面板时行为不变；fire-and-forget 不影响发放主流程。
+	// 部署面未带数据面板时行为不变。同步首投失败先落本地 outbox，由定时
+	// Relay 重投（data-panel 摄入按 event_id 幂等）。
 	Analytics struct {
-		BaseURL string `json:",env=DATA_PANEL_URL,optional"`
-		Token   string `json:",env=DATA_PANEL_INTERNAL_TOKEN,optional"`
-		Timeout int64  `json:",default=3000,env=DATA_PANEL_TIMEOUT"`
+		BaseURL               string `json:",env=DATA_PANEL_URL,optional"`
+		Token                 string `json:",env=DATA_PANEL_INTERNAL_TOKEN,optional"`
+		Timeout               int64  `json:",default=3000,env=DATA_PANEL_TIMEOUT"`
+		OutboxIntervalSeconds int64  `json:",default=30,env=DATA_PANEL_OUTBOX_INTERVAL_SECONDS"`
+		OutboxMaxAttempts     int64  `json:",default=10,env=DATA_PANEL_OUTBOX_MAX_ATTEMPTS"`
+		OutboxRetentionHours  int64  `json:",default=168,env=DATA_PANEL_OUTBOX_RETENTION_HOURS"`
 	}
 
 	// Internal 游戏服侧活动快照读取守卫（GP-301 运行时消费接口）：
