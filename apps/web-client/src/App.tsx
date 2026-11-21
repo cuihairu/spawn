@@ -195,7 +195,7 @@ function App() {
             <Route path="/design" element={<DesignHubPage />} />
             <Route path="/design/:id" element={<DesignBreakdownPage auth={auth} />} />
             <Route path="/games" element={<GamesPage />} />
-            <Route path="/games/:id" element={<GameDetailPage token={auth?.token} />} />
+            <Route path="/games/:id" element={<GameDetailPage token={auth?.token} userId={auth?.user?.id} />} />
             <Route
               path="/stats"
               element={
