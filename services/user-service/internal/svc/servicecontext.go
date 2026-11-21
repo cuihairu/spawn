@@ -12,6 +12,7 @@ import (
 	"github.com/tappi/tappi/services/user-service/internal/analytics"
 	"github.com/tappi/tappi/services/user-service/internal/config"
 	"github.com/tappi/tappi/services/user-service/internal/integration"
+	"github.com/tappi/tappi/services/user-service/internal/promoattr"
 	"github.com/tappi/tappi/services/user-service/model"
 	"github.com/tappi/tappi/services/user-service/utils"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -34,6 +35,10 @@ type ServiceContext struct {
 	AnalyticsRelay *analytics.Relay
 	// AnalyticsOutbox GP-402 事实事件 outbox（始终建表，未启用时不写行）。
 	AnalyticsOutbox *model.AnalyticsOutboxModel
+	// PromoAttrRelay GP-403 渠道归因 outbox 重投循环。
+	PromoAttrRelay *promoattr.Relay
+	// PromoAttrOutbox GP-403 渠道归因意图 outbox（始终建表，无 click_id 时不写行）。
+	PromoAttrOutbox *model.PromoAttrOutboxModel
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -100,6 +105,18 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		int(c.Analytics.OutboxMaxAttempts),
 		time.Hour*time.Duration(c.Analytics.OutboxRetentionHours))
 
+	// GP-403 渠道归因补偿：归因意图先落 outbox，game-catalog 短时不可达时
+	// 失败留 pending 由 Relay 重投（重投锚定原始 registered_at 判定、回写
+	// user_id 幂等）；outbox 表始终建，注册不带 click_id 时不写行。
+	promoAttrOutbox := model.NewPromoAttrOutboxModel(db)
+	if err := promoAttrOutbox.CreateTables(); err != nil {
+		panic(fmt.Sprintf("create promo attr outbox tables: %v", err))
+	}
+	promoAttrRelay := promoattr.NewRelay(promoAttrOutbox, gameClient,
+		time.Second*time.Duration(c.PromoAttr.OutboxIntervalSeconds),
+		int(c.PromoAttr.OutboxMaxAttempts),
+		time.Hour*time.Duration(c.PromoAttr.OutboxRetentionHours))
+
 	return &ServiceContext{
 		Config:            c,
 		DB:                db,
@@ -109,5 +126,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		AnalyticsSvc:      analyticsClient,
 		AnalyticsRelay:    analyticsRelay,
 		AnalyticsOutbox:   analyticsOutbox,
+		PromoAttrRelay:    promoAttrRelay,
+		PromoAttrOutbox:   promoAttrOutbox,
 	}
 }

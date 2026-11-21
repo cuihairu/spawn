@@ -67,6 +67,13 @@ func run() error {
 		go ctx.AnalyticsRelay.Run(bgCtx)
 	}
 
+	// GP-403 渠道归因 outbox 重投：game-catalog 短时不可达时补偿解析（本地
+	// 持久化，重启续扫），ctx 取进程信号面；客户端 nil 时 NewRelay 返回 nil，
+	// 不启动。
+	if ctx.PromoAttrRelay != nil {
+		go ctx.PromoAttrRelay.Run(bgCtx)
+	}
+
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()
 	return nil

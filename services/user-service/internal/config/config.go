@@ -40,4 +40,18 @@ type Config struct {
 		OutboxMaxAttempts     int64  `json:",default=10,env=DATA_PANEL_OUTBOX_MAX_ATTEMPTS"`
 		OutboxRetentionHours  int64  `json:",default=168,env=DATA_PANEL_OUTBOX_RETENTION_HOURS"`
 	}
+
+	// GP-403 渠道归因补偿：注册携带 click_id 时向 game-catalog 解析渠道归因
+	//（S2S /internal/promo/clicks/:id/resolve）。此前同步 HTTP 失败即丢归因
+	//（game-catalog 短时不可达），归因意图先落 outbox（幂等），失败留 pending
+	// 由 Relay 重投；重投锚定原始 registered_at 判定、回写 user_id 幂等
+	//（一点击一归因）。Outbox* 为本地补偿重投节奏。
+	PromoAttr struct {
+		// OutboxIntervalSeconds 重投扫描周期（默认 30s）。
+		OutboxIntervalSeconds int64 `json:",default=30,env=PROMO_ATTR_OUTBOX_INTERVAL_SECONDS"`
+		// OutboxMaxAttempts 重试上限（默认 10，超出置 dropped 留痕）。
+		OutboxMaxAttempts int64 `json:",default=10,env=PROMO_ATTR_OUTBOX_MAX_ATTEMPTS"`
+		// OutboxRetentionHours 已终态行保留窗口（默认 168h=7 天）。
+		OutboxRetentionHours int64 `json:",default=168,env=PROMO_ATTR_OUTBOX_RETENTION_HOURS"`
+	}
 }
