@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/tappi/tappi/services/payments/internal/notify"
 	"github.com/tappi/tappi/services/payments/internal/svc"
 	"github.com/tappi/tappi/services/payments/internal/types"
 	"github.com/tappi/tappi/services/payments/model"
@@ -250,6 +251,15 @@ func (l *StatementLogic) ResolveDispute(req *types.StatementPathRequest, authHea
 	_ = l.svcCtx.ProjectionDB.LogAudit(&model.OrderAuditLog{
 		ActorId: userID, ActorRole: role, Action: "statement_dispute_resolved", Detail: string(detail), Ip: ip,
 	})
+	// GP-404 异议复核结果回流合作方（站内信）：告知异议提交人复核结论，可
+	// 回后台重新确认。fire-and-forget（notify 契约不返回错误），community
+	// 未部署时 no-op；不影响复核结果。
+	if st.DisputeBy > 0 {
+		l.svcCtx.NotifySvc.Publish(notify.Notification{
+			UserIds: []int64{st.DisputeBy}, Type: "statement_dispute_resolved", TargetId: req.Id,
+			Content: "您的对账单异议已复核，可前往合作方后台重新确认",
+		})
+	}
 	got, _ := l.svcCtx.StatementDB.Get(req.Id)
 	return &types.StatementResponse{Statement: toStatementView(got)}, nil
 }

@@ -148,6 +148,31 @@ func TestRoutes_PartnerStatementSelfService(t *testing.T) {
 		!strings.Contains(body, `"dispute_reason":""`) {
 		t.Fatalf("resolve dispute = %d body=%s", code, body)
 	}
+
+	// GP-404 异议复核结果回流合作方（站内信）：恰好一次，类型与目标正确，
+	// S2S 令牌与 community 侧同值（防跨服务伪造）。
+	if env.notify.Calls() != 1 {
+		t.Fatalf("notify calls = %d, want 1 (异议复核只回执一次)", env.notify.Calls())
+	}
+	nraw, ntok := env.notify.At(0)
+	if ntok != testNotifyToken {
+		t.Fatalf("notify token = %q, want %q", ntok, testNotifyToken)
+	}
+	var nbody struct {
+		UserIds  []int64 `json:"user_ids"`
+		Type     string  `json:"type"`
+		TargetId int64   `json:"target_id"`
+		Content  string  `json:"content"`
+	}
+	if err := json.Unmarshal(nraw, &nbody); err != nil {
+		t.Fatalf("parse notify body: %v raw=%s", err, nraw)
+	}
+	if nbody.Type != "statement_dispute_resolved" || nbody.TargetId != ownID ||
+		len(nbody.UserIds) != 1 || nbody.UserIds[0] != 2 ||
+		!strings.Contains(nbody.Content, "异议已复核") {
+		t.Fatalf("notify body = %+v, want type=statement_dispute_resolved target=%d user=2", nbody, ownID)
+	}
+
 	code, _ = do(t, http.MethodPost, fmt.Sprintf("%s/admin/statements/%d/resolve", env.base, ownID), admin, "")
 	if code != http.StatusConflict {
 		t.Fatalf("resolve again = %d, want 409", code)

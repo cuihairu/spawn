@@ -43,9 +43,34 @@ type testDeliveryEnv struct {
 	sign       func(claims utils.JWTClaims) string
 	gameServer *deliveryGameStub
 	promo      *promoStub
+	notify     *notifyStub
 	orderSeq   int64
 	orderMu    sync.Mutex
 	orders     []map[string]any
+}
+
+// notifyStub GP-404 站内通知存根（community /internal/notifications）：记录
+// 原始体 + X-Internal-Token 供回流合作方断言。
+type notifyStub struct {
+	mu   sync.Mutex
+	raw  [][]byte
+	sigs []string
+	srv  *httptest.Server
+}
+
+func (n *notifyStub) Calls() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return len(n.raw)
+}
+
+func (n *notifyStub) At(i int) ([]byte, string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if i < 0 || i >= len(n.raw) {
+		return nil, ""
+	}
+	return n.raw[i], n.sigs[i]
 }
 
 // promoStub GP-302 promotions 评估接口存根（记录原始体+签名供验签断言）。
@@ -192,6 +217,23 @@ func newDeliveryServer(t *testing.T) *testDeliveryEnv {
 	t.Cleanup(promo.srv.Close)
 	env.promo = promo
 
+	// GP-404 站内通知存根（community /internal/notifications）：记录原始体+令牌
+	notify := &notifyStub{}
+	notify.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		notify.mu.Lock()
+		notify.raw = append(notify.raw, raw)
+		notify.sigs = append(notify.sigs, r.Header.Get("X-Internal-Token"))
+		notify.mu.Unlock()
+		if r.Header.Get("X-Internal-Token") != testNotifyToken {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		_, _ = w.Write([]byte(`{"created":1}`))
+	}))
+	t.Cleanup(notify.srv.Close)
+	env.notify = notify
+
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("grab port: %v", err)
@@ -209,6 +251,8 @@ func newDeliveryServer(t *testing.T) *testDeliveryEnv {
 	c.Delivery.Secret = testDeliverySecret
 	c.Promotions.BaseURL = promo.srv.URL
 	c.Promotions.Secret = "promotions-reward-test-secret"
+	c.Notify.BaseURL = notify.srv.URL
+	c.Notify.Token = testNotifyToken
 
 	svcCtx := svc.NewServiceContext(c)
 	server := rest.MustNewServer(c.RestConf)

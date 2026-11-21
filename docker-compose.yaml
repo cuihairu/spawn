@@ -55,6 +55,9 @@ services:
       # GP-403 渠道归因 S2S 守卫（/internal/promo/clicks/:id/resolve）：
       # 与 user-service 的 GAMECATALOG_INTERNAL_TOKEN 同值；空 = 恒 403。
       INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
+      # GP-306/401 通知扇出目标（community /internal/notifications）；未配置时
+      # 通知通路 no-op（开服提醒/版本通知/上线通知/举报处置结果都不落库）。
+      COMMUNITY_URL: http://community:8892
     volumes:
       - game-packages:/app/data/packages
     ports:
@@ -103,6 +106,10 @@ services:
       # realtime-hub 未就绪时 community 启动不受影响（发布失败仅记日志）。
       REALTIME_HUB_URL: http://realtime-hub:8893
       REALTIME_INTERNAL_TOKEN: "${REALTIME_INTERNAL_TOKEN:-tappi-realtime-internal-token-2024}"
+      # 站内通知 S2S 守卫（/internal/notifications，X-Internal-Token）：与各调用
+      # 方（game-catalog/payments）的 notify 令牌同值；未配置时通知一律 403，
+      # 通知通路整体失效。
+      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
     depends_on:
       - realtime-hub
     ports:
@@ -175,6 +182,10 @@ services:
       JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
       COURIER_GATEWAY_URL: "${COURIER_GATEWAY_URL:-http://courier-gateway:8080}"
       GAMECATALOG_BASE_URL: http://game-catalog:8890
+      # GP-404 异议复核结果回流合作方（站内信经 community /internal/notifications）；
+      # COMMUNITY_URL 留空 = no-op。令牌与 community 侧 INTERNAL_TOKEN 同值。
+      COMMUNITY_URL: http://community:8892
+      COMMUNITY_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
       # 沙箱渠道 HMAC 密钥（仅开发/沙箱；真实渠道不得使用且须覆盖）
       PAYMENTS_SANDBOX_SECRET: "${PAYMENTS_SANDBOX_SECRET:-tappi-payments-sandbox-channel-secret-2026}"
       # GP-203 发货接缝密钥：teller Deliver 钩子（进程内）的签名 webhook

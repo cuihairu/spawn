@@ -29,6 +29,7 @@ import (
 const (
 	testJWTSecret     = "payments-integration-secret"
 	testSandboxSecret = "payments-sandbox-test"
+	testNotifyToken   = "payments-notify-test-token"
 )
 
 type testEnv struct {

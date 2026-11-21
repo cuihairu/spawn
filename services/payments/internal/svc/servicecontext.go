@@ -9,6 +9,7 @@ import (
 	"github.com/tappi/tappi/services/payments/internal/channel"
 	"github.com/tappi/tappi/services/payments/internal/config"
 	"github.com/tappi/tappi/services/payments/internal/delivery"
+	"github.com/tappi/tappi/services/payments/internal/notify"
 	"github.com/tappi/tappi/services/payments/internal/promotion"
 	"github.com/tappi/tappi/services/payments/model"
 	"github.com/tappi/tappi/services/payments/utils"
@@ -31,6 +32,7 @@ type ServiceContext struct {
 	Dispatcher      *delivery.Dispatcher
 	PromotionBridge *promotion.Bridge
 	AnalyticsSvc    analytics.Client
+	NotifySvc       notify.Client
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -85,6 +87,8 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		c.Promotions.Timeout)
 	// GP-402 经营分析事实投递（DATA_PANEL_URL 未配置 = no-op）
 	analyticsClient := analytics.NewClient(c.Analytics.BaseURL, c.Analytics.Token, c.Analytics.Timeout)
+	// GP-404 异议复核结果回流合作方（COMMUNITY_URL 未配置 = no-op）
+	notifyClient := notify.NewClient(c.Notify.BaseURL, c.Notify.Token, c.Notify.Timeout)
 
 	timeout := time.Millisecond * time.Duration(c.Courier.Timeout)
 	courierClient := courier.NewClient(c.Courier.BaseURL, timeout)
@@ -108,5 +112,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		Dispatcher:      dispatcher,
 		PromotionBridge: bridge,
 		AnalyticsSvc:    analyticsClient,
+		NotifySvc:       notifyClient,
 	}
 }

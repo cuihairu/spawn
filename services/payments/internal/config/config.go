@@ -77,4 +77,13 @@ type Config struct {
 	Internal struct {
 		Token string `json:",env=INTERNAL_TOKEN,optional"`
 	}
+
+	// Notify 站内通知（GP-404 结算差异异议复核结果回流合作方）：
+	// community /internal/notifications，X-Internal-Token 与 community 侧
+	// INTERNAL_TOKEN 同值。BaseURL 未配置 = no-op（community 未部署零行为）。
+	Notify struct {
+		BaseURL string `json:",env=COMMUNITY_URL,optional"`
+		Token   string `json:",env=COMMUNITY_INTERNAL_TOKEN,optional"`
+		Timeout int64  `json:",default=3000,env=COMMUNITY_TIMEOUT"`
+	}
 }
