@@ -136,3 +136,45 @@ func TestAnalyticsPartnerTrendAndActiveUsers(t *testing.T) {
 		t.Fatalf("zero partner pairs = %+v/%v, want 0", none, err)
 	}
 }
+
+// TestAnalyticsPartnerByGame GP-404 合作方自助按游戏下钻：按 (game_id,
+// event_type) 聚合（金额只计 order_paid），多游戏并列、行级隔离同款。
+func TestAnalyticsPartnerByGame(t *testing.T) {
+	m := newTestAnalyticsModel(t)
+	batch := []*AnalyticsEvent{
+		{EventId: "g1", EventType: EventRegister, UserId: 10, GameId: "game-a", PartnerId: 5, OccurredAt: "2026-11-01T09:00:00Z"},
+		{EventId: "g2", EventType: EventRegister, UserId: 11, GameId: "game-a", PartnerId: 5, OccurredAt: "2026-11-02T09:00:00Z"},
+		{EventId: "g3", EventType: EventLogin, UserId: 10, GameId: "game-a", PartnerId: 5, OccurredAt: "2026-11-01T10:00:00Z"},
+		{EventId: "g4", EventType: EventOrderPaid, UserId: 10, GameId: "game-b", PartnerId: 5, AmountCents: 700, OccurredAt: "2026-11-02T10:00:00Z"},
+		// 他人游戏（合作方 9）：不混入
+		{EventId: "g5", EventType: EventOrderPaid, UserId: 20, GameId: "game-x", PartnerId: 9, AmountCents: 500, OccurredAt: "2026-11-01T11:00:00Z"},
+	}
+	if accepted, err := m.IngestEvents(batch, "2026-11-05T10:00:00Z"); err != nil || accepted != 5 {
+		t.Fatalf("ingest accepted=%d err=%v, want 5", accepted, err)
+	}
+	from, to := "2026-11-01T00:00:00Z", "2026-11-30T23:59:59Z"
+
+	rows, err := m.PartnerByGame(from, to, 5, nil)
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("by game = %+v/%v, want 3 rows", rows, err)
+	}
+	// 排序 (game_id, event_type)：game-a/login, game-a/register, game-b/order_paid
+	if rows[0].GameId != "game-a" || rows[0].EventType != EventLogin || rows[0].Events != 1 || rows[0].Users != 1 || rows[0].Amount != 0 {
+		t.Fatalf("row0 = %+v, want game-a login 1/1/0", rows[0])
+	}
+	if rows[1].GameId != "game-a" || rows[1].EventType != EventRegister || rows[1].Events != 2 || rows[1].Users != 2 {
+		t.Fatalf("row1 = %+v, want game-a register 2/2", rows[1])
+	}
+	if rows[2].GameId != "game-b" || rows[2].EventType != EventOrderPaid || rows[2].Events != 1 || rows[2].Amount != 700 {
+		t.Fatalf("row2 = %+v, want game-b paid 1/700", rows[2])
+	}
+
+	// 游戏收窄：仅 game-a 两行
+	if rows, _ = m.PartnerByGame(from, to, 5, []string{"game-a"}); len(rows) != 2 || rows[0].GameId != "game-a" || rows[1].GameId != "game-a" {
+		t.Fatalf("game-a rows = %+v, want 2 game-a rows", rows)
+	}
+	// 空归属：空集非错误
+	if none, err := m.PartnerByGame(from, to, 0, nil); err != nil || len(none) != 0 {
+		t.Fatalf("zero partner = %+v/%v, want 0", none, err)
+	}
+}

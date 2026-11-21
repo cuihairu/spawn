@@ -384,3 +384,69 @@ func TestRoutes_PartnerAnalyticsRetention(t *testing.T) {
 		t.Fatalf("cohort retention D1/D2 = %v/%v, want 0.5/0.5", d1["retention"], d2["retention"])
 	}
 }
+
+// TestRoutes_PartnerAnalyticsByGame GP-404 合作方自助按游戏下钻：名下游戏
+// 逐一的按事件类型明细（金额只计 order_paid），他人游戏不混入，角色闸。
+func TestRoutes_PartnerAnalyticsByGame(t *testing.T) {
+	base := newPartnerAnalyticsTestServer(t)
+	url := base + "/internal/events"
+	events := []string{
+		`{"event_id":"b1","event_type":"register","user_id":10,"game_id":"game-a","partner_id":5,"occurred_at":"2026-11-01T09:00:00Z"}`,
+		`{"event_id":"b2","event_type":"login","user_id":10,"game_id":"game-a","partner_id":5,"occurred_at":"2026-11-01T10:00:00Z"}`,
+		`{"event_id":"b3","event_type":"order_paid","user_id":10,"game_id":"game-a","partner_id":5,"amount_cents":900,"occurred_at":"2026-11-02T09:00:00Z"}`,
+		// 他人游戏（合作方 9）：不混入
+		`{"event_id":"b4","event_type":"register","user_id":20,"game_id":"game-x","partner_id":9,"occurred_at":"2026-11-01T11:00:00Z"}`,
+	}
+	code, body := doIngest(t, url, analyticsToken, ingestEvents(events...))
+	if code != http.StatusOK || !strings.Contains(body, `"accepted":4`) {
+		t.Fatalf("ingest = %d body=%s", code, body)
+	}
+	tok := signPartnerToken(t, 8)
+	path := base + "/api/v1/analytics/partner/by_game"
+
+	// 匿名 401、非 partner 403
+	if code, _ = doRaw(t, http.MethodGet, path+"?from=2026-11-01&to=2026-11-30", "", ""); code != http.StatusUnauthorized {
+		t.Fatalf("anon = %d, want 401", code)
+	}
+	if code, _ = doRaw(t, http.MethodGet, path+"?from=2026-11-01&to=2026-11-30", signPartnerToken(t, 7), ""); code != http.StatusForbidden {
+		t.Fatalf("admin on partner face = %d, want 403", code)
+	}
+
+	// 合作方（user 8，名下 game-a）：仅 game-a 一行明细（3 类型）
+	code, body = doRaw(t, http.MethodGet, path+"?from=2026-11-01&to=2026-11-30", tok, "")
+	if code != http.StatusOK {
+		t.Fatalf("by game = %d body=%s", code, body)
+	}
+	var resp struct {
+		PartnerId int64 `json:"partner_id"`
+		Games     []struct {
+			GameId string `json:"game_id"`
+			Items  []struct {
+				EventType   string `json:"event_type"`
+				Events      int64  `json:"events"`
+				Users       int64  `json:"users"`
+				AmountCents int64  `json:"amount_cents"`
+			} `json:"items"`
+		} `json:"games"`
+	}
+	if err := json.Unmarshal([]byte(body), &resp); err != nil || resp.PartnerId != 5 || len(resp.Games) != 1 {
+		t.Fatalf("by game decode: %v body=%s", err, body)
+	}
+	g := resp.Games[0]
+	if g.GameId != "game-a" || len(g.Items) != 3 {
+		t.Fatalf("game = %+v, want game-a 3 types", g)
+	}
+	byType := map[string]struct{ Events, Users, Amount int64 }{}
+	for _, it := range g.Items {
+		byType[it.EventType] = struct{ Events, Users, Amount int64 }{it.Events, it.Users, it.AmountCents}
+	}
+	if r := byType["order_paid"]; r.Events != 1 || r.Users != 1 || r.Amount != 900 {
+		t.Fatalf("order_paid = %+v, want 1/1/900", r)
+	}
+	if r := byType["register"]; r.Events != 1 || r.Users != 1 || r.Amount != 0 {
+		t.Fatalf("register = %+v, want 1/1/0", r)
+	}
+	if r := byType["login"]; r.Events != 1 || r.Users != 1 || r.Amount != 0 {
+		t.Fatalf("login = %+v, want 1/1/0", r)
+	}
+}

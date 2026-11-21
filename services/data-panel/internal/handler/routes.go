@@ -116,6 +116,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/analytics/partner/retention",
 					Handler: analytics.AnalyticsPartnerRetentionHandler(serverCtx),
 				},
+				// GP-404 合作方自助按游戏下钻明细
+				{
+					Method:  http.MethodGet,
+					Path:    "/analytics/partner/by_game",
+					Handler: analytics.AnalyticsPartnerByGameHandler(serverCtx),
+				},
 			}...,
 		),
 		rest.WithPrefix("/api/v1"),

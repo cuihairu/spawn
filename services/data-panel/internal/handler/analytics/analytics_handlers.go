@@ -198,3 +198,22 @@ func AnalyticsPartnerRetentionHandler(svcCtx *svc.ServiceContext) http.HandlerFu
 		}
 	}
 }
+
+// AnalyticsPartnerByGameHandler GET /api/v1/analytics/partner/by_game：
+// 合作方自助按游戏下钻明细（GP-404，角色 partner + partner_id 行级隔离）
+func AnalyticsPartnerByGameHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.AnalyticsPartnerByGameReq
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		l := alogic.NewPartnerLogic(r.Context(), svcCtx)
+		resp, err := l.ByGame(&req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}

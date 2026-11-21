@@ -307,3 +307,22 @@ type AnalyticsPartnerRetentionResp struct {
 	PartnerId int64                `json:"partner_id"`
 	Cohorts   []AnalyticsCohortRow `json:"cohorts"`
 }
+
+// AnalyticsPartnerByGameReq GET /api/v1/analytics/partner/by_game：合作方
+// 自助按游戏下钻明细（GP-404）。行级隔离同 partner（名下游戏优先）。
+type AnalyticsPartnerByGameReq struct {
+	From string `form:"from,optional"`
+	To   string `form:"to,optional"`
+}
+
+type AnalyticsPartnerGame struct {
+	GameId string               `json:"game_id"`
+	Items  []AnalyticsTypeCount `json:"items"`
+}
+
+type AnalyticsPartnerByGameResp struct {
+	From      string                 `json:"from"`
+	To        string                 `json:"to"`
+	PartnerId int64                  `json:"partner_id"`
+	Games     []AnalyticsPartnerGame `json:"games"`
+}

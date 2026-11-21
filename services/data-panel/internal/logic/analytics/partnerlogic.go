@@ -176,6 +176,47 @@ func (l *PartnerLogic) Retention(req *types.AnalyticsPartnerRetentionReq) (*type
 	}, nil
 }
 
+// ByGame 合作方自助按游戏下钻（GP-404）：名下游戏逐一的按事件类型明细
+// （事件量/去重用户数/付费金额），行级隔离与 Query 同款。名下无游戏时回落
+// partner_id 命中的事件也按 game_id 分组列出。
+func (l *PartnerLogic) ByGame(req *types.AnalyticsPartnerByGameReq) (*types.AnalyticsPartnerByGameResp, error) {
+	partnerID, authHeader, err := l.requirePartner()
+	if err != nil {
+		return nil, err
+	}
+	from, to, err := normalizeBounds(req.From, req.To)
+	if err != nil {
+		return nil, err
+	}
+	gameIds := l.ownGameIDs(authHeader, partnerID)
+	rows, err := l.svcCtx.AnalyticsSvc.PartnerByGame(from, to, partnerID, gameIds)
+	if err != nil {
+		return nil, httperr.Internal("聚合合作方按游戏明细失败")
+	}
+	resp := &types.AnalyticsPartnerByGameResp{
+		From: from, To: to, PartnerId: partnerID,
+		Games: make([]types.AnalyticsPartnerGame, 0),
+	}
+	byGame := make(map[string]*types.AnalyticsPartnerGame)
+	order := make([]string, 0)
+	for _, r := range rows {
+		g, ok := byGame[r.GameId]
+		if !ok {
+			g = &types.AnalyticsPartnerGame{GameId: r.GameId}
+			byGame[r.GameId] = g
+			order = append(order, r.GameId)
+		}
+		g.Items = append(g.Items, types.AnalyticsTypeCount{
+			EventType: r.EventType, Events: r.Events, Users: r.Users, AmountCents: r.Amount,
+		})
+	}
+	sort.Strings(order)
+	for _, gid := range order {
+		resp.Games = append(resp.Games, *byGame[gid])
+	}
+	return resp, nil
+}
+
 // requirePartner 角色守卫：必须是 game-catalog 的 partner 角色且已绑定
 // 合作方 id（非 partner 或未绑定 → 403；目录不可达 → 502）。返回 authHeader
 // 供后续 /partner/games 复用（同一权威来源，不二次校验令牌）。

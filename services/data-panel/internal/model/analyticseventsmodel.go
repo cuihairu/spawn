@@ -65,6 +65,16 @@ type TypeCounts struct {
 	Amount    int64
 }
 
+// GameTypeRow 按 (game_id, event_type) 的聚合行（合作方自助下钻明细用）；
+// Amount 只统计 order_paid（与 PartnerOverview 口径一致）。
+type GameTypeRow struct {
+	GameId    string
+	EventType string
+	Events    int64
+	Users     int64
+	Amount    int64
+}
+
 // OverviewRow 经营总览行：按事件类型聚合计数/人数/金额。
 type OverviewRow struct {
 	From    string       `json:"from"`
@@ -140,6 +150,9 @@ type AnalyticsStore interface {
 	// (日期, user) 去重对，行级隔离同 PartnerOverview；eventType 传空串
 	// 表示不限事件类型（周趋势的用户去重用）。
 	PartnerDailyActiveUsers(eventType, from, to string, partnerID int64, gameIds []string) ([]DailyUserPair, error)
+	// PartnerByGame 合作方自助按游戏下钻（GP-404）：按 (game_id, event_type)
+	// 聚合事件量/去重用户数/付费金额，行级隔离同 PartnerOverview。
+	PartnerByGame(from, to string, partnerID int64, gameIds []string) ([]GameTypeRow, error)
 }
 
 var _ AnalyticsStore = (*AnalyticsEventsModel)(nil)
@@ -638,6 +651,38 @@ func (m *AnalyticsEventsModel) PartnerDailyActiveUsers(eventType, from, to strin
 			return nil, err
 		}
 		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// PartnerByGame 合作方自助按游戏下钻（GP-404）：按 (game_id, event_type)
+// 聚合事件量/去重用户数/付费金额（Amount 只统计 order_paid，口径同
+// PartnerOverview），行级隔离同款（gameIds 优先、partner_id 回落）。
+func (m *AnalyticsEventsModel) PartnerByGame(from, to string, partnerID int64, gameIds []string) ([]GameTypeRow, error) {
+	scope, scopeArgs, ok := partnerScope(gameIds, partnerID)
+	if !ok {
+		return nil, nil
+	}
+	args := make([]any, 0, len(scopeArgs)+2)
+	args = append(args, scopeArgs...)
+	args = append(args, from, to)
+	rows, err := m.db.Query(
+		`SELECT game_id, event_type, COUNT(*),
+			COUNT(DISTINCT CASE WHEN user_id > 0 THEN user_id END),
+			COALESCE(SUM(CASE WHEN event_type = '`+EventOrderPaid+`' THEN amount_cents ELSE 0 END), 0)
+		 FROM platform_events WHERE `+scope+` AND occurred_at >= ? AND occurred_at <= ?
+		 GROUP BY game_id, event_type ORDER BY game_id, event_type`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("聚合合作方按游戏失败: %w", err)
+	}
+	defer rows.Close()
+	out := make([]GameTypeRow, 0, 16)
+	for rows.Next() {
+		var r GameTypeRow
+		if err := rows.Scan(&r.GameId, &r.EventType, &r.Events, &r.Users, &r.Amount); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }
