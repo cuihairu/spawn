@@ -559,3 +559,116 @@ export async function fetchAnalyticsChannels(
   )
   return payload.items ?? []
 }
+
+// ========== GP-403 单层渠道推广（game-catalog 域，经网关反代） ==========
+// 渠道登记/启停与效果计数为管理路由；归因窗口改窗口不追改既有点击。
+// 推广链接落地形如 /games/:id?channel=<code>&click_id=<clickId>。
+export interface PromoChannel {
+  id: number
+  code: string
+  name: string
+  attributionWindowHours: number
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PromoChannelStats {
+  channel: string
+  clicks: number
+  downloads: number
+  attributedUsers: number
+}
+
+type PromoChannelDto = {
+  id: number
+  code: string
+  name: string
+  attribution_window_hours: number
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+function mapPromoChannel(dto: PromoChannelDto): PromoChannel {
+  return {
+    id: dto.id,
+    code: dto.code,
+    name: dto.name,
+    attributionWindowHours: dto.attribution_window_hours,
+    status: dto.status,
+    createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
+  }
+}
+
+export async function fetchPromoChannels(
+  params: { limit?: number; offset?: number } | undefined,
+  token: string,
+): Promise<{ items: PromoChannel[]; total: number }> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  const search = new URLSearchParams()
+  search.set('limit', String(params?.limit ?? 50))
+  search.set('offset', String(params?.offset ?? 0))
+  const payload = await request<{ items: PromoChannelDto[]; total: number }>(
+    baseUrl,
+    `/admin/promo/channels?${search.toString()}`,
+    { headers: adminHeaders(token) },
+  )
+  return { items: (payload.items ?? []).map(mapPromoChannel), total: payload.total ?? 0 }
+}
+
+export async function createPromoChannel(
+  params: { code: string; name: string; windowHours?: number },
+  token: string,
+): Promise<PromoChannel> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  return mapPromoChannel(
+    await request<PromoChannelDto>(baseUrl, '/admin/promo/channels', {
+      method: 'POST',
+      headers: adminHeaders(token),
+      body: JSON.stringify({ code: params.code, name: params.name, window_hours: params.windowHours ?? 72 }),
+    }),
+  )
+}
+
+export async function updatePromoChannel(
+  id: number,
+  params: { name?: string; windowHours?: number },
+  token: string,
+): Promise<PromoChannel> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  return mapPromoChannel(
+    await request<PromoChannelDto>(baseUrl, `/admin/promo/channels/${id}`, {
+      method: 'PATCH',
+      headers: adminHeaders(token),
+      body: JSON.stringify({ name: params.name ?? '', window_hours: params.windowHours ?? 0 }),
+    }),
+  )
+}
+
+export async function setPromoChannelStatus(id: number, status: string, token: string): Promise<PromoChannel> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  return mapPromoChannel(
+    await request<PromoChannelDto>(baseUrl, `/admin/promo/channels/${id}/status`, {
+      method: 'POST',
+      headers: adminHeaders(token),
+      body: JSON.stringify({ status }),
+    }),
+  )
+}
+
+export async function fetchPromoChannelStats(
+  code: string,
+  params: { from?: string; to?: string } | undefined,
+  token: string,
+): Promise<PromoChannelStats> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  const search = new URLSearchParams()
+  if (params?.from) search.set('from', params.from)
+  if (params?.to) search.set('to', params.to)
+  const qs = search.toString()
+  return request<PromoChannelStats>(baseUrl, `/admin/promo/channels/${encodeURIComponent(code)}/stats${qs ? `?${qs}` : ''}`, {
+    headers: adminHeaders(token),
+  })
+}

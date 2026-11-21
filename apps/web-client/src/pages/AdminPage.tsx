@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   assignOwnership,
   createPartner,
+  createPromoChannel,
   decideReview,
   fetchAnalyticsActivityEffect,
   fetchAnalyticsChannels,
@@ -14,13 +15,17 @@ import {
   fetchGameVersions,
   fetchGames,
   fetchPartners,
+  fetchPromoChannels,
+  fetchPromoChannelStats,
   fetchReviews,
   grantRole,
   publishGame,
   publishVersion,
   revokeVersion,
   setPartnerStatus,
+  setPromoChannelStatus,
   unpublishGame,
+  updatePromoChannel,
   type AdminGame,
   type AnalyticsChannelRow,
   type AnalyticsFunnel,
@@ -31,10 +36,12 @@ import {
   type GameReviewInfo,
   type GameVersionInfo,
   type PartnerInfo,
+  type PromoChannel,
+  type PromoChannelStats,
 } from '../api/client'
 import './admin.css'
 
-type Tab = 'reviews' | 'partners' | 'games' | 'audit' | 'analytics'
+type Tab = 'reviews' | 'partners' | 'games' | 'audit' | 'analytics' | 'promo'
 
 interface Props {
   token: string
@@ -171,6 +178,19 @@ const AdminPage = ({ token, isAdmin }: Props) => {
   const [channels, setChannels] = useState<AnalyticsChannelRow[]>([])
   const [anActivityId, setAnActivityId] = useState('')
   const [activityEffect, setActivityEffect] = useState<string | null>(null)
+  // GP-403 渠道推广（F22）：渠道登记/启停/效果计数 + 推广链接生成器
+  const [promoChannels, setPromoChannels] = useState<PromoChannel[]>([])
+  const [promoCode, setPromoCode] = useState('')
+  const [promoName, setPromoName] = useState('')
+  const [promoWindow, setPromoWindow] = useState('72')
+  const [promoEditId, setPromoEditId] = useState<number | null>(null)
+  const [promoEditName, setPromoEditName] = useState('')
+  const [promoEditWindow, setPromoEditWindow] = useState('')
+  const [promoStatsCode, setPromoStatsCode] = useState('')
+  const [promoStats, setPromoStats] = useState<PromoChannelStats | null>(null)
+  const [promoLinkCode, setPromoLinkCode] = useState('')
+  const [promoLinkGameId, setPromoLinkGameId] = useState('')
+  const [promoLink, setPromoLink] = useState('')
 
   const loadAnalytics = useCallback(() => {
     run(async () => {
@@ -218,12 +238,86 @@ const AdminPage = ({ token, isAdmin }: Props) => {
     [run, token],
   )
 
+  const loadPromoChannels = useCallback(() => {
+    run(async () => {
+      const { items } = await fetchPromoChannels({ limit: 50 }, token)
+      setPromoChannels(items)
+    })
+  }, [run, token])
+
+  const submitPromoChannel = useCallback(() => {
+    if (!promoCode.trim() || !promoName.trim()) return
+    run(async () => {
+      const created = await createPromoChannel(
+        { code: promoCode.trim(), name: promoName.trim(), windowHours: Number(promoWindow) || 0 },
+        token,
+      )
+      const { items } = await fetchPromoChannels({ limit: 50 }, token)
+      setPromoChannels(items)
+      setPromoCode('')
+      setPromoName('')
+      setNotice(`渠道 ${created.code} 已登记`)
+    })
+  }, [promoCode, promoName, promoWindow, run, token])
+
+  const togglePromoChannel = useCallback(
+    (channel: PromoChannel) => {
+      const next = channel.status === 'disabled' ? 'active' : 'disabled'
+      run(async () => {
+        await setPromoChannelStatus(channel.id, next, token)
+        const { items } = await fetchPromoChannels({ limit: 50 }, token)
+        setPromoChannels(items)
+      })
+    },
+    [run, token],
+  )
+
+  const submitPromoEdit = useCallback(
+    (channel: PromoChannel) => {
+      run(async () => {
+        await updatePromoChannel(
+          channel.id,
+          { name: promoEditName.trim(), windowHours: Number(promoEditWindow) || 0 },
+          token,
+        )
+        const { items } = await fetchPromoChannels({ limit: 50 }, token)
+        setPromoChannels(items)
+        setPromoEditId(null)
+      })
+    },
+    [promoEditName, promoEditWindow, run, token],
+  )
+
+  const queryPromoStats = useCallback(() => {
+    const code = promoStatsCode.trim()
+    if (!code) return
+    run(async () => {
+      const stats = await fetchPromoChannelStats(
+        code,
+        { from: anFrom.trim() || undefined, to: anTo.trim() || undefined },
+        token,
+      )
+      setPromoStats(stats)
+    })
+  }, [anFrom, anTo, promoStatsCode, run, token])
+
+  const generatePromoLink = useCallback(() => {
+    const code = promoLinkCode.trim()
+    if (!code) return
+    const clickId =
+      typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const query = new URLSearchParams({ channel: code, click_id: clickId })
+    const gameId = promoLinkGameId.trim()
+    setPromoLink(`${window.location.origin}${gameId ? `/games/${encodeURIComponent(gameId)}` : ''}?${query.toString()}`)
+  }, [promoLinkCode, promoLinkGameId])
+
   useEffect(() => {
     queueMicrotask(() => {
       if (tab === 'reviews') loadReviews(reviewFilter)
       else if (tab === 'partners') loadPartners()
       else if (tab === 'games') loadGames(gameKeyword)
       else if (tab === 'analytics') loadAnalytics()
+      else if (tab === 'promo') loadPromoChannels()
       else loadAudit()
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -251,6 +345,9 @@ const AdminPage = ({ token, isAdmin }: Props) => {
           </button>
           <button type="button" className={`admin-tab${tab === 'analytics' ? ' is-active' : ''}`} onClick={() => setTab('analytics')}>
             经营分析
+          </button>
+          <button type="button" className={`admin-tab${tab === 'promo' ? ' is-active' : ''}`} onClick={() => setTab('promo')}>
+            渠道推广（{promoChannels.length}）
           </button>
         </div>
       </div>
@@ -909,6 +1006,210 @@ const AdminPage = ({ token, isAdmin }: Props) => {
               </button>
             </div>
             {activityEffect ? <div className="admin-meta">{activityEffect}</div> : null}
+          </section>
+        </>
+      ) : null}
+
+      {tab === 'promo' ? (
+        <>
+          <section className="community-card">
+            <h2>登记渠道</h2>
+            <p className="admin-meta">
+              code 为推广链接 ?channel= 标识（全局唯一）；归因窗口小时数缺省 72（0-720，显式 0 = 不开放归因）。变更历史见审计日志（resource_type=promo_channel）。
+            </p>
+            <div className="admin-form">
+              <input
+                value={promoCode}
+                onChange={(e) => setPromoCode(e.target.value)}
+                placeholder="渠道标识，如 kol-li"
+              />
+              <input value={promoName} onChange={(e) => setPromoName(e.target.value)} placeholder="渠道名称" />
+              <input
+                value={promoWindow}
+                onChange={(e) => setPromoWindow(e.target.value)}
+                placeholder="归因窗口（小时）"
+                inputMode="numeric"
+              />
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={submitPromoChannel}
+                disabled={loading || !promoCode.trim() || !promoName.trim()}
+              >
+                登记
+              </button>
+            </div>
+          </section>
+
+          <section className="community-card">
+            <h2>渠道列表</h2>
+            {promoChannels.length === 0 ? (
+              <div className="admin-meta">暂无渠道</div>
+            ) : (
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>标识</th>
+                      <th>名称</th>
+                      <th>归因窗口</th>
+                      <th>状态</th>
+                      <th>创建时间</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {promoChannels.map((channel) => (
+                      <tr key={channel.id}>
+                        <td>{channel.id}</td>
+                        <td>{channel.code}</td>
+                        <td>
+                          {promoEditId === channel.id ? (
+                            <div className="admin-form">
+                              <input
+                                value={promoEditName}
+                                onChange={(e) => setPromoEditName(e.target.value)}
+                                placeholder="名称"
+                              />
+                              <input
+                                value={promoEditWindow}
+                                onChange={(e) => setPromoEditWindow(e.target.value)}
+                                placeholder="窗口（小时）"
+                                inputMode="numeric"
+                              />
+                            </div>
+                          ) : (
+                            channel.name
+                          )}
+                        </td>
+                        <td>
+                          {promoEditId === channel.id
+                            ? `${promoEditWindow || channel.attributionWindowHours} 小时`
+                            : `${channel.attributionWindowHours} 小时`}
+                        </td>
+                        <td>
+                          <StatusBadge status={channel.status} />
+                        </td>
+                        <td>{formatDate(channel.createdAt)}</td>
+                        <td>
+                          {promoEditId === channel.id ? (
+                            <div className="admin-form">
+                              <button type="button" className="primary-btn" onClick={() => submitPromoEdit(channel)}>
+                                保存
+                              </button>
+                              <button type="button" className="secondary-btn" onClick={() => setPromoEditId(null)}>
+                                取消
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="admin-form">
+                              <button
+                                type="button"
+                                className="secondary-btn"
+                                onClick={() => {
+                                  setPromoEditId(channel.id)
+                                  setPromoEditName(channel.name)
+                                  setPromoEditWindow(String(channel.attributionWindowHours))
+                                }}
+                              >
+                                改名/窗口
+                              </button>
+                              <button type="button" className="secondary-btn" onClick={() => togglePromoChannel(channel)}>
+                                {channel.status === 'disabled' ? '启用' : '停用'}
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="community-card">
+            <h2>渠道效果</h2>
+            <div className="admin-form">
+              <select value={promoStatsCode} onChange={(e) => setPromoStatsCode(e.target.value)}>
+                <option value="">选择渠道</option>
+                {promoChannels.map((channel) => (
+                  <option key={channel.id} value={channel.code}>
+                    {channel.code}（{channel.name}）
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="primary-btn" onClick={queryPromoStats} disabled={!promoStatsCode}>
+                查询计数
+              </button>
+            </div>
+            {promoStats ? (
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>渠道</th>
+                      <th>点击</th>
+                      <th>下载</th>
+                      <th>归因注册</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>{promoStats.channel}</td>
+                      <td>{promoStats.clicks}</td>
+                      <td>{promoStats.downloads}</td>
+                      <td>{promoStats.attributedUsers}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="admin-meta">选择渠道后查询点击/下载/归因人数（时间区间同经营分析窗口）</div>
+            )}
+          </section>
+
+          <section className="community-card">
+            <h2>推广链接生成器</h2>
+            <p className="admin-meta">
+              链接形如 /games/:id?channel=&lt;code&gt;&amp;click_id=&lt;随机&gt;；落地页在归因窗口内注册即计归因。
+            </p>
+            <div className="admin-form">
+              <select value={promoLinkCode} onChange={(e) => setPromoLinkCode(e.target.value)}>
+                <option value="">选择渠道</option>
+                {promoChannels
+                  .filter((channel) => channel.status !== 'disabled')
+                  .map((channel) => (
+                    <option key={channel.id} value={channel.code}>
+                      {channel.code}（{channel.name}）
+                    </option>
+                  ))}
+              </select>
+              <select value={promoLinkGameId} onChange={(e) => setPromoLinkGameId(e.target.value)}>
+                <option value="">（不指定游戏）</option>
+                {games.map((game) => (
+                  <option key={game.id} value={game.id}>
+                    {game.title || game.id}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="primary-btn" onClick={generatePromoLink} disabled={!promoLinkCode}>
+                生成
+              </button>
+            </div>
+            {promoLink ? (
+              <div className="admin-form">
+                <input readOnly value={promoLink} onFocus={(e) => e.currentTarget.select()} />
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={() => navigator.clipboard?.writeText(promoLink).catch(() => {})}
+                >
+                  复制
+                </button>
+              </div>
+            ) : null}
           </section>
         </>
       ) : null}
