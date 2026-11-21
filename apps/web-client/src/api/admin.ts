@@ -202,6 +202,135 @@ export async function decideReview(id: number, decision: 'approve' | 'reject', r
   return mapReview(payload)
 }
 
+// ===== GP-401 长评举报处置与恢复（管理面，经网关反代） =====
+// 举报状态：pending 未决 / dismissed 驳回（评价保留）/ resolved 已移除（评价
+// 软删，可经 POST /admin/reviews/:id/restore 恢复回公开列表）。
+export interface ReviewReportInfo {
+  id: number
+  reviewId: number
+  gameId: string
+  reporterId: number
+  reason: string
+  status: string
+  handledBy: number
+  createdAt: string
+  handledAt: string
+}
+
+// 恢复接口回读的评价视图（仅管理面可见 deletedAt）。
+export interface UserReviewInfo {
+  id: number
+  gameId: string
+  userId: number
+  rating: number
+  content: string
+  devReply: string
+  devReplyBy: number
+  devReplyAt: string
+  createdAt: string
+  updatedAt: string
+  deletedAt: string
+}
+
+type ReviewReportDto = {
+  id: number
+  review_id: number
+  game_id: string
+  reporter_id: number
+  reason: string
+  status: string
+  handled_by: number
+  created_at: string
+  handled_at: string
+}
+
+type UserReviewDto = {
+  id: number
+  game_id: string
+  user_id: number
+  rating: number
+  content: string
+  dev_reply: string
+  dev_reply_by: number
+  dev_reply_at: string
+  created_at: string
+  updated_at: string
+  deleted_at?: string
+}
+
+function mapReviewReport(dto: ReviewReportDto): ReviewReportInfo {
+  return {
+    id: dto.id ?? 0,
+    reviewId: dto.review_id ?? 0,
+    gameId: dto.game_id ?? '',
+    reporterId: dto.reporter_id ?? 0,
+    reason: dto.reason ?? '',
+    status: dto.status ?? '',
+    handledBy: dto.handled_by ?? 0,
+    createdAt: dto.created_at ?? '',
+    handledAt: dto.handled_at ?? '',
+  }
+}
+
+function mapUserReview(dto: UserReviewDto): UserReviewInfo {
+  return {
+    id: dto.id ?? 0,
+    gameId: dto.game_id ?? '',
+    userId: dto.user_id ?? 0,
+    rating: dto.rating ?? 0,
+    content: dto.content ?? '',
+    devReply: dto.dev_reply ?? '',
+    devReplyBy: dto.dev_reply_by ?? 0,
+    devReplyAt: dto.dev_reply_at ?? '',
+    createdAt: dto.created_at ?? '',
+    updatedAt: dto.updated_at ?? '',
+    deletedAt: dto.deleted_at ?? '',
+  }
+}
+
+export async function fetchReviewReports(
+  params: { status?: string; limit?: number; offset?: number },
+  token: string,
+): Promise<{ items: ReviewReportInfo[]; total: number }> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  const search = new URLSearchParams()
+  if (params.status) search.set('status', params.status)
+  search.set('limit', String(params.limit ?? 50))
+  search.set('offset', String(params.offset ?? 0))
+  const payload = await request<{ items: ReviewReportDto[]; total: number }>(
+    baseUrl,
+    `/admin/review-reports?${search.toString()}`,
+    { headers: adminHeaders(token) },
+  )
+  return { items: (payload.items ?? []).map(mapReviewReport), total: payload.total ?? 0 }
+}
+
+export async function handleReviewReport(
+  id: number,
+  action: 'dismiss' | 'remove',
+  token: string,
+): Promise<ReviewReportInfo> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  return mapReviewReport(
+    await request<ReviewReportDto>(baseUrl, `/admin/review-reports/${id}/handle`, {
+      method: 'POST',
+      headers: adminHeaders(token),
+      body: JSON.stringify({ action }),
+    }),
+  )
+}
+
+// 恢复被移除（软删）的评价；未被移除 → 409、不存在 → 404，由 request() 抛出。
+export async function restoreReview(id: number, token: string): Promise<UserReviewInfo> {
+  const baseUrl = apiGatewayUrl ?? gameServiceUrl
+  return mapUserReview(
+    await request<UserReviewDto>(baseUrl, `/admin/reviews/${id}/restore`, {
+      method: 'POST',
+      headers: adminHeaders(token),
+    }),
+  )
+}
+
 export async function publishGame(id: string, token: string): Promise<AdminGame> {
   const baseUrl = apiGatewayUrl ?? gameServiceUrl
   const payload = await request<GameDto>(baseUrl, `/admin/games/${encodeURIComponent(id)}/publish`, {

@@ -17,10 +17,13 @@ import {
   fetchPartners,
   fetchPromoChannels,
   fetchPromoChannelStats,
+  fetchReviewReports,
   fetchReviews,
   grantRole,
+  handleReviewReport,
   publishGame,
   publishVersion,
+  restoreReview,
   revokeVersion,
   setPartnerStatus,
   setPromoChannelStatus,
@@ -38,10 +41,11 @@ import {
   type PartnerInfo,
   type PromoChannel,
   type PromoChannelStats,
+  type ReviewReportInfo,
 } from '../api/client'
 import './admin.css'
 
-type Tab = 'reviews' | 'partners' | 'games' | 'audit' | 'analytics' | 'promo'
+type Tab = 'reviews' | 'reports' | 'partners' | 'games' | 'audit' | 'analytics' | 'promo'
 
 interface Props {
   token: string
@@ -65,6 +69,26 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`status-badge ${cls}`}>{STATUS_LABELS[status] ?? status}</span>
 }
 
+// GP-401 长评举报状态：pending 待处置 / dismissed 已驳回（评价保留）/
+// resolved 已移除（评价软删，可恢复）。与提审状态共用 badge 样式但语义不同，
+// 单独一张映射避免文案混淆。
+const REPORT_STATUS_LABELS: Record<string, string> = {
+  pending: '待处置',
+  dismissed: '已驳回',
+  resolved: '已移除',
+}
+
+const REPORT_STATUS_CLASS: Record<string, string> = {
+  pending: 'status-pending',
+  dismissed: 'status-rejected',
+  resolved: 'status-offline',
+}
+
+function ReportStatusBadge({ status }: { status: string }) {
+  const cls = REPORT_STATUS_CLASS[status] ?? 'status-draft'
+  return <span className={`status-badge ${cls}`}>{REPORT_STATUS_LABELS[status] ?? status}</span>
+}
+
 function formatDate(value: string): string {
   if (!value) return '—'
   const date = new Date(value)
@@ -85,6 +109,14 @@ const AdminPage = ({ token, isAdmin }: Props) => {
   const [reviewFilter, setReviewFilter] = useState('')
   const [rejecting, setRejecting] = useState<number | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+
+  // GP-401 长评举报队列：status 过滤（''=全部），remove/restore 破坏性操作两步确认
+  const [reports, setReports] = useState<ReviewReportInfo[]>([])
+  const [reportTotal, setReportTotal] = useState(0)
+  const [reportFilter, setReportFilter] = useState('')
+  const [reportConfirm, setReportConfirm] = useState<{ id: number; action: 'remove' | 'restore' } | null>(null)
+  // 本次会话内已恢复的评价 id（举报状态仍为 resolved，据此隐藏恢复按钮）
+  const [restoredReviewIds, setRestoredReviewIds] = useState<Set<number>>(new Set())
 
   // 合作方
   const [partners, setPartners] = useState<PartnerInfo[]>([])
@@ -132,6 +164,18 @@ const AdminPage = ({ token, isAdmin }: Props) => {
         const res = await fetchReviews({ status: status || undefined, limit: 50 }, token)
         setReviews(res.reviews)
         setReviewTotal(res.total)
+      })
+    },
+    [run, token],
+  )
+
+  // GP-401 举报队列（含已处置视图，resolved 行提供恢复评价入口）
+  const loadReports = useCallback(
+    (status: string) => {
+      run(async () => {
+        const res = await fetchReviewReports({ status: status || undefined, limit: 50 }, token)
+        setReports(res.items)
+        setReportTotal(res.total)
       })
     },
     [run, token],
@@ -314,6 +358,7 @@ const AdminPage = ({ token, isAdmin }: Props) => {
   useEffect(() => {
     queueMicrotask(() => {
       if (tab === 'reviews') loadReviews(reviewFilter)
+      else if (tab === 'reports') loadReports(reportFilter)
       else if (tab === 'partners') loadPartners()
       else if (tab === 'games') loadGames(gameKeyword)
       else if (tab === 'analytics') loadAnalytics()
@@ -328,11 +373,14 @@ const AdminPage = ({ token, isAdmin }: Props) => {
       <div className="admin-header">
         <div>
           <h1>运营后台</h1>
-          <p className="admin-meta">审核 / 合作方 / 上下架 / 审计（{isAdmin ? '管理员' : '运营'}）</p>
+          <p className="admin-meta">审核 / 长评举报 / 合作方 / 上下架 / 审计（{isAdmin ? '管理员' : '运营'}）</p>
         </div>
         <div className="admin-tabs">
           <button type="button" className={`admin-tab${tab === 'reviews' ? ' is-active' : ''}`} onClick={() => setTab('reviews')}>
             审核队列（{reviewTotal}）
+          </button>
+          <button type="button" className={`admin-tab${tab === 'reports' ? ' is-active' : ''}`} onClick={() => setTab('reports')}>
+            长评举报（{reportTotal}）
           </button>
           <button type="button" className={`admin-tab${tab === 'partners' ? ' is-active' : ''}`} onClick={() => setTab('partners')}>
             合作方与角色
@@ -460,6 +508,152 @@ const AdminPage = ({ token, isAdmin }: Props) => {
                           </div>
                         ) : (
                           <span className="admin-meta">{formatDate(r.reviewedAt)}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {tab === 'reports' ? (
+        <section className="community-card">
+          <h2>长评举报</h2>
+          <div className="admin-form" style={{ marginBottom: '0.75rem' }}>
+            <select value={reportFilter} onChange={(e) => setReportFilter(e.target.value)}>
+              <option value="">全部状态</option>
+              <option value="pending">待处置</option>
+              <option value="dismissed">已驳回</option>
+              <option value="resolved">已移除</option>
+            </select>
+            <button type="button" className="secondary-btn" onClick={() => loadReports(reportFilter)} disabled={loading}>
+              筛选
+            </button>
+          </div>
+          {reports.length === 0 ? (
+            <div className="admin-meta">暂无举报记录</div>
+          ) : (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>游戏</th>
+                    <th>评价</th>
+                    <th>举报人</th>
+                    <th>理由</th>
+                    <th>状态</th>
+                    <th>处置</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reports.map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.id}</td>
+                      <td>{r.gameId}</td>
+                      <td>
+                        <Link to={`/games/${encodeURIComponent(r.gameId)}`}>评价 #{r.reviewId}</Link>
+                      </td>
+                      <td>#{r.reporterId}</td>
+                      <td>{r.reason}</td>
+                      <td>
+                        <ReportStatusBadge status={r.status} />
+                      </td>
+                      <td>
+                        {r.status === 'pending' ? (
+                          <div className="inline-actions">
+                            <button
+                              type="button"
+                              className="secondary-btn"
+                              disabled={loading}
+                              onClick={() =>
+                                run(async () => {
+                                  await handleReviewReport(r.id, 'dismiss', token)
+                                  setNotice(`已驳回举报 #${r.id}（评价保留）`)
+                                  loadReports(reportFilter)
+                                })
+                              }
+                            >
+                              驳回
+                            </button>
+                            {reportConfirm?.id === r.id && reportConfirm.action === 'remove' ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="secondary-btn danger-btn"
+                                  disabled={loading}
+                                  onClick={() =>
+                                    run(async () => {
+                                      await handleReviewReport(r.id, 'remove', token)
+                                      setReportConfirm(null)
+                                      setRestoredReviewIds((prev) => {
+                                        const next = new Set(prev)
+                                        next.delete(r.reviewId)
+                                        return next
+                                      })
+                                      setNotice(`已移除评价 #${r.reviewId}（同评其余举报一并结案）`)
+                                      loadReports(reportFilter)
+                                    })
+                                  }
+                                >
+                                  确认移除
+                                </button>
+                                <button type="button" className="secondary-btn" onClick={() => setReportConfirm(null)}>
+                                  取消
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                className="secondary-btn danger-btn"
+                                onClick={() => setReportConfirm({ id: r.id, action: 'remove' })}
+                              >
+                                移除评价
+                              </button>
+                            )}
+                          </div>
+                        ) : r.status === 'resolved' && !restoredReviewIds.has(r.reviewId) ? (
+                          <div className="inline-actions">
+                            {reportConfirm?.id === r.id && reportConfirm.action === 'restore' ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="secondary-btn"
+                                  disabled={loading}
+                                  onClick={() =>
+                                    run(async () => {
+                                      const review = await restoreReview(r.reviewId, token)
+                                      setReportConfirm(null)
+                                      setRestoredReviewIds((prev) => new Set(prev).add(review.id))
+                                      setNotice(`评价 #${review.id} 已恢复（已通知作者）`)
+                                      loadReports(reportFilter)
+                                    })
+                                  }
+                                >
+                                  确认恢复
+                                </button>
+                                <button type="button" className="secondary-btn" onClick={() => setReportConfirm(null)}>
+                                  取消
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                className="secondary-btn"
+                                onClick={() => setReportConfirm({ id: r.id, action: 'restore' })}
+                              >
+                                恢复评价
+                              </button>
+                            )}
+                            <span className="admin-meta">{r.handledBy ? `处置 #${r.handledBy}` : ''}</span>
+                          </div>
+                        ) : (
+                          <span className="admin-meta">
+                            {restoredReviewIds.has(r.reviewId) ? '已恢复' : r.handledBy ? `处置 #${r.handledBy}` : ''}
+                          </span>
                         )}
                       </td>
                     </tr>
