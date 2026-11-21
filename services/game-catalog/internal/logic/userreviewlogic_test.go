@@ -15,28 +15,31 @@ import (
 // 分支；未覆写的方法委托真实仓储，种子数据照常可用。
 type failingAdminStore struct {
 	model.AdminStore
-	upsertUserRatingErr   error
-	getRatingSummaryErr   error
-	createUserReviewErr   error
-	getUserReviewErrs     []error // 按调用次序：nil=委托真实仓储
-	getUserCalls          int
-	updateUserReviewErr   error
-	listUserReviewsErr    error
-	voteReviewErr         error
-	unvoteReviewErr       error
-	createReviewReportErr error
-	upsertDevReplyErr     error
-	getRoleWithPartnerErr error
-	getOwnershipErr       error
-	writeAuditErr         error
-	listReviewReportsErr  error
-	getReviewReportErrs   []error
-	getReportCalls        int
-	decideErr             error
-	decideOK              *bool
-	deleteUserReviewErr   error
-	restoreUserReviewErr  error
-	restoreOK             *bool
+	upsertUserRatingErr      error
+	getRatingSummaryErr      error
+	createUserReviewErr      error
+	getUserReviewErrs        []error // 按调用次序：nil=委托真实仓储
+	getUserCalls             int
+	updateUserReviewErr      error
+	listUserReviewsErr       error
+	voteReviewErr            error
+	unvoteReviewErr          error
+	createReviewReportErr    error
+	upsertDevReplyErr        error
+	getRoleWithPartnerErr    error
+	rolePartnerZero          bool // GetRoleWithPartner 返回 (player, 0, nil)：未绑定合作方
+	getOwnershipErr          error
+	writeAuditErr            error
+	listReviewReportsErr     error
+	getReviewReportErrs      []error
+	getReportCalls           int
+	decideErr                error
+	decideOK                 *bool
+	deleteUserReviewErr      error
+	restoreUserReviewErr     error
+	restoreOK                *bool
+	listPendingReportersErr  error
+	resolvePendingReportsErr error
 }
 
 var _ model.AdminStore = (*failingAdminStore)(nil)
@@ -120,6 +123,9 @@ func (f *failingAdminStore) GetRoleWithPartner(userId int64) (string, int64, err
 	if f.getRoleWithPartnerErr != nil {
 		return "", 0, f.getRoleWithPartnerErr
 	}
+	if f.rolePartnerZero {
+		return model.RolePlayer, 0, nil
+	}
 	return f.AdminStore.GetRoleWithPartner(userId)
 }
 
@@ -181,6 +187,20 @@ func (f *failingAdminStore) RestoreUserReview(id int64) (bool, error) {
 		return *f.restoreOK, nil
 	}
 	return f.AdminStore.RestoreUserReview(id)
+}
+
+func (f *failingAdminStore) ListPendingReportersByReview(reviewId int64) ([]int64, error) {
+	if f.listPendingReportersErr != nil {
+		return nil, f.listPendingReportersErr
+	}
+	return f.AdminStore.ListPendingReportersByReview(reviewId)
+}
+
+func (f *failingAdminStore) ResolvePendingReportsForReview(reviewId, handledBy int64) error {
+	if f.resolvePendingReportsErr != nil {
+		return f.resolvePendingReportsErr
+	}
+	return f.AdminStore.ResolvePendingReportsForReview(reviewId, handledBy)
 }
 
 // newReviewLogicCtx 评价域 logic 测试上下文：真实 SQLite 仓储 + 一个已上架
