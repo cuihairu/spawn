@@ -105,6 +105,17 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/analytics/partner",
 					Handler: analytics.AnalyticsPartnerHandler(serverCtx),
 				},
+				// GP-404 合作方自助趋势/留存（口径与管理面一致，仅行级隔离）
+				{
+					Method:  http.MethodGet,
+					Path:    "/analytics/partner/trend",
+					Handler: analytics.AnalyticsPartnerTrendHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/analytics/partner/retention",
+					Handler: analytics.AnalyticsPartnerRetentionHandler(serverCtx),
+				},
 			}...,
 		),
 		rest.WithPrefix("/api/v1"),

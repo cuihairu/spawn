@@ -37,3 +37,16 @@ func normalizeBounds(from, to string) (string, string, error) {
 	}
 	return from, to, nil
 }
+
+// isoWeekStart 返回某日所属 ISO 周（周一起始）的周一日期（YYYY-MM-DD）。
+// 周分桶在 Go 侧完成（SQL 周函数方言不一，如 SQLite strftime %W 与 MySQL
+// %x-%v 起算日不同），口径统一为 ISO 8601 周。
+func isoWeekStart(day string) (string, error) {
+	t, err := time.Parse("2006-01-02", day)
+	if err != nil {
+		return "", err
+	}
+	// Go time.Weekday: Sunday=0 … Saturday=6；ISO 周一起始，偏移=距周一的天数
+	off := (int(t.Weekday()) + 6) % 7
+	return t.AddDate(0, 0, -off).Format("2006-01-02"), nil
+}

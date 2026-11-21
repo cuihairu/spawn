@@ -235,3 +235,152 @@ func TestRoutes_PartnerAnalyticsCatalogDown(t *testing.T) {
 		t.Fatalf("catalog down = %d body=%s, want 502", code, body)
 	}
 }
+
+// TestRoutes_PartnerAnalyticsTrend GP-404 合作方自助趋势：按日聚合事件量与
+// 去重用户数、ISO 周并桶、行级隔离（他人游戏/平台级不混入）、角色闸。
+// 2026-11-01 为周日：其 ISO 周起点 2026-10-26，11-02 起新周。
+func TestRoutes_PartnerAnalyticsTrend(t *testing.T) {
+	base := newPartnerAnalyticsTestServer(t)
+	url := base + "/internal/events"
+	events := []string{
+		`{"event_id":"d1","event_type":"register","user_id":10,"game_id":"game-a","partner_id":5,"occurred_at":"2026-11-01T09:00:00Z"}`,
+		`{"event_id":"d2","event_type":"register","user_id":11,"game_id":"game-a","partner_id":5,"occurred_at":"2026-11-02T09:00:00Z"}`,
+		`{"event_id":"d3","event_type":"login","user_id":10,"game_id":"game-a","partner_id":5,"occurred_at":"2026-11-01T10:00:00Z"}`,
+		`{"event_id":"d4","event_type":"login","user_id":10,"game_id":"game-a","partner_id":5,"occurred_at":"2026-11-03T09:00:00Z"}`,
+		// 他人游戏（合作方 9）与平台级：行级隔离不混入
+		`{"event_id":"d5","event_type":"register","user_id":20,"game_id":"game-x","partner_id":9,"occurred_at":"2026-11-01T11:00:00Z"}`,
+		`{"event_id":"d6","event_type":"login","user_id":30,"occurred_at":"2026-11-01T12:00:00Z"}`,
+	}
+	code, body := doIngest(t, url, analyticsToken, ingestEvents(events...))
+	if code != http.StatusOK || !strings.Contains(body, `"accepted":6`) {
+		t.Fatalf("ingest = %d body=%s", code, body)
+	}
+	tok := signPartnerToken(t, 8)
+	path := base + "/api/v1/analytics/partner/trend"
+
+	// 匿名 401、名单管理员但非 partner 403
+	if code, _ = doRaw(t, http.MethodGet, path+"?from=2026-11-01&to=2026-11-30", "", ""); code != http.StatusUnauthorized {
+		t.Fatalf("anon = %d, want 401", code)
+	}
+	if code, _ = doRaw(t, http.MethodGet, path+"?from=2026-11-01&to=2026-11-30", signPartnerToken(t, 7), ""); code != http.StatusForbidden {
+		t.Fatalf("admin on partner face = %d, want 403", code)
+	}
+	// 非法粒度 400
+	if code, _ = doRaw(t, http.MethodGet, path+"?granularity=month", tok, ""); code != http.StatusBadRequest {
+		t.Fatalf("bad granularity = %d, want 400", code)
+	}
+
+	// 日粒度：三桶（11-01 双事件同用户、11-02/11-03 各一）
+	code, body = doRaw(t, http.MethodGet, path+"?from=2026-11-01&to=2026-11-30&granularity=day", tok, "")
+	if code != http.StatusOK {
+		t.Fatalf("day trend = %d body=%s", code, body)
+	}
+	var day struct {
+		Granularity string `json:"granularity"`
+		Items       []struct {
+			Bucket string `json:"bucket"`
+			Events int64  `json:"events"`
+			Users  int64  `json:"users"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &day); err != nil || len(day.Items) != 3 {
+		t.Fatalf("day trend decode: %v body=%s", err, body)
+	}
+	if day.Items[0].Bucket != "2026-11-01" || day.Items[0].Events != 2 || day.Items[0].Users != 1 {
+		t.Fatalf("day0 = %+v, want 11-01 2 events 1 user", day.Items[0])
+	}
+	if day.Items[1].Bucket != "2026-11-02" || day.Items[1].Events != 1 || day.Items[1].Users != 1 {
+		t.Fatalf("day1 = %+v, want 11-02 1 event 1 user", day.Items[1])
+	}
+	if day.Items[2].Bucket != "2026-11-03" || day.Items[2].Events != 1 || day.Items[2].Users != 1 {
+		t.Fatalf("day2 = %+v, want 11-03 1 event 1 user", day.Items[2])
+	}
+
+	// 周粒度：11-01 归 10-26 周，11-02/11-03 归 11-02 周；周用户数去重
+	code, body = doRaw(t, http.MethodGet, path+"?from=2026-11-01&to=2026-11-30&granularity=week", tok, "")
+	if code != http.StatusOK {
+		t.Fatalf("week trend = %d body=%s", code, body)
+	}
+	var week struct {
+		Items []struct {
+			Bucket string `json:"bucket"`
+			Events int64  `json:"events"`
+			Users  int64  `json:"users"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &week); err != nil || len(week.Items) != 2 {
+		t.Fatalf("week trend decode: %v body=%s", err, body)
+	}
+	if week.Items[0].Bucket != "2026-10-26" || week.Items[0].Events != 2 || week.Items[0].Users != 1 {
+		t.Fatalf("week0 = %+v, want 10-26 2 events 1 user", week.Items[0])
+	}
+	if week.Items[1].Bucket != "2026-11-02" || week.Items[1].Events != 2 || week.Items[1].Users != 2 {
+		t.Fatalf("week1 = %+v, want 11-02 2 events 2 users", week.Items[1])
+	}
+}
+
+// TestRoutes_PartnerAnalyticsRetention GP-404 合作方自助留存：口径与管理面
+// 一致（首活跃日锚点、D0..Dwindow），按 partner 行级隔离 + 角色闸。
+func TestRoutes_PartnerAnalyticsRetention(t *testing.T) {
+	base := newPartnerAnalyticsTestServer(t)
+	url := base + "/internal/events"
+	events := []string{
+		// u10 首活 11-01，续 11-02/11-03；u11 仅 11-01 → cohort 11-01 size 2
+		`{"event_id":"r1","event_type":"login","user_id":10,"game_id":"game-a","partner_id":5,"occurred_at":"2026-11-01T09:00:00Z"}`,
+		`{"event_id":"r2","event_type":"login","user_id":11,"game_id":"game-a","partner_id":5,"occurred_at":"2026-11-01T10:00:00Z"}`,
+		`{"event_id":"r3","event_type":"login","user_id":10,"game_id":"game-a","partner_id":5,"occurred_at":"2026-11-02T09:00:00Z"}`,
+		`{"event_id":"r4","event_type":"login","user_id":10,"game_id":"game-a","partner_id":5,"occurred_at":"2026-11-03T09:00:00Z"}`,
+		// 他人游戏：不混入
+		`{"event_id":"r5","event_type":"login","user_id":20,"game_id":"game-x","partner_id":9,"occurred_at":"2026-11-01T11:00:00Z"}`,
+	}
+	code, body := doIngest(t, url, analyticsToken, ingestEvents(events...))
+	if code != http.StatusOK || !strings.Contains(body, `"accepted":5`) {
+		t.Fatalf("ingest = %d body=%s", code, body)
+	}
+	tok := signPartnerToken(t, 8)
+	path := base + "/api/v1/analytics/partner/retention"
+
+	// 匿名 401、非 partner 403、非法参数 400
+	if code, _ = doRaw(t, http.MethodGet, path+"?from=2026-11-01&to=2026-11-10", "", ""); code != http.StatusUnauthorized {
+		t.Fatalf("anon = %d, want 401", code)
+	}
+	if code, _ = doRaw(t, http.MethodGet, path+"?from=2026-11-01&to=2026-11-10", signPartnerToken(t, 7), ""); code != http.StatusForbidden {
+		t.Fatalf("admin on partner face = %d, want 403", code)
+	}
+	if code, _ = doRaw(t, http.MethodGet, path+"?event_type=nonsense", tok, ""); code != http.StatusBadRequest {
+		t.Fatalf("bad event_type = %d, want 400", code)
+	}
+	if code, _ = doRaw(t, http.MethodGet, path+"?window=31", tok, ""); code != http.StatusBadRequest {
+		t.Fatalf("window 31 = %d, want 400", code)
+	}
+
+	// 合作方（user 8，名下 game-a）：cohort 11-01 size 2，D0=2、D1=1、D2=1
+	code, body = doRaw(t, http.MethodGet, path+"?from=2026-11-01&to=2026-11-10&event_type=login&window=7", tok, "")
+	if code != http.StatusOK {
+		t.Fatalf("retention = %d body=%s", code, body)
+	}
+	var resp struct {
+		PartnerId int64 `json:"partner_id"`
+		Cohorts   []struct {
+			Day       string                    `json:"day"`
+			Size      int64                     `json:"size"`
+			Retention map[string]map[string]any `json:"retention"`
+		} `json:"cohorts"`
+	}
+	if err := json.Unmarshal([]byte(body), &resp); err != nil || len(resp.Cohorts) != 1 {
+		t.Fatalf("retention decode: %v body=%s", err, body)
+	}
+	c := resp.Cohorts[0]
+	if c.Day != "2026-11-01" || c.Size != 2 {
+		t.Fatalf("cohort = %+v, want day 11-01 size 2", c)
+	}
+	d0, _ := c.Retention["0"]
+	d1, _ := c.Retention["1"]
+	d2, _ := c.Retention["2"]
+	if int64(d0["users"].(float64)) != 2 || int64(d1["users"].(float64)) != 1 || int64(d2["users"].(float64)) != 1 {
+		t.Fatalf("cohort users D0/D1/D2 = %v/%v/%v, want 2/1/1", d0["users"], d1["users"], d2["users"])
+	}
+	if d1["retention"].(float64) != 0.5 || d2["retention"].(float64) != 0.5 {
+		t.Fatalf("cohort retention D1/D2 = %v/%v, want 0.5/0.5", d1["retention"], d2["retention"])
+	}
+}

@@ -266,3 +266,44 @@ type AnalyticsPartnerResp struct {
 	PartnerId int64                `json:"partner_id"`
 	Items     []AnalyticsTypeCount `json:"items"`
 }
+
+// AnalyticsPartnerTrendReq GET /api/v1/analytics/partner/trend：合作方自助
+// 日/周趋势（GP-404）。granularity=day|week（缺省 day）；行级隔离同 partner。
+type AnalyticsPartnerTrendReq struct {
+	From        string `form:"from,optional"`
+	To          string `form:"to,optional"`
+	Granularity string `form:"granularity,optional,default=day"`
+}
+
+type AnalyticsTrendPoint struct {
+	Bucket string `json:"bucket"`
+	Events int64  `json:"events"`
+	Users  int64  `json:"users"`
+}
+
+type AnalyticsPartnerTrendResp struct {
+	From        string                `json:"from"`
+	To          string                `json:"to"`
+	PartnerId   int64                 `json:"partner_id"`
+	Granularity string                `json:"granularity"`
+	Items       []AnalyticsTrendPoint `json:"items"`
+}
+
+// AnalyticsPartnerRetentionReq GET /api/v1/analytics/partner/retention：
+// 合作方自助留存（GP-404），口径与管理面 /analytics/retention 完全一致
+// （窗口内首个活跃日锚点、D0..Dwindow 偏移），仅按 partner_id 行级隔离。
+type AnalyticsPartnerRetentionReq struct {
+	EventType string `form:"event_type,optional,default=login"`
+	From      string `form:"from,optional"`
+	To        string `form:"to,optional"`
+	Window    int64  `form:"window,optional,default=7"`
+}
+
+type AnalyticsPartnerRetentionResp struct {
+	EventType string               `json:"event_type"`
+	From      string               `json:"from"`
+	To        string               `json:"to"`
+	Window    int64                `json:"window"`
+	PartnerId int64                `json:"partner_id"`
+	Cohorts   []AnalyticsCohortRow `json:"cohorts"`
+}

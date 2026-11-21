@@ -135,21 +135,7 @@ func (l *RetentionLogic) Retention(req *types.AnalyticsRetentionReq) (*types.Ana
 	if err := requireAnalyticsAdmin(l.svcCtx, l.ctx); err != nil {
 		return nil, err
 	}
-	eventType := req.EventType
-	if eventType == "" {
-		eventType = model.EventLogin
-	}
-	if !model.ValidEventType(eventType) {
-		return nil, httperr.BadRequest("unknown event_type: " + eventType)
-	}
-	window := req.Window
-	if window == 0 {
-		window = retentionDefaultWindow
-	}
-	if window < 0 || window > retentionMaxWindow {
-		return nil, httperr.BadRequest("window must be in [0,30]")
-	}
-	from, to, err := normalizeBounds(req.From, req.To)
+	eventType, window, from, to, err := retentionParams(req.EventType, req.Window, req.From, req.To)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +144,37 @@ func (l *RetentionLogic) Retention(req *types.AnalyticsRetentionReq) (*types.Ana
 	if err != nil {
 		return nil, err
 	}
+	return &types.AnalyticsRetentionResp{
+		EventType: eventType, From: from, To: to, Window: window, Cohorts: computeCohorts(pairs, window),
+	}, nil
+}
 
+// retentionParams 留存参数归一（管理面与合作方面共用）：事件类型缺省 login
+// 且必须在已知类型内；window 缺省 7、上限 30；from/to 同 overview 口径。
+func retentionParams(eventType string, window int64, fromReq, toReq string) (string, int64, string, string, error) {
+	if eventType == "" {
+		eventType = model.EventLogin
+	}
+	if !model.ValidEventType(eventType) {
+		return "", 0, "", "", httperr.BadRequest("unknown event_type: " + eventType)
+	}
+	if window == 0 {
+		window = retentionDefaultWindow
+	}
+	if window < 0 || window > retentionMaxWindow {
+		return "", 0, "", "", httperr.BadRequest("window must be in [0,30]")
+	}
+	from, to, err := normalizeBounds(fromReq, toReq)
+	if err != nil {
+		return "", 0, "", "", err
+	}
+	return eventType, window, from, to, nil
+}
+
+// computeCohorts 留存 cohort 聚合（管理面与合作方面共用同一口径）：
+// cohort = 用户窗口内首次活跃日；第 N 日留存 = cohort 在首活跃日+N 仍活跃
+// 人数 / cohort 人数。date 算术在 Go 侧完成（SQL 保持方言中立）。
+func computeCohorts(pairs []model.DailyUserPair, window int64) []types.AnalyticsCohortRow {
 	// user → 活跃日集合
 	type userDays map[string]bool
 	actives := make(map[int64]userDays)
@@ -222,9 +238,7 @@ func (l *RetentionLogic) Retention(req *types.AnalyticsRetentionReq) (*types.Ana
 			Day: day, Size: agg.size, Retention: ret,
 		})
 	}
-	return &types.AnalyticsRetentionResp{
-		EventType: eventType, From: from, To: to, Window: window, Cohorts: out,
-	}, nil
+	return out
 }
 
 // ActivityEffectLogic 活动效果：发奖事件事实聚合。

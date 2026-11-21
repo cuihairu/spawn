@@ -160,3 +160,41 @@ func AnalyticsPartnerHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		}
 	}
 }
+
+// AnalyticsPartnerTrendHandler GET /api/v1/analytics/partner/trend：合作方
+// 自助日/周趋势（GP-404，角色 partner + partner_id 行级隔离）
+func AnalyticsPartnerTrendHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.AnalyticsPartnerTrendReq
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		l := alogic.NewPartnerLogic(r.Context(), svcCtx)
+		resp, err := l.Trend(&req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}
+
+// AnalyticsPartnerRetentionHandler GET /api/v1/analytics/partner/retention：
+// 合作方自助留存（GP-404，角色 partner + partner_id 行级隔离，口径同管理面）
+func AnalyticsPartnerRetentionHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.AnalyticsPartnerRetentionReq
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		l := alogic.NewPartnerLogic(r.Context(), svcCtx)
+		resp, err := l.Retention(&req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}

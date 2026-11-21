@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -55,6 +56,124 @@ func (l *PartnerLogic) Query(req *types.AnalyticsPartnerReq) (*types.AnalyticsPa
 		})
 	}
 	return &types.AnalyticsPartnerResp{From: from, To: to, PartnerId: partnerID, Items: items}, nil
+}
+
+// Trend 合作方自助日/周趋势（GP-404）：事件量与去重用户数按日或 ISO 周
+// 聚合，行级隔离与 Query 同款。granularity 只接受 day|week（缺省 day）。
+// 周分桶在 Go 侧并（SQL 周函数方言不一）；事件量按日累加，用户数按周
+// 去重——日级 users 相加会把一周内活跃多日的用户重复计入。
+func (l *PartnerLogic) Trend(req *types.AnalyticsPartnerTrendReq) (*types.AnalyticsPartnerTrendResp, error) {
+	partnerID, authHeader, err := l.requirePartner()
+	if err != nil {
+		return nil, err
+	}
+	granularity := strings.TrimSpace(req.Granularity)
+	if granularity == "" {
+		granularity = "day"
+	}
+	if granularity != "day" && granularity != "week" {
+		return nil, httperr.BadRequest("granularity must be day or week")
+	}
+	from, to, err := normalizeBounds(req.From, req.To)
+	if err != nil {
+		return nil, err
+	}
+	gameIds := l.ownGameIDs(authHeader, partnerID)
+	rows, err := l.svcCtx.AnalyticsSvc.PartnerDailyTrend(from, to, partnerID, gameIds)
+	if err != nil {
+		return nil, httperr.Internal("聚合合作方趋势失败")
+	}
+
+	resp := &types.AnalyticsPartnerTrendResp{
+		From: from, To: to, PartnerId: partnerID, Granularity: granularity,
+		Items: make([]types.AnalyticsTrendPoint, 0, len(rows)),
+	}
+	if granularity == "day" {
+		for _, r := range rows {
+			resp.Items = append(resp.Items, types.AnalyticsTrendPoint{
+				Bucket: r.Day, Events: r.Events, Users: r.Users,
+			})
+		}
+		return resp, nil
+	}
+
+	// 周：事件量按日累加进所属 ISO 周；用户数按周去重（(日,user) 对集合）
+	type weekAgg struct {
+		events int64
+		users  int64
+	}
+	weeks := make(map[string]*weekAgg)
+	for _, r := range rows {
+		wk, err := isoWeekStart(r.Day)
+		if err != nil {
+			continue
+		}
+		agg, ok := weeks[wk]
+		if !ok {
+			agg = &weekAgg{}
+			weeks[wk] = agg
+		}
+		agg.events += r.Events
+	}
+	pairs, err := l.svcCtx.AnalyticsSvc.PartnerDailyActiveUsers("", from, to, partnerID, gameIds)
+	if err != nil {
+		return nil, httperr.Internal("聚合合作方趋势失败")
+	}
+	userWeeks := make(map[int64]map[string]bool)
+	for _, p := range pairs {
+		wk, err := isoWeekStart(p.Day)
+		if err != nil {
+			continue
+		}
+		set, ok := userWeeks[p.UserId]
+		if !ok {
+			set = map[string]bool{}
+			userWeeks[p.UserId] = set
+		}
+		set[wk] = true
+	}
+	for _, set := range userWeeks {
+		for wk := range set {
+			if agg, ok := weeks[wk]; ok {
+				agg.users++
+			}
+		}
+	}
+	keys := make([]string, 0, len(weeks))
+	for k := range weeks {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, wk := range keys {
+		agg := weeks[wk]
+		resp.Items = append(resp.Items, types.AnalyticsTrendPoint{
+			Bucket: wk, Events: agg.events, Users: agg.users,
+		})
+	}
+	return resp, nil
+}
+
+// Retention 合作方自助留存（GP-404）：与管理面 /analytics/retention 共用
+// retentionParams 与 computeCohorts（口径单一来源，无第二套算法），仅按
+// partner_id 行级隔离（gameIds 优先、partner_id 回落）。
+func (l *PartnerLogic) Retention(req *types.AnalyticsPartnerRetentionReq) (*types.AnalyticsPartnerRetentionResp, error) {
+	partnerID, authHeader, err := l.requirePartner()
+	if err != nil {
+		return nil, err
+	}
+	eventType, window, from, to, err := retentionParams(req.EventType, req.Window, req.From, req.To)
+	if err != nil {
+		return nil, err
+	}
+	gameIds := l.ownGameIDs(authHeader, partnerID)
+	pairs, err := l.svcCtx.AnalyticsSvc.PartnerDailyActiveUsers(eventType, from, to, partnerID, gameIds)
+	if err != nil {
+		return nil, httperr.Internal("聚合合作方留存失败")
+	}
+	return &types.AnalyticsPartnerRetentionResp{
+		EventType: eventType, From: from, To: to, Window: window, PartnerId: partnerID,
+		Cohorts: computeCohorts(pairs, window),
+	}, nil
 }
 
 // requirePartner 角色守卫：必须是 game-catalog 的 partner 角色且已绑定

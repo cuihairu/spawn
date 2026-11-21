@@ -79,6 +79,14 @@ type DailyUserPair struct {
 	UserId int64
 }
 
+// DailyCount 按日聚合行（趋势口径）：day 为 YYYY-MM-DD，Users 只计 user_id>0
+// 的去重用户（匿名事件无用户语义）。
+type DailyCount struct {
+	Day    string
+	Events int64
+	Users  int64
+}
+
 // ActivityEffectRow 活动效果（F24）：按 activity_id 的事件事实口径。
 // reward_cents = reward_granted 事件上报的金额合计，即该活动发放所对应
 // 订单实付合计（活动带动 GMV / ROI 口径）；该字段不参与账单对账聚合
@@ -125,6 +133,13 @@ type AnalyticsStore interface {
 	// PartnerOverview 合作方自助数据（GP-404）：期间内 partner_id 命中的事件，
 	// 按事件类型聚合；gameIds 非空时再按游戏 id 收窄（合作方名下游戏清单）。
 	PartnerOverview(from, to string, partnerID int64, gameIds []string) ([]TypeCounts, error)
+	// PartnerDailyTrend 合作方自助趋势（GP-404）：按日聚合事件量与去重用户数，
+	// 行级隔离同 PartnerOverview（gameIds 优先、partner_id 回落）。
+	PartnerDailyTrend(from, to string, partnerID int64, gameIds []string) ([]DailyCount, error)
+	// PartnerDailyActiveUsers 合作方自助留存输入：期间内某事件类型的
+	// (日期, user) 去重对，行级隔离同 PartnerOverview；eventType 传空串
+	// 表示不限事件类型（周趋势的用户去重用）。
+	PartnerDailyActiveUsers(eventType, from, to string, partnerID int64, gameIds []string) ([]DailyUserPair, error)
 }
 
 var _ AnalyticsStore = (*AnalyticsEventsModel)(nil)
@@ -540,6 +555,89 @@ func (m *AnalyticsEventsModel) PartnerOverview(from, to string, partnerID int64,
 			return nil, err
 		}
 		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// partnerScope 行级隔离 WHERE 片段：合作方名下游戏清单优先（game→partner
+// 归属单一事实源，平台级未带 partner_id 的事件也能按游戏正确归属），名下无
+// 游戏时回落 partner_id 命中；两者皆空返回 ok=false（调用方按空集处理）。
+func partnerScope(gameIds []string, partnerID int64) (string, []any, bool) {
+	if len(gameIds) > 0 {
+		args := make([]any, 0, len(gameIds))
+		for _, g := range gameIds {
+			args = append(args, g)
+		}
+		return "game_id IN (" + placeholders(len(gameIds)) + ")", args, true
+	}
+	if partnerID > 0 {
+		return "partner_id = ?", []any{partnerID}, true
+	}
+	return "", nil, false
+}
+
+// PartnerDailyTrend 合作方自助趋势（GP-404）：期间内按日聚合事件量与去重
+// 用户数，行级隔离与 PartnerOverview 同款（gameIds 优先、partner_id 回落）。
+// 日期取 occurred_at 前 10 位（RFC3339 定宽，字典序即时间序）。
+func (m *AnalyticsEventsModel) PartnerDailyTrend(from, to string, partnerID int64, gameIds []string) ([]DailyCount, error) {
+	scope, scopeArgs, ok := partnerScope(gameIds, partnerID)
+	if !ok {
+		return nil, nil
+	}
+	args := make([]any, 0, len(scopeArgs)+2)
+	args = append(args, scopeArgs...)
+	args = append(args, from, to)
+	rows, err := m.db.Query(
+		`SELECT substr(occurred_at, 1, 10) AS day, COUNT(*),
+			COUNT(DISTINCT CASE WHEN user_id > 0 THEN user_id END)
+		 FROM platform_events WHERE `+scope+` AND occurred_at >= ? AND occurred_at <= ?
+		 GROUP BY day ORDER BY day`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("聚合合作方趋势失败: %w", err)
+	}
+	defer rows.Close()
+	out := make([]DailyCount, 0, 64)
+	for rows.Next() {
+		var r DailyCount
+		if err := rows.Scan(&r.Day, &r.Events, &r.Users); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// PartnerDailyActiveUsers 合作方自助留存输入（GP-404）：期间内某事件类型的
+// (日期, user) 去重对，行级隔离与 PartnerOverview 同款。user_id <= 0 的
+// 事件不参与（匿名事件无留存语义）。eventType 传空串表示不限事件类型。
+func (m *AnalyticsEventsModel) PartnerDailyActiveUsers(eventType, from, to string, partnerID int64, gameIds []string) ([]DailyUserPair, error) {
+	scope, scopeArgs, ok := partnerScope(gameIds, partnerID)
+	if !ok {
+		return nil, nil
+	}
+	args := make([]any, 0, len(scopeArgs)+3)
+	q := `SELECT DISTINCT substr(occurred_at, 1, 10), user_id FROM platform_events
+		 WHERE user_id > 0 AND `
+	if eventType != "" {
+		q = `SELECT DISTINCT substr(occurred_at, 1, 10), user_id FROM platform_events
+		 WHERE event_type = ? AND user_id > 0 AND `
+		args = append(args, eventType)
+	}
+	args = append(args, scopeArgs...)
+	args = append(args, from, to)
+	q += scope + ` AND occurred_at >= ? AND occurred_at <= ? ORDER BY 1, 2`
+	rows, err := m.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("查询合作方日活对失败: %w", err)
+	}
+	defer rows.Close()
+	out := make([]DailyUserPair, 0, 64)
+	for rows.Next() {
+		var p DailyUserPair
+		if err := rows.Scan(&p.Day, &p.UserId); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
 	}
 	return out, rows.Err()
 }
