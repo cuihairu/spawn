@@ -2,7 +2,7 @@
 // ========== 运营后台（GP-103，game-catalog 域，经网关反代） ==========
 // game-catalog 返回裸 JSON（非信封），错误经 HTTP 状态码 + {code,message}，
 // request() 统一在 !response.ok 时抛 message。
-import { apiGatewayUrl, gameServiceUrl, request } from './http'
+import { apiGatewayUrl, gameServiceUrl, gatewayBaseUrl, request } from './http'
 import { mapGameDetail } from './games'
 import type { GameDetail, GameDto } from './games'
 
@@ -357,4 +357,205 @@ function mapAudit(dto: AuditDto): AuditLogInfo {
     ip: dto.ip,
     createdAt: dto.created_at,
   }
+}
+
+// ========== 经营分析（GP-402，data-panel 域经网关反代） ==========
+// 查询面双闸：Auth 中间件 + AdminUserIds 名单（后端强校验，403 文案为
+// 「无权访问经营分析」）。from/to 支持 RFC3339 或 10 位日期；空为缺省
+// 窗口（now-30d ~ now）。
+export interface AnalyticsTypeCount {
+  eventType: string
+  events: number
+  users: number
+  amountCents: number
+}
+
+export interface AnalyticsOverview {
+  from: string
+  to: string
+  gameId?: string
+  items: AnalyticsTypeCount[]
+}
+
+export interface AnalyticsFunnelStage {
+  stage: string
+  users: number
+  events: number
+  overallConv: number
+  stepConv: number
+}
+
+export interface AnalyticsFunnel {
+  from: string
+  to: string
+  gameId?: string
+  stages: AnalyticsFunnelStage[]
+}
+
+export interface AnalyticsRetentionCell {
+  retention: number
+  users: number
+}
+
+export interface AnalyticsCohortRow {
+  day: string
+  size: number
+  retention: Record<string, AnalyticsRetentionCell>
+}
+
+export interface AnalyticsRetention {
+  eventType: string
+  from: string
+  to: string
+  window: number
+  cohorts: AnalyticsCohortRow[]
+}
+
+export interface AnalyticsActivityEffect {
+  activityId: number
+  grants: number
+  participants: number
+  rewardCents: number
+}
+
+export interface AnalyticsReconciliationRow {
+  gameId: string
+  paidCount: number
+  paidCents: number
+  refundCount: number
+  refundCents: number
+}
+
+export interface AnalyticsChannelRow {
+  channel: string
+  registrations: number
+  users: number
+  paidCents: number
+}
+
+function analyticsParams(params?: { from?: string; to?: string; gameId?: string }): string {
+  const search = new URLSearchParams()
+  if (params?.from) search.set('from', params.from)
+  if (params?.to) search.set('to', params.to)
+  if (params?.gameId) search.set('game_id', params.gameId)
+  const qs = search.toString()
+  return qs ? `?${qs}` : ''
+}
+
+export async function fetchAnalyticsOverview(
+  params: { from?: string; to?: string; gameId?: string } | undefined,
+  token: string,
+): Promise<AnalyticsOverview> {
+  const payload = await request<{
+    items: { event_type: string; events: number; users: number; amount_cents: number }[]
+  }>(gatewayBaseUrl, `/api/v1/analytics/overview${analyticsParams(params)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return {
+    from: params?.from ?? '',
+    to: params?.to ?? '',
+    gameId: params?.gameId,
+    items: (payload.items ?? []).map((r) => ({
+      eventType: r.event_type,
+      events: r.events,
+      users: r.users,
+      amountCents: r.amount_cents,
+    })),
+  }
+}
+
+export async function fetchAnalyticsFunnel(
+  params: { from?: string; to?: string; gameId?: string } | undefined,
+  token: string,
+): Promise<AnalyticsFunnel> {
+  const payload = await request<{
+    from: string
+    to: string
+    stages: {
+      stage: string
+      users: number
+      events: number
+      overall_conv: number
+      step_conv: number
+    }[]
+  }>(gatewayBaseUrl, `/api/v1/analytics/funnel${analyticsParams(params)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return {
+    from: payload.from,
+    to: payload.to,
+    stages: (payload.stages ?? []).map((s) => ({
+      stage: s.stage,
+      users: s.users,
+      events: s.events,
+      overallConv: s.overall_conv,
+      stepConv: s.step_conv,
+    })),
+  }
+}
+
+export async function fetchAnalyticsRetention(
+  params: { from?: string; to?: string; eventType?: string; window?: number } | undefined,
+  token: string,
+): Promise<AnalyticsRetention> {
+  const search = new URLSearchParams()
+  if (params?.from) search.set('from', params.from)
+  if (params?.to) search.set('to', params.to)
+  if (params?.eventType) search.set('event_type', params.eventType)
+  if (params?.window && params.window > 0) search.set('window', String(params.window))
+  const payload = await request<{
+    event_type: string
+    from: string
+    to: string
+    window: number
+    cohorts: { day: string; size: number; retention: Record<string, { retention: number; users: number }> }[]
+  }>(gatewayBaseUrl, `/api/v1/analytics/retention?${search.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return {
+    eventType: payload.event_type,
+    from: payload.from,
+    to: payload.to,
+    window: payload.window,
+    cohorts: (payload.cohorts ?? []).map((c) => ({
+      day: c.day,
+      size: c.size,
+      retention: Object.fromEntries(
+        Object.entries(c.retention ?? {}).map(([k, v]) => [k, { retention: v.retention, users: v.users }]),
+      ),
+    })),
+  }
+}
+
+export async function fetchAnalyticsActivityEffect(id: string, token: string): Promise<AnalyticsActivityEffect> {
+  const payload = await request<{ activity: AnalyticsActivityEffect }>(
+    gatewayBaseUrl,
+    `/api/v1/analytics/activities/${encodeURIComponent(id)}/effect`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  return payload.activity
+}
+
+export async function fetchAnalyticsReconciliation(
+  params: { from?: string; to?: string } | undefined,
+  token: string,
+): Promise<AnalyticsReconciliationRow[]> {
+  const payload = await request<{ items: AnalyticsReconciliationRow[] }>(
+    gatewayBaseUrl,
+    `/api/v1/analytics/reconciliation${analyticsParams(params)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  return payload.items ?? []
+}
+
+export async function fetchAnalyticsChannels(
+  params: { from?: string; to?: string; gameId?: string } | undefined,
+  token: string,
+): Promise<AnalyticsChannelRow[]> {
+  const payload = await request<{ items: AnalyticsChannelRow[] }>(
+    gatewayBaseUrl,
+    `/api/v1/analytics/channels${analyticsParams(params)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  return payload.items ?? []
 }

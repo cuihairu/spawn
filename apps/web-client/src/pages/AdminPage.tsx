@@ -4,6 +4,12 @@ import {
   assignOwnership,
   createPartner,
   decideReview,
+  fetchAnalyticsActivityEffect,
+  fetchAnalyticsChannels,
+  fetchAnalyticsFunnel,
+  fetchAnalyticsOverview,
+  fetchAnalyticsReconciliation,
+  fetchAnalyticsRetention,
   fetchAuditLogs,
   fetchGameVersions,
   fetchGames,
@@ -16,6 +22,11 @@ import {
   setPartnerStatus,
   unpublishGame,
   type AdminGame,
+  type AnalyticsChannelRow,
+  type AnalyticsFunnel,
+  type AnalyticsOverview,
+  type AnalyticsReconciliationRow,
+  type AnalyticsRetention,
   type AuditLogInfo,
   type GameReviewInfo,
   type GameVersionInfo,
@@ -23,7 +34,7 @@ import {
 } from '../api/client'
 import './admin.css'
 
-type Tab = 'reviews' | 'partners' | 'games' | 'audit'
+type Tab = 'reviews' | 'partners' | 'games' | 'audit' | 'analytics'
 
 interface Props {
   token: string
@@ -149,6 +160,51 @@ const AdminPage = ({ token, isAdmin }: Props) => {
     })
   }, [run, token])
 
+  // GP-402 经营分析：一次拉取五张面（总览/漏斗/留存/对账/渠道），窗口与游戏过滤共用
+  const [anFrom, setAnFrom] = useState('')
+  const [anTo, setAnTo] = useState('')
+  const [anGameId, setAnGameId] = useState('')
+  const [overview, setOverview] = useState<AnalyticsOverview | null>(null)
+  const [funnel, setFunnel] = useState<AnalyticsFunnel | null>(null)
+  const [retention, setRetention] = useState<AnalyticsRetention | null>(null)
+  const [reconciliation, setReconciliation] = useState<AnalyticsReconciliationRow[]>([])
+  const [channels, setChannels] = useState<AnalyticsChannelRow[]>([])
+  const [anActivityId, setAnActivityId] = useState('')
+  const [activityEffect, setActivityEffect] = useState<string | null>(null)
+
+  const loadAnalytics = useCallback(() => {
+    run(async () => {
+      const window = {
+        from: anFrom.trim() || undefined,
+        to: anTo.trim() || undefined,
+        gameId: anGameId.trim() || undefined,
+      }
+      const [ov, fn, rt, rc, ch] = await Promise.all([
+        fetchAnalyticsOverview(window, token),
+        fetchAnalyticsFunnel(window, token),
+        fetchAnalyticsRetention({ from: window.from, to: window.to }, token),
+        fetchAnalyticsReconciliation({ from: window.from, to: window.to }, token),
+        fetchAnalyticsChannels(window, token),
+      ])
+      setOverview(ov)
+      setFunnel(fn)
+      setRetention(rt)
+      setReconciliation(rc)
+      setChannels(ch)
+    })
+  }, [anFrom, anGameId, anTo, run, token])
+
+  const loadActivityEffect = useCallback(() => {
+    const id = anActivityId.trim()
+    if (!id) return
+    run(async () => {
+      const effect = await fetchAnalyticsActivityEffect(id, token)
+      setActivityEffect(
+        `活动 ${effect.activityId}：发放 ${effect.grants} 笔 · 参与 ${effect.participants} 人 · 带动 GMV ¥${(effect.rewardCents / 100).toFixed(2)}`,
+      )
+    })
+  }, [anActivityId, run, token])
+
   const loadAdminVersions = useCallback(
     (gameId: string) => {
       if (!gameId.trim()) {
@@ -167,6 +223,7 @@ const AdminPage = ({ token, isAdmin }: Props) => {
       if (tab === 'reviews') loadReviews(reviewFilter)
       else if (tab === 'partners') loadPartners()
       else if (tab === 'games') loadGames(gameKeyword)
+      else if (tab === 'analytics') loadAnalytics()
       else loadAudit()
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -191,6 +248,9 @@ const AdminPage = ({ token, isAdmin }: Props) => {
           </button>
           <button type="button" className={`admin-tab${tab === 'audit' ? ' is-active' : ''}`} onClick={() => setTab('audit')}>
             审计日志（{logTotal}）
+          </button>
+          <button type="button" className={`admin-tab${tab === 'analytics' ? ' is-active' : ''}`} onClick={() => setTab('analytics')}>
+            经营分析
           </button>
         </div>
       </div>
@@ -663,6 +723,194 @@ const AdminPage = ({ token, isAdmin }: Props) => {
             </div>
           )}
         </section>
+      ) : null}
+
+      {tab === 'analytics' ? (
+        <>
+          <section className="community-card">
+            <h2>经营分析（GP-402）</h2>
+            <div className="admin-form" style={{ marginBottom: '0.75rem' }}>
+              <input type="date" value={anFrom} onChange={(e) => setAnFrom(e.target.value)} aria-label="起始日期" />
+              <input type="date" value={anTo} onChange={(e) => setAnTo(e.target.value)} aria-label="结束日期" />
+              <input
+                value={anGameId}
+                onChange={(e) => setAnGameId(e.target.value)}
+                placeholder="game_id（可空）"
+              />
+              <button type="button" className="primary-btn" onClick={loadAnalytics}>
+                查询
+              </button>
+            </div>
+            <div className="admin-meta">窗口空 = 缺省近 30 天；日期为 10 位（YYYY-MM-DD，含全天边界）</div>
+          </section>
+
+          {overview ? (
+            <section className="community-card">
+              <h2>总览</h2>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>事件类型</th>
+                      <th>次数</th>
+                      <th>人数</th>
+                      <th>金额</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overview.items.map((row) => (
+                      <tr key={row.eventType}>
+                        <td>{row.eventType}</td>
+                        <td>{row.events}</td>
+                        <td>{row.users}</td>
+                        <td>¥{(row.amountCents / 100).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {funnel ? (
+            <section className="community-card">
+              <h2>注册→活跃→下载→付费 漏斗</h2>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>阶段</th>
+                      <th>人数</th>
+                      <th>相对注册</th>
+                      <th>相对上一阶段</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {funnel.stages.map((stage) => (
+                      <tr key={stage.stage}>
+                        <td>{stage.stage}</td>
+                        <td>{stage.users}</td>
+                        <td>{(stage.overallConv * 100).toFixed(1)}%</td>
+                        <td>{(stage.stepConv * 100).toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {retention ? (
+            <section className="community-card">
+              <h2>留存（{retention.eventType}，窗口 {retention.window} 天）</h2>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>首活日</th>
+                      <th>规模</th>
+                      <th>D0</th>
+                      <th>D1</th>
+                      <th>D3</th>
+                      <th>D7</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {retention.cohorts.map((cohort) => (
+                      <tr key={cohort.day}>
+                        <td>{cohort.day}</td>
+                        <td>{cohort.size}</td>
+                        {[0, 1, 3, 7].map((d) => {
+                          const cell = cohort.retention[String(d)]
+                          return (
+                            <td key={d}>
+                              {cell && cohort.size > 0
+                                ? `${(cell.retention * 100).toFixed(1)}%（${cell.users}）`
+                                : '—'}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {reconciliation.length ? (
+            <section className="community-card">
+              <h2>账单核对（按游戏）</h2>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>游戏</th>
+                      <th>付费笔数</th>
+                      <th>付费金额</th>
+                      <th>退款笔数</th>
+                      <th>退款金额</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reconciliation.map((row) => (
+                      <tr key={row.gameId}>
+                        <td>{row.gameId}</td>
+                        <td>{row.paidCount}</td>
+                        <td>¥{(row.paidCents / 100).toFixed(2)}</td>
+                        <td>{row.refundCount}</td>
+                        <td>¥{(row.refundCents / 100).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {channels.length ? (
+            <section className="community-card">
+              <h2>渠道效果</h2>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>渠道</th>
+                      <th>注册数</th>
+                      <th>去重用户</th>
+                      <th>付费金额</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {channels.map((row) => (
+                      <tr key={row.channel || '(自然流量)'}>
+                        <td>{row.channel || '（自然流量）'}</td>
+                        <td>{row.registrations}</td>
+                        <td>{row.users}</td>
+                        <td>¥{(row.paidCents / 100).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          <section className="community-card">
+            <h2>活动效果</h2>
+            <div className="admin-form" style={{ marginBottom: '0.5rem' }}>
+              <input
+                value={anActivityId}
+                onChange={(e) => setAnActivityId(e.target.value)}
+                placeholder="活动 id"
+              />
+              <button type="button" className="primary-btn" onClick={loadActivityEffect}>
+                查询
+              </button>
+            </div>
+            {activityEffect ? <div className="admin-meta">{activityEffect}</div> : null}
+          </section>
+        </>
       ) : null}
     </div>
   )
