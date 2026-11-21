@@ -7,8 +7,11 @@ package analytics
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/tappi/tappi/services/game-catalog/model"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -41,10 +44,14 @@ type client struct {
 	url    string
 	token  string
 	client *http.Client
+	// outbox 非空 = 投递失败先落 outbox 待 Relay 重投（本地补偿）
+	outbox *model.AnalyticsOutboxModel
 }
 
-// NewClient 构建投递客户端；baseURL 空返回 no-op。
-func NewClient(baseURL, token string, timeoutMs int64) Client {
+// NewClient 构建投递客户端；baseURL 空返回 no-op（数据面板未部署时零开销）。
+// outbox 非空时启用本地补偿：先落队列再同步首投，失败留 pending 由 Relay
+// 重投（节奏与退避在 Relay 侧，队列首行立即可扫）。
+func NewClient(baseURL, token string, timeoutMs int64, outbox *model.AnalyticsOutboxModel) Client {
 	if baseURL == "" {
 		return noop{}
 	}
@@ -52,10 +59,13 @@ func NewClient(baseURL, token string, timeoutMs int64) Client {
 		url:    baseURL + "/internal/events",
 		token:  token,
 		client: &http.Client{Timeout: time.Millisecond * time.Duration(timeoutMs)},
+		outbox: outbox,
 	}
 }
 
-// Emit 同步投递：失败仅记日志。
+// Emit 同步投递（超时 3s 级）：先落 outbox（幂等，写失败仅记日志仍尝试直投），
+// 再同步首投；成功标记 delivered（Relay 不再重投），失败留 pending 待 Relay
+// 重投。同步是为了触发路径可验收（测试断言 data-panel 侧收到事实）。
 func (c *client) Emit(e Event) {
 	body, err := json.Marshal(struct {
 		Events []Event `json:"events"`
@@ -64,22 +74,43 @@ func (c *client) Emit(e Event) {
 		logx.Errorf("analytics emit %s: marshal: %v", e.EventType, err)
 		return
 	}
-	req, err := http.NewRequest(http.MethodPost, c.url, bytes.NewReader(body))
-	if err != nil {
+	if c.outbox != nil {
+		if err := c.outbox.Enqueue(e.EventId, e.EventType, string(body), nowUTC()); err != nil {
+			logx.Errorf("analytics emit %s: enqueue outbox: %v", e.EventType, err)
+		}
+	}
+	if err := c.post(body); err != nil {
 		logx.Errorf("analytics emit %s: %v", e.EventType, err)
 		return
+	}
+	if c.outbox != nil {
+		if err := c.outbox.MarkDelivered(e.EventId, nowUTC()); err != nil {
+			logx.Errorf("analytics emit %s: mark delivered: %v", e.EventType, err)
+		}
+	}
+}
+
+// post 低层投递（2xx 视为受理；data-panel 摄入端按 event_id 幂等）。
+func (c *client) post(body []byte) error {
+	req, err := http.NewRequest(http.MethodPost, c.url, bytes.NewReader(body))
+	if err != nil {
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Internal-Token", c.token)
 	resp, err := c.client.Do(req)
 	if err != nil {
-		logx.Errorf("analytics emit %s: %v", e.EventType, err)
-		return
+		return err
 	}
-	_ = resp.Body.Close()
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		logx.Errorf("analytics emit %s: data-panel returned %d", e.EventType, resp.StatusCode)
+		return fmt.Errorf("data-panel returned %d", resp.StatusCode)
 	}
+	return nil
+}
+
+func nowUTC() string {
+	return time.Now().UTC().Format(time.RFC3339)
 }
 
 func (c *client) Enabled() bool { return true }

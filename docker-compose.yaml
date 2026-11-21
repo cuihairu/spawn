@@ -58,6 +58,11 @@ services:
       # GP-306/401 通知扇出目标（community /internal/notifications）；未配置时
       # 通知通路 no-op（开服提醒/版本通知/上线通知/举报处置结果都不落库）。
       COMMUNITY_URL: http://community:8892
+      # GP-402 经营分析事实投递：download 事实 → data-panel /internal/events。
+      # 本地 outbox 补偿（DATA_PANEL_URL 未配置 = no-op）；令牌与 data-panel
+      # 侧 INTERNAL_TOKEN 同值。
+      DATA_PANEL_URL: http://data-panel:8896
+      DATA_PANEL_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
     volumes:
       - game-packages:/app/data/packages
     ports:
