@@ -403,12 +403,15 @@ type UserReviewView struct {
 	CreatedAt  string `json:"created_at"`
 	UpdatedAt  string `json:"updated_at"`
 	DeletedAt  string `json:"deleted_at,omitempty"`
+	Votes      int64  `json:"votes"`
 }
 
 type GameReviewListRequest struct {
 	Id     string `path:"id"`
 	Limit  int64  `form:"limit,default=20"`
 	Offset int64  `form:"offset,default=0"`
+	// Sort 排序：空或 "new" = 新在前（默认）；"votes" = 有用票数降序。
+	Sort string `form:"sort,optional"`
 }
 
 type GameReviewListResponse struct {
@@ -423,6 +426,20 @@ type ReportGameReviewRequest struct {
 	Id       string `path:"id"`
 	ReviewId int64  `path:"reviewId"`
 	Reason   string `json:"reason"`
+}
+
+// VoteGameReviewRequest 长评有用票（POST=投/取消投由 method 区分；
+// path reviewId 为长评 id）。
+type VoteGameReviewRequest struct {
+	Id       string `path:"id"`
+	ReviewId int64  `path:"reviewId"`
+}
+
+// VoteGameReviewResponse 投票结果（Voted 反映当前是否已投；Votes 为最新票数）。
+type VoteGameReviewResponse struct {
+	ReviewId int64 `json:"review_id"`
+	Votes    int64 `json:"votes"`
+	Voted    bool  `json:"voted"`
 }
 
 type ReportGameReviewResponse struct {

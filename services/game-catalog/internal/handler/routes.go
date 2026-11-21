@@ -93,6 +93,9 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		rest.Route{Method: http.MethodPost, Path: "/games/:id/rating", Handler: RateGameHandler(serverCtx)},
 		rest.Route{Method: http.MethodPost, Path: "/games/:id/reviews", Handler: CreateGameReviewHandler(serverCtx)},
 		rest.Route{Method: http.MethodPut, Path: "/games/:id/reviews/:reviewId", Handler: UpdateGameReviewHandler(serverCtx)},
+		// GP-401 长评有用票：一人一评一票（POST 投 / DELETE 撤，均幂等）。
+		rest.Route{Method: http.MethodPost, Path: "/games/:id/reviews/:reviewId/vote", Handler: VoteGameReviewHandler(serverCtx)},
+		rest.Route{Method: http.MethodDelete, Path: "/games/:id/reviews/:reviewId/vote", Handler: UnvoteGameReviewHandler(serverCtx)},
 		rest.Route{Method: http.MethodPost, Path: "/games/:id/reviews/:reviewId/report", Handler: ReportGameReviewHandler(serverCtx)},
 		// GP-401 收藏游戏（F05）：收藏/取消幂等；我的收藏列表。上线通知
 		//（game_launch）在游戏上架过渡时向收藏人群扇出（AdminLogic）。

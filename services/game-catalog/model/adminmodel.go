@@ -221,7 +221,12 @@ type AdminStore interface {
 	GetUserRating(gameId string, userId int64) (int, error)
 	CreateUserReview(r *UserReview) (*UserReview, error)
 	GetUserReview(id int64) (*UserReview, error)
-	ListUserReviewsByGame(gameId string, limit, offset int) ([]*UserReview, int, error)
+	ListUserReviewsByGame(gameId string, limit, offset int, byVotes bool) ([]*UserReview, int, error)
+	// VoteReview 长评有用票（一人一评一票，幂等：已投票不改计数，仍返回
+	// 最新票数）；评价不存在/已移除/不属该游戏返回 ErrUserReviewNotFound。
+	VoteReview(gameId string, reviewId, userId int64) (int64, error)
+	// UnvoteReview 取消有用票（未投过票幂等：删除 0 行，返回最新票数）。
+	UnvoteReview(gameId string, reviewId, userId int64) (int64, error)
 	UpdateUserReview(id int64, content string) (*UserReview, error)
 	// DeleteUserReview 软删（deleted_at 置位，公开隐藏、内容保留）；
 	// RestoreUserReview 恢复被移除评价（返回是否命中已移除记录）。
@@ -520,6 +525,24 @@ func (m *AdminModel) CreateAdminTables() error {
 				created_at VARCHAR(32) NOT NULL,
 				PRIMARY KEY (game_id, user_id),
 				KEY idx_favorites_user (user_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-401 长评有用票（F04）：一人一评一票（复合主键幂等，无票数
+			// 冗余列——计数按本表 COUNT 派生，天然无漂移；按票数排序用
+			// 相关子查询）。长评软删后其票保留（恢复评价即还原计数）。
+			`CREATE TABLE IF NOT EXISTS review_votes (
+				review_id INTEGER NOT NULL,
+				user_id INTEGER NOT NULL,
+				created_at VARCHAR(32) NOT NULL,
+				PRIMARY KEY (review_id, user_id)
+			)`,
+			`CREATE TABLE IF NOT EXISTS review_votes (
+				review_id BIGINT NOT NULL,
+				user_id BIGINT NOT NULL,
+				created_at VARCHAR(32) NOT NULL,
+				PRIMARY KEY (review_id, user_id),
+				KEY idx_review_votes_review (review_id)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 		},
 		{

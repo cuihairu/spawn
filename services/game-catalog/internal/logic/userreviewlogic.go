@@ -170,7 +170,7 @@ func (l *UserReviewLogic) ListReviews(req *types.GameReviewListRequest) (*types.
 		return nil, err
 	}
 	limit, offset := clampPage(req.Limit, req.Offset, 100)
-	items, total, err := l.svcCtx.AdminRepository.ListUserReviewsByGame(req.Id, limit, offset)
+	items, total, err := l.svcCtx.AdminRepository.ListUserReviewsByGame(req.Id, limit, offset, req.Sort == "votes")
 	if err != nil {
 		l.Errorf("list reviews game %s failed: %v", req.Id, err)
 		return nil, newAPIError(http.StatusInternalServerError, "查询评价失败")
@@ -180,6 +180,47 @@ func (l *UserReviewLogic) ListReviews(req *types.GameReviewListRequest) (*types.
 		out = append(out, *toTypesUserReview(r))
 	}
 	return &types.GameReviewListResponse{Items: out, Total: total, Limit: int64(limit), Offset: int64(offset)}, nil
+}
+
+// VoteReview 长评有用票（一人一评一票，幂等；重复投不重复计数）。评价须
+// 属该游戏且未被移除，否则 404。
+func (l *UserReviewLogic) VoteReview(req *types.VoteGameReviewRequest) (*types.VoteGameReviewResponse, error) {
+	userID := l.userID()
+	if userID <= 0 {
+		return nil, newAPIError(http.StatusUnauthorized, "未登录")
+	}
+	if err := l.visibleGame(req.Id); err != nil {
+		return nil, err
+	}
+	votes, err := l.svcCtx.AdminRepository.VoteReview(req.Id, req.ReviewId, userID)
+	if errors.Is(err, model.ErrUserReviewNotFound) {
+		return nil, newAPIError(http.StatusNotFound, "评价不存在")
+	}
+	if err != nil {
+		l.Errorf("vote review %d user %d failed: %v", req.ReviewId, userID, err)
+		return nil, newAPIError(http.StatusInternalServerError, "投票失败")
+	}
+	return &types.VoteGameReviewResponse{ReviewId: req.ReviewId, Votes: votes, Voted: true}, nil
+}
+
+// UnvoteReview 取消长评有用票（幂等：未投过也返回最新票数）。
+func (l *UserReviewLogic) UnvoteReview(req *types.VoteGameReviewRequest) (*types.VoteGameReviewResponse, error) {
+	userID := l.userID()
+	if userID <= 0 {
+		return nil, newAPIError(http.StatusUnauthorized, "未登录")
+	}
+	if err := l.visibleGame(req.Id); err != nil {
+		return nil, err
+	}
+	votes, err := l.svcCtx.AdminRepository.UnvoteReview(req.Id, req.ReviewId, userID)
+	if errors.Is(err, model.ErrUserReviewNotFound) {
+		return nil, newAPIError(http.StatusNotFound, "评价不存在")
+	}
+	if err != nil {
+		l.Errorf("unvote review %d user %d failed: %v", req.ReviewId, userID, err)
+		return nil, newAPIError(http.StatusInternalServerError, "取消投票失败")
+	}
+	return &types.VoteGameReviewResponse{ReviewId: req.ReviewId, Votes: votes, Voted: false}, nil
 }
 
 // ReportReview 举报长评（幂等：重复举报返回既有记录 created=false）。

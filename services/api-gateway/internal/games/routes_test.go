@@ -99,10 +99,10 @@ func TestGameProxyRoutesPassthrough(t *testing.T) {
 // TestGameProxyRoutesGP401Passthrough GP-401 评价/收藏路由透传：
 // 评分/长评/举报/开发者回复/举报处置/收藏与我的收藏，方法与路径原样到达上游。
 func TestGameProxyRoutesGP401Passthrough(t *testing.T) {
-	type hit struct{ method, path string }
+	type hit struct{ method, path, raw string }
 	var hits []hit
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits = append(hits, hit{r.Method, r.URL.Path})
+		hits = append(hits, hit{r.Method, r.URL.Path, r.URL.RawQuery})
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"ok":true}`)
 	}))
@@ -116,9 +116,12 @@ func TestGameProxyRoutesGP401Passthrough(t *testing.T) {
 
 	routes := []struct{ method, path, body string }{
 		{http.MethodGet, "/games/g-1/reviews?limit=10&offset=0", ""},
+		{http.MethodGet, "/games/g-1/reviews?limit=10&offset=0&sort=votes", ""},
 		{http.MethodPost, "/games/g-1/rating", `{"rating":5}`},
 		{http.MethodPost, "/games/g-1/reviews", `{"content":"内容不少于十个字，验证透传。"}`},
 		{http.MethodPut, "/games/g-1/reviews/7", `{"content":"作者改评的正文内容。"}`},
+		{http.MethodPost, "/games/g-1/reviews/7/vote", ""},
+		{http.MethodDelete, "/games/g-1/reviews/7/vote", ""},
 		{http.MethodPost, "/games/g-1/reviews/7/report", `{"reason":"疑似抄袭"}`},
 		{http.MethodPost, "/partner/games/g-1/reviews/7/reply", `{"content":"感谢反馈，下一版本优化。"}`},
 		{http.MethodGet, "/admin/review-reports?status=pending", ""},
@@ -152,6 +155,10 @@ func TestGameProxyRoutesGP401Passthrough(t *testing.T) {
 		}
 		if last.method != rc.method || last.path != wantPath {
 			t.Fatalf("%s %s hit = %+v", rc.method, rc.path, last)
+		}
+		// 长评排序参数原样透传（sort=votes 到上游）
+		if strings.Contains(rc.path, "sort=votes") && !strings.Contains(last.raw, "sort=votes") {
+			t.Fatalf("%s %s query = %q, want sort=votes", rc.method, rc.path, last.raw)
 		}
 	}
 }

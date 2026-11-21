@@ -12,6 +12,11 @@ import (
 	"strings"
 )
 
+// queryer 事务内查询面（*sql.DB 与 *sql.Tx 同形，投票事务共用）。
+type queryer interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
 // 评价举报状态（community reports 同款三态：未决/驳回/已处置）。
 const (
 	ReviewReportPending   = "pending"
@@ -43,6 +48,7 @@ type UserReview struct {
 	CreatedAt  string `json:"created_at"`
 	UpdatedAt  string `json:"updated_at"`
 	DeletedAt  string `json:"deleted_at"`
+	Votes      int64  `json:"votes"` // 有用票数（列表 COUNT 派生）
 }
 
 // ReviewReport 长评举报（UNIQUE(reporter_id,review_id) 一人一评一报）。
@@ -138,7 +144,7 @@ func scanUserReview(r *UserReview) []any {
 }
 
 func scanUserReviewWithRating(r *UserReview) []any {
-	return append(scanUserReview(r), &r.Rating)
+	return append(scanUserReview(r), &r.Rating, &r.Votes)
 }
 
 // CreateUserReview 发长评（一游戏一评，重复 409 语义由哨兵上抛）。唯一键
@@ -212,19 +218,25 @@ func (m *AdminModel) GetUserReview(id int64) (*UserReview, error) {
 	return &r, nil
 }
 
-// ListUserReviewsByGame 公开长评列表（新在前，带作者评分 LEFT JOIN；只含
-// 未被移除的软删可见评价）。
-func (m *AdminModel) ListUserReviewsByGame(gameId string, limit, offset int) ([]*UserReview, int, error) {
+// ListUserReviewsByGame 公开长评列表（带作者评分 LEFT JOIN 与有用票 COUNT
+// 派生；只含未被移除的软删可见评价）。byVotes 为真按票数降序（同票新在前），
+// 否则新在前。返回 (items, total)。
+func (m *AdminModel) ListUserReviewsByGame(gameId string, limit, offset int, byVotes bool) ([]*UserReview, int, error) {
 	var total int
 	if err := m.db.QueryRow(
 		`SELECT COUNT(*) FROM game_user_reviews WHERE game_id = ? AND deleted_at = ''`, gameId,
 	).Scan(&total); err != nil {
 		return nil, 0, err
 	}
+	order := "r.id DESC"
+	if byVotes {
+		order = "votes DESC, r.id DESC"
+	}
 	rows, err := m.db.Query(
-		`SELECT r.id, r.game_id, r.user_id, r.content, r.dev_reply, r.dev_reply_by, r.dev_reply_at, r.created_at, r.updated_at, r.deleted_at, COALESCE(g.rating, 0)
+		`SELECT r.id, r.game_id, r.user_id, r.content, r.dev_reply, r.dev_reply_by, r.dev_reply_at, r.created_at, r.updated_at, r.deleted_at, COALESCE(g.rating, 0),
+			(SELECT COUNT(*) FROM review_votes v WHERE v.review_id = r.id) AS votes
 		 FROM game_user_reviews r LEFT JOIN game_ratings g ON g.game_id = r.game_id AND g.user_id = r.user_id
-		 WHERE r.game_id = ? AND r.deleted_at = '' ORDER BY r.id DESC LIMIT ? OFFSET ?`,
+		 WHERE r.game_id = ? AND r.deleted_at = '' ORDER BY `+order+` LIMIT ? OFFSET ?`,
 		gameId, limit, offset,
 	)
 	if err != nil {
@@ -240,6 +252,82 @@ func (m *AdminModel) ListUserReviewsByGame(gameId string, limit, offset int) ([]
 		out = append(out, &r)
 	}
 	return out, total, rows.Err()
+}
+
+// VoteReview 长评有用票（一人一评一票）：评价存在、归属该游戏且未被移除才
+// 可投（否则 ErrUserReviewNotFound）；同人重复投幂等（IGNORE 不重复计数），
+// 返回最新票数。事务保证「校验存在 + 入票 + 计数」原子。
+func (m *AdminModel) VoteReview(gameId string, reviewId, userId int64) (int64, error) {
+	tx, err := m.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err := reviewVotable(tx, gameId, reviewId); err != nil {
+		return 0, err
+	}
+	now := nowUTC()
+	if _, err := tx.Exec(
+		`INSERT OR IGNORE INTO review_votes (review_id, user_id, created_at) VALUES (?, ?, ?)`,
+		reviewId, userId, now,
+	); err != nil {
+		if _, err2 := tx.Exec(
+			`INSERT IGNORE INTO review_votes (review_id, user_id, created_at) VALUES (?, ?, ?)`,
+			reviewId, userId, now,
+		); err2 != nil {
+			return 0, err2
+		}
+	}
+	votes, err := reviewVoteCount(tx, reviewId)
+	if err != nil {
+		return 0, err
+	}
+	return votes, tx.Commit()
+}
+
+// UnvoteReview 取消有用票（幂等：未投过删除 0 行），返回最新票数。
+func (m *AdminModel) UnvoteReview(gameId string, reviewId, userId int64) (int64, error) {
+	tx, err := m.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err := reviewVotable(tx, gameId, reviewId); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(
+		`DELETE FROM review_votes WHERE review_id = ? AND user_id = ?`, reviewId, userId,
+	); err != nil {
+		return 0, err
+	}
+	votes, err := reviewVoteCount(tx, reviewId)
+	if err != nil {
+		return 0, err
+	}
+	return votes, tx.Commit()
+}
+
+// reviewVotable 校验评价可投票（存在、属该游戏、未移除）；否则哨兵上抛。
+func reviewVotable(q queryer, gameId string, reviewId int64) error {
+	var exists int
+	err := q.QueryRow(
+		`SELECT 1 FROM game_user_reviews WHERE id = ? AND game_id = ? AND deleted_at = ''`, reviewId, gameId,
+	).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrUserReviewNotFound
+	}
+	return err
+}
+
+// reviewVoteCount 统计单条长评的有用票数。
+func reviewVoteCount(q queryer, reviewId int64) (int64, error) {
+	var votes int64
+	if err := q.QueryRow(
+		`SELECT COUNT(*) FROM review_votes WHERE review_id = ?`, reviewId,
+	).Scan(&votes); err != nil {
+		return 0, err
+	}
+	return votes, nil
 }
 
 // UpdateUserReview 作者改评（content 覆盖，updated_at 前移；已移除的评价

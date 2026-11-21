@@ -63,7 +63,7 @@ func TestUserReview_CreateUpdateListDelete(t *testing.T) {
 		t.Fatalf("create2: %v", err)
 	}
 
-	items, total, err := m.ListUserReviewsByGame("g-1", 20, 0)
+	items, total, err := m.ListUserReviewsByGame("g-1", 20, 0, false)
 	if err != nil || total != 2 || len(items) != 2 {
 		t.Fatalf("list = %d/%d/%v", total, len(items), err)
 	}
@@ -99,7 +99,7 @@ func TestUserReview_CreateUpdateListDelete(t *testing.T) {
 	if err := m.DeleteUserReview(r.Id); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	_, total, _ = m.ListUserReviewsByGame("g-1", 20, 0)
+	_, total, _ = m.ListUserReviewsByGame("g-1", 20, 0, false)
 	if total != 1 {
 		t.Fatalf("total after delete = %d, want 1", total)
 	}
@@ -117,7 +117,7 @@ func TestUserReview_CreateUpdateListDelete(t *testing.T) {
 	if err != nil || restored.DeletedAt != "" {
 		t.Fatalf("restored row = %+v err=%v, want DeletedAt empty", restored, err)
 	}
-	_, total, _ = m.ListUserReviewsByGame("g-1", 20, 0)
+	_, total, _ = m.ListUserReviewsByGame("g-1", 20, 0, false)
 	if total != 2 {
 		t.Fatalf("total after restore = %d, want 2", total)
 	}
@@ -133,7 +133,7 @@ func TestUserReview_CreateUpdateListDelete(t *testing.T) {
 	if err != nil || revived.DeletedAt != "" || revived.Content != "重评：修复后重新发布的长评" || revived.Id != r.Id {
 		t.Fatalf("revive = %+v err=%v, want same id=%d with new content", revived, err, r.Id)
 	}
-	_, total, _ = m.ListUserReviewsByGame("g-1", 20, 0)
+	_, total, _ = m.ListUserReviewsByGame("g-1", 20, 0, false)
 	if total != 2 {
 		t.Fatalf("total after revive = %d, want 2", total)
 	}
@@ -261,5 +261,68 @@ func TestGameFavorites_IdempotentAndAudience(t *testing.T) {
 	users, _ = m.ListFavoriteUsersByGame("g-1", 10000)
 	if len(users) != 1 || users[0] != 8 {
 		t.Fatalf("audience after remove = %v", users)
+	}
+}
+
+func TestUserReview_VoteUnvoteAndSort(t *testing.T) {
+	m := newTestAdminModel(t)
+	r1, _ := m.CreateUserReview(&UserReview{GameId: "g-1", UserId: 7, Content: "第一条：画面和手感都在线，值得入手"})
+	r2, _ := m.CreateUserReview(&UserReview{GameId: "g-1", UserId: 8, Content: "第二条：后期内容略肝，前期体验不错"})
+
+	// 投：r1 得 2 票，r2 得 1 票
+	v, err := m.VoteReview("g-1", r1.Id, 7)
+	if err != nil || v != 1 {
+		t.Fatalf("vote = %d/%v, want 1", v, err)
+	}
+	if v, _ = m.VoteReview("g-1", r1.Id, 8); v != 2 {
+		t.Fatalf("vote2 = %d, want 2", v)
+	}
+	// 幂等：同人重复投不重复计数
+	if v, _ = m.VoteReview("g-1", r1.Id, 7); v != 2 {
+		t.Fatalf("vote replay = %d, want 2", v)
+	}
+	if v, _ = m.VoteReview("g-1", r2.Id, 7); v != 1 {
+		t.Fatalf("vote r2 = %d, want 1", v)
+	}
+
+	// 列表带票数：新在前默认（r2 先）
+	items, _, err := m.ListUserReviewsByGame("g-1", 20, 0, false)
+	if err != nil || len(items) != 2 {
+		t.Fatalf("list = %d/%v", len(items), err)
+	}
+	if items[0].Id != r2.Id || items[0].Votes != 1 || items[1].Id != r1.Id || items[1].Votes != 2 {
+		t.Fatalf("new-first list = %+v, want r2(1) then r1(2)", items)
+	}
+	// 按票数排序：r1(2) 先
+	items, _, _ = m.ListUserReviewsByGame("g-1", 20, 0, true)
+	if items[0].Id != r1.Id || items[0].Votes != 2 || items[1].Id != r2.Id || items[1].Votes != 1 {
+		t.Fatalf("votes-first list = %+v, want r1(2) then r2(1)", items)
+	}
+
+	// 撤：r1 减一票
+	if v, _ = m.UnvoteReview("g-1", r1.Id, 7); v != 1 {
+		t.Fatalf("unvote = %d, want 1", v)
+	}
+	// 幂等：未投过撤 0 行，票数不变
+	if v, _ = m.UnvoteReview("g-1", r1.Id, 7); v != 1 {
+		t.Fatalf("unvote replay = %d, want 1", v)
+	}
+
+	// 越权/不存在：不属该游戏、已移除、不存在均哨兵
+	if _, err := m.VoteReview("g-2", r1.Id, 9); !errors.Is(err, ErrUserReviewNotFound) {
+		t.Fatalf("vote wrong game = %v, want ErrUserReviewNotFound", err)
+	}
+	if _, err := m.VoteReview("g-1", 99999, 9); !errors.Is(err, ErrUserReviewNotFound) {
+		t.Fatalf("vote missing = %v, want ErrUserReviewNotFound", err)
+	}
+	if _, err := m.UnvoteReview("g-1", 99999, 9); !errors.Is(err, ErrUserReviewNotFound) {
+		t.Fatalf("unvote missing = %v, want ErrUserReviewNotFound", err)
+	}
+	// 软删后不可再投
+	if err := m.DeleteUserReview(r1.Id); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := m.VoteReview("g-1", r1.Id, 9); !errors.Is(err, ErrUserReviewNotFound) {
+		t.Fatalf("vote deleted = %v, want ErrUserReviewNotFound", err)
 	}
 }

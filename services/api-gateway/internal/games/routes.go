@@ -72,6 +72,9 @@ func RegisterGameProxyRoutes(server *rest.Server, serverCtx *svc.ServiceContext)
 		{Method: http.MethodPost, Path: "/games/:id/rating", Handler: h},
 		{Method: http.MethodPost, Path: "/games/:id/reviews", Handler: h},
 		{Method: http.MethodPut, Path: "/games/:id/reviews/:reviewId", Handler: h},
+		// GP-401 长评有用票（POST 投 / DELETE 撤，鉴权在 game-catalog 侧）
+		{Method: http.MethodPost, Path: "/games/:id/reviews/:reviewId/vote", Handler: h},
+		{Method: http.MethodDelete, Path: "/games/:id/reviews/:reviewId/vote", Handler: h},
 		{Method: http.MethodPost, Path: "/games/:id/reviews/:reviewId/report", Handler: h},
 		{Method: http.MethodPost, Path: "/partner/games/:id/reviews/:reviewId/reply", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/review-reports", Handler: h},
