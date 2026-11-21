@@ -82,6 +82,16 @@ func (c *communityStub) Last() ([]byte, string) {
 	return c.reqs[len(c.reqs)-1], c.tokens[len(c.tokens)-1]
 }
 
+// At 按提交序取第 i 条通知（0 起）；越界返回 nil。
+func (c *communityStub) At(i int) ([]byte, string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if i < 0 || i >= len(c.reqs) {
+		return nil, ""
+	}
+	return c.reqs[i], c.tokens[i]
+}
+
 // newReservationTestServer 与 newAuthedTestServer 同款装配，额外接
 // community stub（Notify）与内部令牌（Internal）。返回 svcCtx 供调用方直接
 // 驱动进程内组件（如到点扫描器）——那些路径无 HTTP 面，只能进程内验收。

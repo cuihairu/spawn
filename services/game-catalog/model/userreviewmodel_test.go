@@ -157,6 +157,43 @@ func TestReviewReport_DedupAndDecide(t *testing.T) {
 	}
 }
 
+func TestReviewReport_PendingReportersAudience(t *testing.T) {
+	m := newTestAdminModel(t)
+	r, _ := m.CreateUserReview(&UserReview{GameId: "g-1", UserId: 7, Content: "受众测试评价"})
+	rep8, _, _ := m.CreateReviewReport(&ReviewReport{ReviewId: r.Id, GameId: "g-1", ReporterId: 8, Reason: "举报A"})
+	if _, _, err := m.CreateReviewReport(&ReviewReport{ReviewId: r.Id, GameId: "g-1", ReporterId: 9, Reason: "举报B"}); err != nil {
+		t.Fatalf("second report: %v", err)
+	}
+
+	// 未决受众 = 两名举报人（去重）
+	ids, err := m.ListPendingReportersByReview(r.Id)
+	if err != nil || len(ids) != 2 {
+		t.Fatalf("pending reporters = %v err=%v, want 2", ids, err)
+	}
+	if (ids[0] == 8 && ids[1] == 9) || (ids[0] == 9 && ids[1] == 8) {
+		// ok
+	} else {
+		t.Fatalf("pending reporters set = %v, want {8,9}", ids)
+	}
+
+	// 处置 8 的举报（dismiss）后，未决受众仅剩 9
+	if ok, _ := m.DecideReviewReportIfPending(rep8.Id, 1, ReviewReportDismissed); !ok {
+		t.Fatal("decide rep8")
+	}
+	ids, err = m.ListPendingReportersByReview(r.Id)
+	if err != nil || len(ids) != 1 || ids[0] != 9 {
+		t.Fatalf("after decide = %v err=%v, want [9]", ids, err)
+	}
+
+	// 全部结案后为空
+	if err := m.ResolvePendingReportsForReview(r.Id, 1); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if ids, err = m.ListPendingReportersByReview(r.Id); err != nil || len(ids) != 0 {
+		t.Fatalf("after resolve = %v err=%v, want empty", ids, err)
+	}
+}
+
 func TestGameFavorites_IdempotentAndAudience(t *testing.T) {
 	m := newTestAdminModel(t)
 

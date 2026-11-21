@@ -209,6 +209,21 @@ func TestRoutes_GameRatingsAndReviews(t *testing.T) {
 	if code != 200 || !strings.Contains(body, `"status":"dismissed"`) {
 		t.Fatalf("dismiss = %d body=%s", code, body)
 	}
+	// GP-401 处置结果通知：dismiss 告知举报人 7 评价保留（第 1 条通知）
+	if stub.Calls() != 1 {
+		t.Fatalf("dismiss notify = %d, want 1", stub.Calls())
+	}
+	raw, token := stub.At(0)
+	var dismissNotify struct {
+		UserIds []int64 `json:"user_ids"`
+		Type    string  `json:"type"`
+		Content string  `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &dismissNotify); err != nil || token != gp306Token ||
+		dismissNotify.Type != "review_report_result" || len(dismissNotify.UserIds) != 1 ||
+		dismissNotify.UserIds[0] != 7 || !strings.Contains(dismissNotify.Content, "评价保留") {
+		t.Fatalf("dismiss notify = %s type=%s token=%s err=%v", raw, dismissNotify.Type, token, err)
+	}
 	if code, _ = doAuthed(t, "POST", base+"/admin/review-reports/"+reportA+"/handle", admin, `{"action":"dismiss"}`); code != 409 {
 		t.Fatalf("re-handle = %d, want 409", code)
 	}
@@ -233,6 +248,32 @@ func TestRoutes_GameRatingsAndReviews(t *testing.T) {
 	code, body = doAuthed(t, "POST", base+"/admin/review-reports/"+reportB+"/handle", admin, `{"action":"remove"}`)
 	if code != 200 || !strings.Contains(body, `"status":"resolved"`) {
 		t.Fatalf("remove = %d body=%s", code, body)
+	}
+	// GP-401 处置结果通知：remove 告知举报人 8 已移除 + 告知评价作者 8（同人两条）
+	if stub.Calls() != 3 {
+		t.Fatalf("remove notify total = %d, want 3", stub.Calls())
+	}
+	raw, token = stub.At(1)
+	var removeNotify struct {
+		UserIds []int64 `json:"user_ids"`
+		Type    string  `json:"type"`
+		Content string  `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &removeNotify); err != nil || token != gp306Token ||
+		removeNotify.Type != "review_report_result" || len(removeNotify.UserIds) != 1 ||
+		removeNotify.UserIds[0] != 8 || !strings.Contains(removeNotify.Content, "已被移除") {
+		t.Fatalf("remove reporter notify = %s type=%s err=%v", raw, removeNotify.Type, err)
+	}
+	raw, token = stub.At(2)
+	var authorNotify struct {
+		UserIds []int64 `json:"user_ids"`
+		Type    string  `json:"type"`
+		Content string  `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &authorNotify); err != nil || token != gp306Token ||
+		authorNotify.Type != "review_removed" || len(authorNotify.UserIds) != 1 ||
+		authorNotify.UserIds[0] != 8 || !strings.Contains(authorNotify.Content, "已被移除") {
+		t.Fatalf("remove author notify = %s type=%s err=%v", raw, authorNotify.Type, err)
 	}
 	code, body = doAuthed(t, "GET", base+"/games/"+gameID+"/reviews", "", "")
 	if code != 200 || !strings.Contains(body, `"total":2`) {
@@ -292,13 +333,14 @@ func TestRoutes_GameRatingsAndReviews(t *testing.T) {
 		t.Fatalf("favorite offline = %d, want 404", code)
 	}
 	// 上架过渡 → game_launch 只向收藏人群扇出一次
+	launchBase := stub.Calls()
 	if code, _ = doAuthed(t, "POST", base+"/admin/games/"+gameID+"/publish", admin, ""); code != 200 {
 		t.Fatalf("publish = %d", code)
 	}
-	if stub.Calls() != 1 {
-		t.Fatalf("launch should notify once, got %d calls", stub.Calls())
+	if stub.Calls() != launchBase+1 {
+		t.Fatalf("launch should notify once, got %d -> %d", launchBase, stub.Calls())
 	}
-	raw, token := stub.Last()
+	raw, token = stub.Last()
 	var fanout struct {
 		UserIds []int64 `json:"user_ids"`
 		Type    string  `json:"type"`
@@ -314,8 +356,8 @@ func TestRoutes_GameRatingsAndReviews(t *testing.T) {
 	if code, _ = doAuthed(t, "POST", base+"/admin/games/"+gameID+"/publish", admin, ""); code != 200 {
 		t.Fatalf("publish2 = %d", code)
 	}
-	if stub.Calls() != 2 {
-		t.Fatalf("second launch should notify once more, got %d calls", stub.Calls())
+	if stub.Calls() != launchBase+2 {
+		t.Fatalf("second launch should notify once more, got %d -> %d", launchBase, stub.Calls())
 	}
 	// 取消收藏（幂等）后我的收藏清空
 	code, _ = doAuthed(t, "DELETE", base+"/games/"+gameID+"/favorite", player7, "")

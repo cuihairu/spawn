@@ -230,6 +230,7 @@ type AdminStore interface {
 	ListReviewReports(status string, limit, offset int) ([]*ReviewReport, int, error)
 	DecideReviewReportIfPending(id, handledBy int64, status string) (bool, error)
 	ResolvePendingReportsForReview(reviewId, handledBy int64) error
+	ListPendingReportersByReview(reviewId int64) ([]int64, error)
 
 	// GP-401 收藏游戏（F05）：收藏幂等；收藏人群为上线通知受众。
 	AddFavorite(gameId string, userId int64) (*GameFavorite, bool, error)

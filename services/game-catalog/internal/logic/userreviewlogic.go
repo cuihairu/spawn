@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/tappi/tappi/services/game-catalog/internal/notify"
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 	"github.com/tappi/tappi/services/game-catalog/internal/types"
 	"github.com/tappi/tappi/services/game-catalog/model"
@@ -340,6 +341,22 @@ func (l *UserReviewLogic) HandleReviewReport(req *types.HandleReviewReportReques
 	if !ok {
 		return nil, newAPIError(http.StatusConflict, "该举报已处置")
 	}
+	// GP-401 处置结果通知受众：remove 需在删除/结案前捕获评价作者与同评其余
+	// 未决举报人（结案后不再可查），二者均取不到时静默降级（无通知不阻断）。
+	var authorID int64
+	var siblingReporters []int64
+	if req.Action == "remove" {
+		if review, err := l.svcCtx.AdminRepository.GetUserReview(report.ReviewId); err == nil {
+			authorID = review.UserId
+		} else if !errors.Is(err, model.ErrUserReviewNotFound) {
+			l.Errorf("get review %d for notify failed: %v", report.ReviewId, err)
+		}
+		if ids, err := l.svcCtx.AdminRepository.ListPendingReportersByReview(report.ReviewId); err == nil {
+			siblingReporters = ids
+		} else {
+			l.Errorf("list pending reporters review %d failed: %v", report.ReviewId, err)
+		}
+	}
 	if req.Action == "remove" {
 		if err := l.svcCtx.AdminRepository.DeleteUserReview(report.ReviewId); err != nil {
 			l.Errorf("delete review %d failed: %v", report.ReviewId, err)
@@ -355,5 +372,57 @@ func (l *UserReviewLogic) HandleReviewReport(req *types.HandleReviewReportReques
 		return nil, newAPIError(http.StatusInternalServerError, "查询举报失败")
 	}
 	l.audit(action, "review_report", formatInt(req.Id), toJSON(toTypesReviewReport(report)), toJSON(toTypesReviewReport(final)))
+	// GP-401 举报处置通知回路：dismiss 告知举报人评价保留；remove 告知各举报人
+	// （含同评自动结案的）评价已移除、并告知评价作者。fire-and-forget，失败仅记
+	// 日志，绝不回改处置结果（与 game_launch/game_version 同款契约）。
+	if req.Action == "dismiss" {
+		l.notifyReviewReportResult(report.ReviewId, distinctPositive([]int64{report.ReporterId}),
+			"您的举报已复核：该评价未违反社区规范，评价保留")
+	} else {
+		reporters := append([]int64{report.ReporterId}, siblingReporters...)
+		l.notifyReviewReportResult(report.ReviewId, distinctPositive(reporters),
+			"您的举报已复核：该评价已被移除")
+		l.notifyReviewRemoved(report.ReviewId, authorID)
+	}
 	return toTypesReviewReport(final), nil
+}
+
+// notifyReviewReportResult 向举报人扇出处置结论（community /internal/notifications，
+// 未配置时 no-op 跳过）。
+func (l *UserReviewLogic) notifyReviewReportResult(reviewId int64, reporters []int64, content string) {
+	if !l.svcCtx.Notify.Enabled() || len(reporters) == 0 {
+		return
+	}
+	l.svcCtx.Notify.Publish(notify.Notification{
+		UserIds: reporters, Type: "review_report_result", TargetId: reviewId,
+		Content: content,
+	})
+}
+
+// notifyReviewRemoved 向评价作者扇出评价被移除通知。
+func (l *UserReviewLogic) notifyReviewRemoved(reviewId, authorID int64) {
+	if !l.svcCtx.Notify.Enabled() || authorID <= 0 {
+		return
+	}
+	l.svcCtx.Notify.Publish(notify.Notification{
+		UserIds: []int64{authorID}, Type: "review_removed", TargetId: reviewId,
+		Content: "您的评价因收到有效举报，已被移除",
+	})
+}
+
+// distinctPositive 去重并剔除非正 user id（通知受众容错：0/负 id 不投递）。
+func distinctPositive(ids []int64) []int64 {
+	seen := make(map[int64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }

@@ -373,6 +373,28 @@ func (m *AdminModel) ResolvePendingReportsForReview(reviewId, handledBy int64) e
 	return err
 }
 
+// ListPendingReportersByReview 同评未决举报的举报人（去重）。批量结案前取
+// 受众，供处置结果通知（GP-401 举报人通知回路）。
+func (m *AdminModel) ListPendingReportersByReview(reviewId int64) ([]int64, error) {
+	rows, err := m.db.Query(
+		`SELECT DISTINCT reporter_id FROM review_reports WHERE review_id = ? AND status = ?`,
+		reviewId, ReviewReportPending,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]int64, 0, 2)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // ---- 收藏游戏（F05） ----
 
 // AddFavorite 收藏（幂等：重复收藏返回既有与 created=false）。
