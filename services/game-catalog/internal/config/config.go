@@ -35,10 +35,17 @@ type Config struct {
 
 	// GP-306 开服提醒/版本通知：经 community /internal/notifications 扇出
 	//（站内信 + realtime-hub 远程推送）。Url 空则 no-op（通知不落库不推送，
-	// 主操作不受影响）；Token 须与 community INTERNAL_TOKEN 一致。
+	// 主操作不受影响）；Token 须与 community INTERNAL_TOKEN 一致。Outbox*
+	// 为本地补偿重投节奏（community 短时不可达时落 outbox 重投）。
 	Notify struct {
 		Url   string `json:",env=COMMUNITY_URL,optional"`
 		Token string `json:",env=INTERNAL_TOKEN,optional"`
+		// OutboxIntervalSeconds 重投扫描周期（默认 30s）。
+		OutboxIntervalSeconds int64 `json:",default=30,env=COMMUNITY_OUTBOX_INTERVAL_SECONDS"`
+		// OutboxMaxAttempts 重试上限（默认 10，超出置 dropped 留痕）。
+		OutboxMaxAttempts int64 `json:",default=10,env=COMMUNITY_OUTBOX_MAX_ATTEMPTS"`
+		// OutboxRetentionHours 已终态行保留窗口（默认 168h=7 天）。
+		OutboxRetentionHours int64 `json:",default=168,env=COMMUNITY_OUTBOX_RETENTION_HOURS"`
 	}
 
 	// GP-306 开服排期到点自动开服：定时扫描 planned_open_at 已到点且仍为
