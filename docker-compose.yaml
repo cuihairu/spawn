@@ -125,6 +125,9 @@ services:
       JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
       # GP-402 经营分析查询名单（逗号分隔 user-service 用户 id，默认演示管理员 1）。
       ADMIN_USER_IDS: "${ADMIN_USER_IDS:-1}"
+      # GP-402 经营分析 S2S 摄入守卫（/internal/events）：未配置恒 403
+      # （fail-closed）。与各产生方 DATA_PANEL_INTERNAL_TOKEN 同值。
+      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
       # GP-404 合作方自助数据面：game-catalog 为角色权威（/me 判角色与归属）。
       # 容器内须用 compose DNS 名，etc yaml 的 localhost 默认只适用于裸机本地开发。
       GAMECATALOG_BASE_URL: "http://game-catalog:8890"
@@ -195,6 +198,11 @@ services:
       # SECRET 与 promotions 侧同值；未配置 URL = 不入队不分发。
       PROMOTIONS_URL: http://promotions:8902
       PROMOTIONS_REWARD_SECRET: "${PROMOTIONS_REWARD_SECRET:-tappi-promotions-reward-secret-2026}"
+      # GP-402 经营分析事实投递：PAID/退款事实 → data-panel /internal/events。
+      # 本地 outbox 补偿（DATA_PANEL_URL 未配置 = no-op）；令牌与 data-panel
+      # 侧 INTERNAL_TOKEN 同值。
+      DATA_PANEL_URL: http://data-panel:8896
+      DATA_PANEL_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
       # GP-307 S2S 订单事实查询（courier-adapter 售后工单归属校验的事实源）。
       # 未配置 = 恒 403（fail-closed）；与 courier-adapter 侧同值。
       INTERNAL_TOKEN: "${INTERNAL_TOKEN:-}"
@@ -217,6 +225,11 @@ services:
       GAMECATALOG_BASE_URL: http://game-catalog:8890
       # GP-302 S2S 评估签名密钥（与 payments 侧同值；生产必须覆盖默认值）
       PROMOTIONS_REWARD_SECRET: "${PROMOTIONS_REWARD_SECRET:-tappi-promotions-reward-secret-2026}"
+      # GP-402 经营分析事实投递：reward_granted 事实 → data-panel
+      # /internal/events。本地 outbox 补偿（DATA_PANEL_URL 未配置 = no-op）；
+      # 令牌与 data-panel 侧 INTERNAL_TOKEN 同值。
+      DATA_PANEL_URL: http://data-panel:8896
+      DATA_PANEL_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
     depends_on:
       - user-service
       - game-catalog
