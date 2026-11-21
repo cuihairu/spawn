@@ -341,6 +341,7 @@ func (l *RewardLogic) emitRewardGranted(req types.RewardEvaluateRequest, g *mode
 		ActivityId:  g.ActivityId,
 		OrderId:     req.OrderId,
 		AmountCents: req.PaidCents,
+		Currency:    req.Currency,
 		OccurredAt:  g.GrantedAt,
 	})
 }

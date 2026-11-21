@@ -96,9 +96,11 @@ type AnalyticsEventIn struct {
 	ActivityId  int64  `json:"activity_id,optional"`
 	OrderId     string `json:"order_id,optional"`
 	AmountCents int64  `json:"amount_cents,optional"`
-	Channel     string `json:"channel,optional"`     // GP-403 渠道标识（≤64 字符，白名单外不拒）
-	PartnerId   int64  `json:"partner_id,optional"`  // GP-404 合作方归属（产生方落定，行级隔离键）
-	OccurredAt  string `json:"occurred_at,optional"` // RFC3339；空则取摄入时刻
+	// Currency GP-402 币种（ISO 4217，≤8 字符；仅金额事件携带，空 = 平台默认币种）
+	Currency   string `json:"currency,optional"`
+	Channel    string `json:"channel,optional"`     // GP-403 渠道标识（≤64 字符，白名单外不拒）
+	PartnerId  int64  `json:"partner_id,optional"`  // GP-404 合作方归属（产生方落定，行级隔离键）
+	OccurredAt string `json:"occurred_at,optional"` // RFC3339；空则取摄入时刻
 }
 
 // IngestAnalyticsReq POST /internal/events 批量摄入（上限 500 条/批，
@@ -212,7 +214,10 @@ type AnalyticsReconciliationReq struct {
 }
 
 type AnalyticsReconciliationRow struct {
-	GameId      string `json:"game_id"`
+	GameId string `json:"game_id"`
+	// Currency 币种分桶（GP-402）：空币种按平台默认 CNY 归并，多币种下按币种
+	// 拆行，避免不同币种金额混算成一个 GMV。
+	Currency    string `json:"currency"`
 	PaidCount   int64  `json:"paid_count"`
 	PaidCents   int64  `json:"paid_cents"`
 	RefundCount int64  `json:"refund_count"`

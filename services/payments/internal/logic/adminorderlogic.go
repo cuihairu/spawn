@@ -171,6 +171,7 @@ func (l *AdminOrderLogic) emitRefundRequested(row *model.OrderProjection, action
 		PartnerId:   row.PartnerId,
 		OrderId:     row.OrderId,
 		AmountCents: amount,
+		Currency:    row.Currency,
 		OccurredAt:  time.Now().UTC().Format(time.RFC3339),
 	})
 }

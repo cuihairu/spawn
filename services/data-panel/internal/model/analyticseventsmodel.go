@@ -22,6 +22,9 @@ const (
 	EventOrderPaid       = "order_paid"
 	EventRefundRequested = "refund_requested"
 	EventRewardGranted   = "reward_granted"
+	// defaultEventCurrency 平台默认币种：currency 为空（存量/未携带币种的
+	// 事件）按此归并，避免历史行与现行行在对账/总览中拆成两行。
+	defaultEventCurrency = "CNY"
 )
 
 var eventTypes = map[string]bool{
@@ -41,6 +44,10 @@ type AnalyticsEvent struct {
 	ActivityId  int64  `json:"activity_id"`
 	OrderId     string `json:"order_id"`
 	AmountCents int64  `json:"amount_cents"`
+	// Currency GP-402 事实事件币种（ISO 4217，如 CNY）；仅携带金额的事件
+	// （order_paid/refund_requested/reward_granted）有值，空 = 平台默认币种。
+	// 跨境多币种 GMV 按此分桶，避免不同币种金额混算。
+	Currency string `json:"currency"`
 	// Channel GP-403 渠道标识（单层渠道 code，如 my-app.com 的推广渠道）。
 	// 注册/下载等事件可带渠道，用于按渠道看漏斗；空 = 未归因/自然流量。
 	Channel string `json:"channel"`
@@ -96,7 +103,10 @@ type ChannelEffectRow struct {
 // 付费/退款事件金额与笔数；与 payments 对账单（order_projection 事实）
 // 比对即可核对（两端均源自同一支付事实，事件侧仅做转发副本）。
 type ReconciliationRow struct {
-	GameId      string `json:"game_id"`
+	GameId string `json:"game_id"`
+	// Currency 币种分桶（GP-402）：空币种按平台默认 CNY 归并，多币种下按
+	// 币种拆行，避免不同币种金额混算成一个 GMV。
+	Currency    string `json:"currency"`
 	PaidCount   int64  `json:"paid_count"`
 	PaidCents   int64  `json:"paid_cents"`
 	RefundCount int64  `json:"refund_count"`
@@ -143,6 +153,7 @@ func (m *AnalyticsEventsModel) CreateAnalyticsTable() error {
 			activity_id INTEGER NOT NULL DEFAULT 0,
 			order_id VARCHAR(64) NOT NULL DEFAULT '',
 			amount_cents INTEGER NOT NULL DEFAULT 0,
+			currency VARCHAR(8) NOT NULL DEFAULT '',
 			channel VARCHAR(64) NOT NULL DEFAULT '',
 			partner_id INTEGER NOT NULL DEFAULT 0,
 			occurred_at VARCHAR(32) NOT NULL,
@@ -161,6 +172,7 @@ func (m *AnalyticsEventsModel) CreateAnalyticsTable() error {
 				activity_id BIGINT NOT NULL DEFAULT 0,
 				order_id VARCHAR(64) NOT NULL DEFAULT '',
 				amount_cents BIGINT NOT NULL DEFAULT 0,
+				currency VARCHAR(8) NOT NULL DEFAULT '',
 				channel VARCHAR(64) NOT NULL DEFAULT '',
 				partner_id BIGINT NOT NULL DEFAULT 0,
 				occurred_at VARCHAR(32) NOT NULL,
@@ -207,7 +219,10 @@ func (m *AnalyticsEventsModel) CreateAnalyticsTable() error {
 	if err := m.migrateChannelColumn(); err != nil {
 		return err
 	}
-	return m.migratePartnerColumn()
+	if err := m.migratePartnerColumn(); err != nil {
+		return err
+	}
+	return m.migrateCurrencyColumn()
 }
 
 // migrateChannelColumn 为存量 platform_events 补 channel 列（幂等；
@@ -254,6 +269,27 @@ func (m *AnalyticsEventsModel) migratePartnerColumn() error {
 	return nil
 }
 
+// migrateCurrencyColumn 为存量 platform_events 补 currency 列（GP-402
+// 跨境多币种 GMV；幂等，枚举失败跳过不阻断）。
+func (m *AnalyticsEventsModel) migrateCurrencyColumn() error {
+	has := false
+	const name = "currency"
+	if rows, err := m.db.Query(`PRAGMA table_info(platform_events)`); err == nil {
+		has = columnPresent(rows, 1, name)
+		rows.Close()
+	} else if rows, err := m.db.Query(`SHOW COLUMNS FROM platform_events`); err == nil {
+		has = columnPresent(rows, 0, name)
+		rows.Close()
+	}
+	if has {
+		return nil
+	}
+	if _, err := m.db.Exec(`ALTER TABLE platform_events ADD COLUMN currency VARCHAR(8) NOT NULL DEFAULT ''`); err != nil {
+		// 列已存在（并发）或方言差异：忽略，不阻断
+	}
+	return nil
+}
+
 // columnPresent 在列枚举结果里按列名位置判断某列是否已存在。
 // nameCol 为列名列的下标（PRAGMA table_info=1，SHOW COLUMNS=0）。
 func columnPresent(rows *sql.Rows, nameCol int, name string) bool {
@@ -290,18 +326,18 @@ func (m *AnalyticsEventsModel) IngestEvents(events []*AnalyticsEvent, now string
 		var res sql.Result
 		var err error
 		res, err = m.db.Exec(
-			`INSERT OR IGNORE INTO platform_events (event_id, event_type, user_id, game_id, activity_id, order_id, amount_cents, channel, partner_id, occurred_at, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			e.EventId, e.EventType, e.UserId, e.GameId, e.ActivityId, e.OrderId, e.AmountCents, e.Channel, e.PartnerId, occurred, now,
+			`INSERT OR IGNORE INTO platform_events (event_id, event_type, user_id, game_id, activity_id, order_id, amount_cents, currency, channel, partner_id, occurred_at, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			e.EventId, e.EventType, e.UserId, e.GameId, e.ActivityId, e.OrderId, e.AmountCents, e.Currency, e.Channel, e.PartnerId, occurred, now,
 		)
 		if err != nil {
 			if !strings.Contains(err.Error(), "syntax") && !strings.Contains(err.Error(), "near") {
 				return accepted, fmt.Errorf("写入平台事件失败: %w", err)
 			}
 			res, err = m.db.Exec(
-				`INSERT IGNORE INTO platform_events (event_id, event_type, user_id, game_id, activity_id, order_id, amount_cents, channel, partner_id, occurred_at, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				e.EventId, e.EventType, e.UserId, e.GameId, e.ActivityId, e.OrderId, e.AmountCents, e.Channel, e.PartnerId, occurred, now,
+				`INSERT IGNORE INTO platform_events (event_id, event_type, user_id, game_id, activity_id, order_id, amount_cents, currency, channel, partner_id, occurred_at, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				e.EventId, e.EventType, e.UserId, e.GameId, e.ActivityId, e.OrderId, e.AmountCents, e.Currency, e.Channel, e.PartnerId, occurred, now,
 			)
 			if err != nil {
 				return accepted, fmt.Errorf("写入平台事件失败: %w", err)
@@ -388,15 +424,20 @@ func (m *AnalyticsEventsModel) ActivityEffect(activityId int64) (*ActivityEffect
 
 // Reconciliation 账单核对聚合：期间内按游戏的付费/退款事件笔数与金额。
 func (m *AnalyticsEventsModel) Reconciliation(from, to string) ([]ReconciliationRow, error) {
+	// GP-402 币种分桶：currency 为空（存量事件/未携带币种）按平台默认币种
+	// 归并，避免历史行与现行行拆成两行；跨境事件按各自币种单独成行，
+	// 不同币种金额不混算成一个 GMV。
 	rows, err := m.db.Query(
 		`SELECT game_id,
+			COALESCE(NULLIF(currency, ''), '`+defaultEventCurrency+`') AS currency,
 			COALESCE(SUM(CASE WHEN event_type = '`+EventOrderPaid+`' THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN event_type = '`+EventOrderPaid+`' THEN amount_cents ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN event_type = '`+EventRefundRequested+`' THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN event_type = '`+EventRefundRequested+`' THEN amount_cents ELSE 0 END), 0)
 		 FROM platform_events
 		 WHERE event_type IN ('`+EventOrderPaid+`','`+EventRefundRequested+`') AND occurred_at >= ? AND occurred_at <= ?
-		 GROUP BY game_id ORDER BY game_id`,
+		 GROUP BY game_id, COALESCE(NULLIF(currency, ''), '`+defaultEventCurrency+`')
+		 ORDER BY game_id, COALESCE(NULLIF(currency, ''), '`+defaultEventCurrency+`')`,
 		from, to,
 	)
 	if err != nil {
@@ -406,7 +447,7 @@ func (m *AnalyticsEventsModel) Reconciliation(from, to string) ([]Reconciliation
 	out := make([]ReconciliationRow, 0, 8)
 	for rows.Next() {
 		var r ReconciliationRow
-		if err := rows.Scan(&r.GameId, &r.PaidCount, &r.PaidCents, &r.RefundCount, &r.RefundCents); err != nil {
+		if err := rows.Scan(&r.GameId, &r.Currency, &r.PaidCount, &r.PaidCents, &r.RefundCount, &r.RefundCents); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

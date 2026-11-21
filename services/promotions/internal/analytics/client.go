@@ -28,7 +28,10 @@ type Event struct {
 	ActivityId  int64  `json:"activity_id,optional"`
 	OrderId     string `json:"order_id,optional"`
 	AmountCents int64  `json:"amount_cents,optional"`
-	OccurredAt  string `json:"occurred_at,optional"`
+	// Currency GP-402 币种（ISO 4217，如 CNY/USD）：跨境多币种 GMV 按此分桶，
+	// 空 = data-panel 侧按平台默认币种归并。
+	Currency   string `json:"currency,optional"`
+	OccurredAt string `json:"occurred_at,optional"`
 }
 
 // Client 事实事件投递口（不向调用方返回错误）。

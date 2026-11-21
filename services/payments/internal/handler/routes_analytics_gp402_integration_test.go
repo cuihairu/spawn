@@ -30,6 +30,7 @@ type analyticsEvent struct {
 	GameId      string `json:"game_id"`
 	OrderId     string `json:"order_id"`
 	AmountCents int64  `json:"amount_cents"`
+	Currency    string `json:"currency"`
 }
 
 func adminClaims() utils.JWTClaims {
@@ -75,8 +76,9 @@ func TestPaymentsAnalyticsOrderPaidEvent(t *testing.T) {
 	}
 	got := ev[0]
 	if got.EventType != "order_paid" || got.EventId != "order_paid:"+orderID ||
-		got.GameId != "game-analytics" || got.OrderId != orderID || got.AmountCents != 1800 || got.UserId != 7 {
-		t.Fatalf("event = %+v, want order_paid/game-analytics/1800/user 7", got)
+		got.GameId != "game-analytics" || got.OrderId != orderID || got.AmountCents != 1800 || got.UserId != 7 ||
+		got.Currency != "CNY" {
+		t.Fatalf("event = %+v, want order_paid/game-analytics/1800/user 7/CNY", got)
 	}
 
 	// 回调重放：event_id 派生键不变 → 数据面板侧幂等只算一次（此处只验证
@@ -116,8 +118,8 @@ func TestPaymentsAnalyticsRefundRequestedEvent(t *testing.T) {
 	}
 	got := ev[0]
 	if got.EventType != "refund_requested" || got.EventId != "refund_requested:"+orderID+":REFUND" ||
-		got.AmountCents != 800 || got.OrderId != orderID || got.UserId != 7 {
-		t.Fatalf("event = %+v, want refund_requested/800/user 7", got)
+		got.AmountCents != 800 || got.OrderId != orderID || got.UserId != 7 || got.Currency != "CNY" {
+		t.Fatalf("event = %+v, want refund_requested/800/user 7/CNY", got)
 	}
 }
 

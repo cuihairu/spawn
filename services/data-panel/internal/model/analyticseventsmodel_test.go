@@ -201,6 +201,57 @@ func TestAnalyticsReconciliation(t *testing.T) {
 	}
 }
 
+// evCurrency 同 ev，但带币种（GP-402 跨境多币种 GMV 分桶）。
+func evCurrency(id, typ string, userId int64, gameId string, amount int64, currency, at string) *AnalyticsEvent {
+	return &AnalyticsEvent{
+		EventId: id, EventType: typ, UserId: userId, GameId: gameId,
+		AmountCents: amount, Currency: currency, OccurredAt: at,
+	}
+}
+
+// TestAnalyticsReconciliation_CurrencyBuckets GP-402 币种分桶口径：
+// 同一游戏按币种拆行（不同币种金额不混算），currency 为空（存量事件）
+// 按平台默认 CNY 归并，不单独成行。
+func TestAnalyticsReconciliation_CurrencyBuckets(t *testing.T) {
+	m := newTestAnalyticsModel(t)
+	batch := []*AnalyticsEvent{
+		// 存量事件（currency 空）→ 归并 CNY
+		evCurrency("cy-1", EventOrderPaid, 1, "game-a", 600, "", "2026-11-01T10:00:00Z"),
+		evCurrency("cy-2", EventRefundRequested, 1, "game-a", 200, "", "2026-11-02T10:00:00Z"),
+		// 显式 CNY → 与空币种同桶
+		evCurrency("cy-3", EventOrderPaid, 2, "game-a", 400, "CNY", "2026-11-03T10:00:00Z"),
+		// 跨境 USD → 单独成行
+		evCurrency("cy-4", EventOrderPaid, 3, "game-a", 900, "USD", "2026-11-04T10:00:00Z"),
+		evCurrency("cy-5", EventRefundRequested, 3, "game-a", 100, "USD", "2026-11-05T10:00:00Z"),
+	}
+	if _, err := m.IngestEvents(batch, "2026-11-06T00:00:00Z"); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	rows, err := m.Reconciliation("2026-11-01T00:00:00Z", "2026-11-30T23:59:59Z")
+	if err != nil {
+		t.Fatalf("reconciliation: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %+v, want 2 currency buckets", rows)
+	}
+	got := map[string]ReconciliationRow{}
+	for _, r := range rows {
+		got[r.Currency] = r
+	}
+	cny := got["CNY"]
+	if cny.PaidCount != 2 || cny.PaidCents != 1000 || cny.RefundCount != 1 || cny.RefundCents != 200 {
+		t.Fatalf("CNY bucket = %+v, want paid 2/1000 refund 1/200", cny)
+	}
+	usd := got["USD"]
+	if usd.PaidCount != 1 || usd.PaidCents != 900 || usd.RefundCount != 1 || usd.RefundCents != 100 {
+		t.Fatalf("USD bucket = %+v, want paid 1/900 refund 1/100", usd)
+	}
+	// 排序：同游戏按币种升序 → CNY 先于 USD
+	if rows[0].Currency != "CNY" || rows[1].Currency != "USD" {
+		t.Fatalf("bucket order = %s/%s, want CNY/USD", rows[0].Currency, rows[1].Currency)
+	}
+}
+
 // evChannel 同 ev，但带渠道标识（GP-403/F22 渠道归因口径）。
 func evChannel(id, typ string, userId int64, gameId string, amount int64, channel, at string) *AnalyticsEvent {
 	return &AnalyticsEvent{

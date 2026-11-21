@@ -85,6 +85,12 @@ func (l *IngestLogic) Ingest(req *types.IngestAnalyticsReq) (*types.IngestAnalyt
 		if len(channel) > 64 {
 			return nil, httperr.BadRequest("channel too long")
 		}
+		// GP-402 币种：ISO 4217 常规 3 位，列宽 8，trim 空白；空 = 平台默认
+		// （按 defaultEventCurrency 归并对账分桶）。
+		currency := strings.TrimSpace(in.Currency)
+		if len(currency) > 8 {
+			return nil, httperr.BadRequest("currency too long")
+		}
 		events = append(events, &model.AnalyticsEvent{
 			EventId:     eventId,
 			EventType:   in.EventType,
@@ -93,6 +99,7 @@ func (l *IngestLogic) Ingest(req *types.IngestAnalyticsReq) (*types.IngestAnalyt
 			ActivityId:  in.ActivityId,
 			OrderId:     in.OrderId,
 			AmountCents: in.AmountCents,
+			Currency:    currency,
 			Channel:     channel,
 			PartnerId:   in.PartnerId,
 			OccurredAt:  in.OccurredAt,

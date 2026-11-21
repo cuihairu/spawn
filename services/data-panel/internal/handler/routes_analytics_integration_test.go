@@ -194,6 +194,13 @@ func TestRoutes_AnalyticsIngestGuard(t *testing.T) {
 	if code, _ = doIngest(t, url, analyticsToken, `{"events":[]}`); code != http.StatusBadRequest {
 		t.Fatalf("empty batch = %d, want 400", code)
 	}
+	// GP-402 币种卫生：超长币种 → 400；正常币种随 order_paid 正常摄入
+	if code, _ = doIngest(t, url, analyticsToken, ingestEvents(`{"event_id":"g6","event_type":"order_paid","user_id":1,"amount_cents":100,"currency":"CNYCNYCNY"}`)); code != http.StatusBadRequest {
+		t.Fatalf("long currency = %d, want 400", code)
+	}
+	if code, body = doIngest(t, url, analyticsToken, ingestEvents(`{"event_id":"g7","event_type":"order_paid","user_id":1,"amount_cents":100,"currency":"USD"}`)); code != http.StatusOK || !strings.Contains(body, `"accepted":1`) {
+		t.Fatalf("currency ingest = %d body=%s, want accepted 1", code, body)
+	}
 	// 批量上限 500：501 条 → 400
 	many := make([]string, 501)
 	for i := range many {
@@ -374,5 +381,60 @@ func TestRoutes_AnalyticsIngestDisabled(t *testing.T) {
 	code, _ := doIngest(t, base+"/internal/events", analyticsToken, ingestEvents(gpEvent("d1", "register", 1, "2026-11-01T09:00:00Z")))
 	if code != http.StatusForbidden {
 		t.Fatalf("disabled ingest = %d, want 403", code)
+	}
+}
+
+// TestRoutes_AnalyticsReconciliation_Currency GP-402 币种分桶经路由层回读：
+// 空币种与 CNY 归并同桶，USD 单独成行；对账响应携带 currency 字段。
+func TestRoutes_AnalyticsReconciliation_Currency(t *testing.T) {
+	base, sign := newAnalyticsTestServer(t, analyticsToken)
+	admin := sign(7)
+	url := base + "/internal/events"
+
+	batch := []string{
+		`{"event_id":"rc-1","event_type":"order_paid","user_id":1,"game_id":"game-a","order_id":"o-1","amount_cents":700,"currency":"CNY","occurred_at":"2026-11-01T10:00:00Z"}`,
+		`{"event_id":"rc-2","event_type":"order_paid","user_id":2,"game_id":"game-a","order_id":"o-2","amount_cents":500,"occurred_at":"2026-11-02T10:00:00Z"}`,
+		`{"event_id":"rc-3","event_type":"order_paid","user_id":3,"game_id":"game-a","order_id":"o-3","amount_cents":900,"currency":"USD","occurred_at":"2026-11-03T10:00:00Z"}`,
+		`{"event_id":"rc-4","event_type":"refund_requested","user_id":3,"game_id":"game-a","order_id":"o-3","amount_cents":100,"currency":"USD","occurred_at":"2026-11-04T10:00:00Z"}`,
+	}
+	if code, body := doIngest(t, url, analyticsToken, ingestEvents(batch...)); code != http.StatusOK || !strings.Contains(body, `"accepted":4`) {
+		t.Fatalf("seed ingest = %d body=%s, want accepted 4", code, body)
+	}
+
+	status, body := doRaw(t, http.MethodGet, base+"/api/v1/analytics/reconciliation?from=2026-11-01&to=2026-11-30", admin, "")
+	if status != http.StatusOK {
+		t.Fatalf("reconciliation = %d body=%v", status, body)
+	}
+	if !strings.Contains(body, `"currency":"CNY"`) || !strings.Contains(body, `"currency":"USD"`) {
+		t.Fatalf("reconciliation missing currency buckets: %s", body)
+	}
+	var rec struct {
+		Items []struct {
+			GameId      string `json:"game_id"`
+			Currency    string `json:"currency"`
+			PaidCount   int64  `json:"paid_count"`
+			PaidCents   int64  `json:"paid_cents"`
+			RefundCount int64  `json:"refund_count"`
+			RefundCents int64  `json:"refund_cents"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &rec); err != nil || len(rec.Items) != 2 {
+		t.Fatalf("decode rec: %v body=%v", err, body)
+	}
+	got := map[string]struct {
+		PaidCount, PaidCents, RefundCount, RefundCents int64
+	}{}
+	for _, it := range rec.Items {
+		got[it.Currency] = struct {
+			PaidCount, PaidCents, RefundCount, RefundCents int64
+		}{it.PaidCount, it.PaidCents, it.RefundCount, it.RefundCents}
+	}
+	cny := got["CNY"]
+	if cny.PaidCount != 2 || cny.PaidCents != 1200 {
+		t.Fatalf("CNY bucket = %+v, want paid 2/1200", cny)
+	}
+	usd := got["USD"]
+	if usd.PaidCount != 1 || usd.PaidCents != 900 || usd.RefundCount != 1 || usd.RefundCents != 100 {
+		t.Fatalf("USD bucket = %+v, want paid 1/900 refund 1/100", usd)
 	}
 }

@@ -128,6 +128,7 @@ func (l *CallbackLogic) emitOrderPaid(rawBody []byte) {
 		PartnerId:   proj.PartnerId,
 		OrderId:     proj.OrderId,
 		AmountCents: proj.AmountCents,
+		Currency:    proj.Currency,
 		OccurredAt:  proj.PaidAt,
 	})
 }
