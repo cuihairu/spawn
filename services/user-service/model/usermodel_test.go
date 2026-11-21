@@ -548,3 +548,37 @@ func TestUserModel_ClosedDBErrors(t *testing.T) {
 		t.Fatalf("Create closed-db err = %v, want 创建用户失败", err)
 	}
 }
+
+// TestUserModel_PromoChannel GP-403 注册归因渠道持久化：UpdatePromoChannel
+// 写后三键缓存失效，FindOne/FindByUsername 读到新值；空串清除；Create 直接
+// 携带亦可落库。
+func TestUserModel_PromoChannel(t *testing.T) {
+	db := setupTestDB(t)
+	m := NewUserModel(db)
+	user := &User{Username: "ch-chan", Email: "chan@example.com", Password: "pw", PromoChannel: "kol-li"}
+	if err := m.Create(user); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if got, err := m.FindByUsername("ch-chan"); err != nil || got.PromoChannel != "kol-li" {
+		t.Fatalf("find by username channel = %q/%v, want kol-li", got.PromoChannel, err)
+	}
+
+	// 更新渠道：失效缓存后各读路径均见新值
+	if err := m.UpdatePromoChannel(user.Id, "streamer-z"); err != nil {
+		t.Fatalf("update channel: %v", err)
+	}
+	if got, err := m.FindOne(user.Id); err != nil || got.PromoChannel != "streamer-z" {
+		t.Fatalf("find one channel = %q/%v, want streamer-z", got.PromoChannel, err)
+	}
+	if got, err := m.FindByEmail("chan@example.com"); err != nil || got.PromoChannel != "streamer-z" {
+		t.Fatalf("find by email channel = %q/%v, want streamer-z", got.PromoChannel, err)
+	}
+
+	// 空串清除（自然流量/归因撤销）
+	if err := m.UpdatePromoChannel(user.Id, ""); err != nil {
+		t.Fatalf("clear channel: %v", err)
+	}
+	if got, _ := m.FindByUsername("ch-chan"); got.PromoChannel != "" {
+		t.Fatalf("channel after clear = %q, want empty", got.PromoChannel)
+	}
+}

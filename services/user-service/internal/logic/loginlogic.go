@@ -74,12 +74,15 @@ func (l *LoginLogic) Login(req *types.LoginRequest) (resp *types.ApiResponse, er
 	// GP-402/F24：活跃事实事件（登录即活跃心跳）。event_id 含日期，同一
 	// 用户当日重复登录只算一次活跃（留存口径）；异步投递，data-panel 慢/
 	// 挂时不拖慢登录响应。
+	// GP-403 首次活跃渠道归因：携带注册时持久化的归因渠道（空 = 自然流量），
+	// 渠道漏斗的活跃段据此可按渠道拆分；分析侧按 (user, 首次活跃日) 取首活锚点。
 	if l.svcCtx.AnalyticsSvc != nil && l.svcCtx.AnalyticsSvc.Enabled() {
 		now := time.Now().UTC()
 		l.svcCtx.AnalyticsSvc.EmitAsync(analytics.Event{
 			EventId:    "login:" + strconv.FormatInt(user.Id, 10) + ":" + now.Format("20060102"),
 			EventType:  analytics.EventLogin,
 			UserId:     user.Id,
+			Channel:    user.PromoChannel,
 			OccurredAt: now.Format(time.RFC3339),
 		})
 	}

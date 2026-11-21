@@ -129,6 +129,15 @@ func (l *RegisterLogic) Register(req *types.RegisterRequest) (resp *types.ApiRes
 	occurredAt := time.Now().UTC().Format(time.RFC3339)
 	channel := l.resolveChannel(req.ClickId, occurredAt, user.Id)
 
+	// GP-403 首次活跃渠道归因：注册归因渠道持久化到用户行（登录事实事件
+	// 读取后携带，支持渠道漏斗的首次活跃段）。空串（自然流量）不写；
+	// 写失败仅记日志，不影响注册结果。
+	if channel != "" {
+		if err := l.svcCtx.UserModel.UpdatePromoChannel(user.Id, channel); err != nil {
+			l.Errorf("持久化归因渠道失败 user_id=%d: %v", user.Id, err)
+		}
+	}
+
 	// GP-402/F24：注册事实事件（漏斗首阶段）。event_id 由用户 ID 派生，
 	// 同一用户重放只算一次注册；fire-and-forget 不影响注册结果。
 	if l.svcCtx.AnalyticsSvc != nil && l.svcCtx.AnalyticsSvc.Enabled() {

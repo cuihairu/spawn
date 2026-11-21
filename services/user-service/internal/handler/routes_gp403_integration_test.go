@@ -165,3 +165,70 @@ func TestRoutes_RegisterChannelResolveFailure(t *testing.T) {
 		t.Fatalf("register with failing attribution: status=%d raw=%s", status, raw)
 	}
 }
+
+// TestRoutes_LoginChannelAttribution GP-403 首次活跃渠道归因：注册携带
+// click_id 归因后渠道持久化到用户行，登录事实事件携带该渠道（渠道漏斗的
+// 活跃段可按渠道拆分）。登录事实经 EmitAsync 异步投递，轮询等待。
+func TestRoutes_LoginChannelAttribution(t *testing.T) {
+	stub := &gp403Stub{token: "s2s-token"}
+	catalog := stub.server()
+	defer catalog.Close()
+
+	var mu sync.Mutex
+	var got []map[string]interface{}
+	panel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var payload struct {
+			Events []map[string]interface{} `json:"events"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		got = append(got, payload.Events...)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer panel.Close()
+
+	base, svcCtx := newUserHandlerServer(t, gameStubHandler(t, nil))
+	client := integration.NewGameCatalogClient(catalog.URL, 2*time.Second)
+	client.SetInternalToken("s2s-token")
+	svcCtx.GameCatalogClient = client
+	svcCtx.AnalyticsSvc = analytics.NewClient(panel.URL, "panel-token", 1000, svcCtx.AnalyticsOutbox)
+
+	body := `{"username":"lane","email":"lane@example.com","password":"pw-lane","click_id":"click-1"}`
+	status, respBody, raw := do(t, http.MethodPost, base+"/auth/register", "", body)
+	if status != http.StatusOK || code(t, respBody) != 200 {
+		t.Fatalf("register: status=%d raw=%s", status, raw)
+	}
+	status, _, raw = do(t, http.MethodPost, base+"/auth/login", "", `{"username":"lane","password":"pw-lane"}`)
+	if status != http.StatusOK {
+		t.Fatalf("login: status=%d raw=%s", status, raw)
+	}
+
+	// 轮询等待异步 login 事实到达（EmitAsync goroutine）
+	var loginEv map[string]interface{}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		for _, ev := range got {
+			if ev["event_type"] == analytics.EventLogin {
+				loginEv = ev
+				break
+			}
+		}
+		mu.Unlock()
+		if loginEv != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("login event not delivered, got=%v", got)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if loginEv["channel"] != "kol-li" {
+		t.Fatalf("login channel = %v, want kol-li（注册归因渠道持久化后携带）", loginEv["channel"])
+	}
+}
