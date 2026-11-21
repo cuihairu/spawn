@@ -76,6 +76,8 @@ func RegisterGameProxyRoutes(server *rest.Server, serverCtx *svc.ServiceContext)
 		{Method: http.MethodPost, Path: "/partner/games/:id/reviews/:reviewId/reply", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/review-reports", Handler: h},
 		{Method: http.MethodPost, Path: "/admin/review-reports/:id/handle", Handler: h},
+		// GP-401 被移除评价恢复（管理面，鉴权在 game-catalog 侧）
+		{Method: http.MethodPost, Path: "/admin/reviews/:id/restore", Handler: h},
 		// GP-401 收藏游戏（F05）：收藏/取消幂等 + 我的收藏
 		{Method: http.MethodPost, Path: "/games/:id/favorite", Handler: h},
 		{Method: http.MethodDelete, Path: "/games/:id/favorite", Handler: h},

@@ -120,6 +120,7 @@ func toTypesUserReview(r *model.UserReview) *types.UserReviewView {
 		Id: r.Id, GameId: r.GameId, UserId: r.UserId, Rating: r.Rating,
 		Content: r.Content, DevReply: r.DevReply, DevReplyBy: r.DevReplyBy,
 		DevReplyAt: r.DevReplyAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		DeletedAt: r.DeletedAt,
 	}
 }
 

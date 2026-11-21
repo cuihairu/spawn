@@ -389,7 +389,8 @@ type UpdateGameReviewRequest struct {
 }
 
 // UserReviewView 玩家长评（公开列表视图；Rating 为作者当前评分，0=未评分；
-// DevReply 为开发者官方回复，单条覆盖式）。
+// DevReply 为开发者官方回复，单条覆盖式）。DeletedAt 非空 = 已被移除（仅
+// 管理恢复视图可见，公开列表不出现）。
 type UserReviewView struct {
 	Id         int64  `json:"id"`
 	GameId     string `json:"game_id"`
@@ -401,6 +402,7 @@ type UserReviewView struct {
 	DevReplyAt string `json:"dev_reply_at"`
 	CreatedAt  string `json:"created_at"`
 	UpdatedAt  string `json:"updated_at"`
+	DeletedAt  string `json:"deleted_at,omitempty"`
 }
 
 type GameReviewListRequest struct {
@@ -465,6 +467,11 @@ type ReviewReportsListResponse struct {
 type HandleReviewReportRequest struct {
 	Id     int64  `path:"id"`
 	Action string `json:"action"`
+}
+
+// RestoreReviewRequest 恢复被移除的评价（管理面，path id）。
+type RestoreReviewRequest struct {
+	Id int64 `path:"id"`
 }
 
 // ==================== GP-401 收藏游戏（F05） ====================

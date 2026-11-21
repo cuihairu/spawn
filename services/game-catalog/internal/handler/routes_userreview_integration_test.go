@@ -288,6 +288,43 @@ func TestRoutes_GameRatingsAndReviews(t *testing.T) {
 		t.Fatalf("bad action = %d, want 400", code)
 	}
 
+	// 5.5) GP-401 移除可恢复（软删）：player 不能恢复；admin 恢复回公开列表，
+	// 通知作者 8 已恢复；二次恢复 409；不存在 404；恢复后作者可改评。
+	if code, _ = doAuthed(t, "POST", base+"/admin/reviews/"+review8ID+"/restore", player7, ""); code != 403 {
+		t.Fatalf("player restore = %d, want 403", code)
+	}
+	code, body = doAuthed(t, "POST", base+"/admin/reviews/"+review8ID+"/restore", admin, "")
+	if code != 200 || !strings.Contains(body, `"id":`+review8ID) {
+		t.Fatalf("restore = %d body=%s", code, body)
+	}
+	if stub.Calls() != 4 {
+		t.Fatalf("restore notify = %d, want 4", stub.Calls())
+	}
+	raw, token = stub.At(3)
+	var restoreNotify struct {
+		UserIds []int64 `json:"user_ids"`
+		Type    string  `json:"type"`
+		Content string  `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &restoreNotify); err != nil || token != gp306Token ||
+		restoreNotify.Type != "review_restored" || len(restoreNotify.UserIds) != 1 ||
+		restoreNotify.UserIds[0] != 8 || !strings.Contains(restoreNotify.Content, "已恢复") {
+		t.Fatalf("restore notify = %s type=%s token=%s err=%v", raw, restoreNotify.Type, token, err)
+	}
+	code, body = doAuthed(t, "GET", base+"/games/"+gameID+"/reviews", "", "")
+	if code != 200 || !strings.Contains(body, `"total":3`) {
+		t.Fatalf("reviews after restore = %d body=%s", code, body)
+	}
+	if code, _ = doAuthed(t, "POST", base+"/admin/reviews/"+review8ID+"/restore", admin, ""); code != 409 {
+		t.Fatalf("restore twice = %d, want 409", code)
+	}
+	if code, _ = doAuthed(t, "POST", base+"/admin/reviews/999999/restore", admin, ""); code != 404 {
+		t.Fatalf("restore missing = %d, want 404", code)
+	}
+	if code, _ = doAuthed(t, "PUT", base+"/games/"+gameID+"/reviews/"+review8ID, player8, `{"content":"恢复后作者重新编辑的内容"}`); code != 200 {
+		t.Fatalf("author edit after restore = %d, want 200", code)
+	}
+
 	// 6) 开发者回复：自有游戏 200（列表可见）+ 审计；无关合作方 403；
 	//    无合作方绑定（player）403
 	code, body = doAuthed(t, "POST", base+"/partner/games/"+gameID+"/reviews/"+review7ID+"/reply", partner, `{"content":"感谢反馈，剧情优化在下一版本"}`)

@@ -103,6 +103,40 @@ func TestUserReview_CreateUpdateListDelete(t *testing.T) {
 	if total != 1 {
 		t.Fatalf("total after delete = %d, want 1", total)
 	}
+	// 软删语义：行仍在且 deleted_at 置位（内容保留供恢复/审计）
+	deleted, err := m.GetUserReview(r.Id)
+	if err != nil || deleted.DeletedAt == "" {
+		t.Fatalf("soft-deleted row = %+v err=%v, want DeletedAt set", deleted, err)
+	}
+
+	// 恢复：清软删标记、回公开列表；二次恢复不命中
+	if ok, err := m.RestoreUserReview(r.Id); err != nil || !ok {
+		t.Fatalf("restore = %v/%v, want true", ok, err)
+	}
+	restored, err := m.GetUserReview(r.Id)
+	if err != nil || restored.DeletedAt != "" {
+		t.Fatalf("restored row = %+v err=%v, want DeletedAt empty", restored, err)
+	}
+	_, total, _ = m.ListUserReviewsByGame("g-1", 20, 0)
+	if total != 2 {
+		t.Fatalf("total after restore = %d, want 2", total)
+	}
+	if ok, _ := m.RestoreUserReview(r.Id); ok {
+		t.Fatal("second restore must not hit (已恢复)")
+	}
+
+	// 作者重评复活：软删后同 (game,user) 再发评 → 覆盖正文并清软删标记
+	if err := m.DeleteUserReview(r.Id); err != nil {
+		t.Fatalf("re-delete: %v", err)
+	}
+	revived, err := m.CreateUserReview(&UserReview{GameId: "g-1", UserId: 7, Content: "重评：修复后重新发布的长评"})
+	if err != nil || revived.DeletedAt != "" || revived.Content != "重评：修复后重新发布的长评" || revived.Id != r.Id {
+		t.Fatalf("revive = %+v err=%v, want same id=%d with new content", revived, err, r.Id)
+	}
+	_, total, _ = m.ListUserReviewsByGame("g-1", 20, 0)
+	if total != 2 {
+		t.Fatalf("total after revive = %d, want 2", total)
+	}
 }
 
 func TestReviewReport_DedupAndDecide(t *testing.T) {

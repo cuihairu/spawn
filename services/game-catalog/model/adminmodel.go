@@ -223,7 +223,10 @@ type AdminStore interface {
 	GetUserReview(id int64) (*UserReview, error)
 	ListUserReviewsByGame(gameId string, limit, offset int) ([]*UserReview, int, error)
 	UpdateUserReview(id int64, content string) (*UserReview, error)
+	// DeleteUserReview 软删（deleted_at 置位，公开隐藏、内容保留）；
+	// RestoreUserReview 恢复被移除评价（返回是否命中已移除记录）。
 	DeleteUserReview(id int64) error
+	RestoreUserReview(id int64) (bool, error)
 	UpsertDevReply(id, by int64, content string) (*UserReview, error)
 	CreateReviewReport(r *ReviewReport) (*ReviewReport, bool, error)
 	GetReviewReport(id int64) (*ReviewReport, error)
@@ -456,6 +459,7 @@ func (m *AdminModel) CreateAdminTables() error {
 				dev_reply_at VARCHAR(32) NOT NULL DEFAULT '',
 				created_at VARCHAR(32) NOT NULL,
 				updated_at VARCHAR(32) NOT NULL,
+				deleted_at VARCHAR(32) NOT NULL DEFAULT '',
 				UNIQUE (game_id, user_id)
 			)`,
 			`CREATE TABLE IF NOT EXISTS game_user_reviews (
@@ -468,6 +472,7 @@ func (m *AdminModel) CreateAdminTables() error {
 				dev_reply_at VARCHAR(32) NOT NULL DEFAULT '',
 				created_at VARCHAR(32) NOT NULL,
 				updated_at VARCHAR(32) NOT NULL,
+				deleted_at VARCHAR(32) NOT NULL DEFAULT '',
 				UNIQUE KEY uq_user_review_game_user (game_id, user_id),
 				KEY idx_user_reviews_game (game_id)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
@@ -608,7 +613,11 @@ func (m *AdminModel) CreateAdminTables() error {
 		return err
 	}
 	// GP-306 开服计划列：存量 game_servers 表补 planned_open_at（幂等）
-	return m.migrateServerColumns()
+	if err := m.migrateServerColumns(); err != nil {
+		return err
+	}
+	// GP-401 软删列：存量 game_user_reviews 表补 deleted_at（幂等）
+	return m.migrateUserReviewColumns()
 }
 
 // serverMigrateColumns 存量 game_servers 表待补列（迁移与定义共用，顺序无关）。
@@ -657,6 +666,62 @@ func (m *AdminModel) migrateServerColumns() error {
 		}
 	}
 	return nil
+}
+
+// columnDef 待补列定义（列名 + 双方言同形 DDL）。
+type columnDef struct{ name, ddl string }
+
+// addMissingColumns 为存量表补齐缺列（幂等，缺列才 ALTER；SQLite PRAGMA
+// table_info → MySQL SHOW COLUMNS 枚举，无法枚举时跳过不阻断启动）。
+func (m *AdminModel) addMissingColumns(table string, cols []columnDef) error {
+	existing := map[string]bool{}
+	if rows, err := m.db.Query(`PRAGMA table_info(` + table + `)`); err == nil {
+		for rows.Next() {
+			var cid int
+			var name, ctype string
+			var notnull, pk int
+			var dflt sql.NullString
+			if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err == nil {
+				existing[name] = true
+			}
+		}
+		rows.Close()
+	} else {
+		rows, err2 := m.db.Query(`SHOW COLUMNS FROM ` + table)
+		if err2 != nil {
+			return nil // 无法枚举列信息时跳过迁移（不阻断启动）
+		}
+		for rows.Next() {
+			var field, ctype, nullb, key, extra string
+			var dflt sql.NullString
+			if err := rows.Scan(&field, &ctype, &nullb, &key, &dflt, &extra); err == nil {
+				existing[field] = true
+			}
+		}
+		rows.Close()
+	}
+	for _, c := range cols {
+		if existing[c.name] {
+			continue
+		}
+		if _, err := m.db.Exec(
+			`ALTER TABLE ` + table + ` ADD COLUMN ` + c.name + ` ` + c.ddl); err != nil {
+			// 列已存在（并发建表）或方言差异：忽略该列，不阻断
+			continue
+		}
+	}
+	return nil
+}
+
+// userReviewMigrateColumns 存量 game_user_reviews 待补列（GP-401 软删）。
+var userReviewMigrateColumns = []columnDef{
+	{"deleted_at", "VARCHAR(32) NOT NULL DEFAULT ''"},
+}
+
+// migrateUserReviewColumns 为存量 game_user_reviews 表补齐 GP-401 软删列
+// （幂等，缺列才 ALTER）。
+func (m *AdminModel) migrateUserReviewColumns() error {
+	return m.addMissingColumns("game_user_reviews", userReviewMigrateColumns)
 }
 
 // versionColumns 渠道包列（迁移与扫描共用定义，顺序即 SELECT 尾列）。

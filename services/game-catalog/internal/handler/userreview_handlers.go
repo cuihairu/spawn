@@ -142,6 +142,22 @@ func HandleReviewReportHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	}
 }
 
+func RestoreReviewHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.RestoreReviewRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewUserReviewLogic(r.Context(), svcCtx).RestoreReview(&req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
 func FavoriteGameHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req types.IdPathRequest

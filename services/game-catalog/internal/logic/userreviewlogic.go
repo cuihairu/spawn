@@ -149,7 +149,7 @@ func (l *UserReviewLogic) UpdateReview(req *types.UpdateGameReviewRequest) (*typ
 		l.Errorf("get review %d failed: %v", req.ReviewId, err)
 		return nil, newAPIError(http.StatusInternalServerError, "查询评价失败")
 	}
-	if current.GameId != req.Id || current.UserId != userID {
+	if current.GameId != req.Id || current.UserId != userID || current.DeletedAt != "" {
 		return nil, newAPIError(http.StatusNotFound, "评价不存在")
 	}
 	updated, err := l.svcCtx.AdminRepository.UpdateUserReview(req.ReviewId, content)
@@ -199,7 +199,7 @@ func (l *UserReviewLogic) ReportReview(req *types.ReportGameReviewRequest) (*typ
 		return nil, err
 	}
 	current, err := l.svcCtx.AdminRepository.GetUserReview(req.ReviewId)
-	if err != nil || current.GameId != req.Id {
+	if err != nil || current.GameId != req.Id || current.DeletedAt != "" {
 		return nil, newAPIError(http.StatusNotFound, "评价不存在")
 	}
 	r, created, err := l.svcCtx.AdminRepository.CreateReviewReport(&model.ReviewReport{
@@ -229,7 +229,7 @@ func (l *UserReviewLogic) ReplyReview(req *types.ReplyGameReviewRequest) (*types
 		return nil, err
 	}
 	current, err := l.svcCtx.AdminRepository.GetUserReview(req.ReviewId)
-	if err != nil || current.GameId != req.Id {
+	if err != nil || current.GameId != req.Id || current.DeletedAt != "" {
 		return nil, newAPIError(http.StatusNotFound, "评价不存在")
 	}
 	userID, _ := l.ctx.Value("user_id").(int64)
@@ -387,6 +387,40 @@ func (l *UserReviewLogic) HandleReviewReport(req *types.HandleReviewReportReques
 	return toTypesReviewReport(final), nil
 }
 
+// RestoreReview 恢复被移除的评价（管理面，platform_admin/operator）：清软删
+// 标记回公开列表，内容与开发者回复原样保留；已恢复/不存在 → 409/404。
+func (l *UserReviewLogic) RestoreReview(req *types.RestoreReviewRequest) (*types.UserReviewView, error) {
+	r, err := l.svcCtx.AdminRepository.GetUserReview(req.Id)
+	if err != nil {
+		if errors.Is(err, model.ErrUserReviewNotFound) {
+			return nil, newAPIError(http.StatusNotFound, "评价不存在")
+		}
+		l.Errorf("get review %d for restore failed: %v", req.Id, err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询评价失败")
+	}
+	if r.DeletedAt == "" {
+		return nil, newAPIError(http.StatusConflict, "评价未被移除，无需恢复")
+	}
+	ok, err := l.svcCtx.AdminRepository.RestoreUserReview(req.Id)
+	if err != nil {
+		l.Errorf("restore review %d failed: %v", req.Id, err)
+		return nil, newAPIError(http.StatusInternalServerError, "恢复评价失败")
+	}
+	if !ok {
+		// 并发：已被他人恢复或行已不存在
+		return nil, newAPIError(http.StatusConflict, "评价已恢复或不存在")
+	}
+	updated, err := l.svcCtx.AdminRepository.GetUserReview(req.Id)
+	if err != nil {
+		l.Errorf("reload review %d after restore failed: %v", req.Id, err)
+		return nil, newAPIError(http.StatusInternalServerError, "读取评价失败")
+	}
+	l.audit("review_restore", "game_user_review", formatInt(req.Id), toJSON(toTypesUserReview(r)), toJSON(toTypesUserReview(updated)))
+	// GP-401 恢复通知：告知作者评价已恢复（与移除通知对称；未配置 no-op）。
+	l.notifyReviewRestored(req.Id, updated.UserId)
+	return toTypesUserReview(updated), nil
+}
+
 // notifyReviewReportResult 向举报人扇出处置结论（community /internal/notifications，
 // 未配置时 no-op 跳过）。
 func (l *UserReviewLogic) notifyReviewReportResult(reviewId int64, reporters []int64, content string) {
@@ -407,6 +441,17 @@ func (l *UserReviewLogic) notifyReviewRemoved(reviewId, authorID int64) {
 	l.svcCtx.Notify.Publish(notify.Notification{
 		UserIds: []int64{authorID}, Type: "review_removed", TargetId: reviewId,
 		Content: "您的评价因收到有效举报，已被移除",
+	})
+}
+
+// notifyReviewRestored 向评价作者扇出评价被恢复通知（与移除通知对称）。
+func (l *UserReviewLogic) notifyReviewRestored(reviewId, authorID int64) {
+	if !l.svcCtx.Notify.Enabled() || authorID <= 0 {
+		return
+	}
+	l.svcCtx.Notify.Publish(notify.Notification{
+		UserIds: []int64{authorID}, Type: "review_restored", TargetId: reviewId,
+		Content: "您被移除的评价已恢复，可在游戏页重新查看",
 	})
 }
 

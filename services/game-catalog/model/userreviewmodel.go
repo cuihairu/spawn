@@ -29,7 +29,8 @@ type RatingSummary struct {
 }
 
 // UserReview 玩家长评（一游戏一评 UNIQUE(game_id,user_id)）；开发者回复
-// 单条直接挂列（官方回复覆盖式更新，不建楼）。
+// 单条直接挂列（官方回复覆盖式更新，不建楼）。DeletedAt 非空 = 已被管理
+// 处置移除（软删，公开列表隐藏、作者可重评复活、管理可恢复）。
 type UserReview struct {
 	Id         int64  `json:"id"`
 	GameId     string `json:"game_id"`
@@ -41,6 +42,7 @@ type UserReview struct {
 	DevReplyAt string `json:"dev_reply_at"`
 	CreatedAt  string `json:"created_at"`
 	UpdatedAt  string `json:"updated_at"`
+	DeletedAt  string `json:"deleted_at"`
 }
 
 // ReviewReport 长评举报（UNIQUE(reporter_id,review_id) 一人一评一报）。
@@ -128,18 +130,20 @@ func (m *AdminModel) GetUserRating(gameId string, userId int64) (int, error) {
 
 // ---- 玩家长评（F04） ----
 
-const userReviewColumns = "id, game_id, user_id, content, dev_reply, dev_reply_by, dev_reply_at, created_at, updated_at"
+const userReviewColumns = "id, game_id, user_id, content, dev_reply, dev_reply_by, dev_reply_at, created_at, updated_at, deleted_at"
 
 // scanUserReview 附加尾列 rating（列表 JOIN 评分表 COALESCE 0，单查不 JOIN）。
 func scanUserReview(r *UserReview) []any {
-	return []any{&r.Id, &r.GameId, &r.UserId, &r.Content, &r.DevReply, &r.DevReplyBy, &r.DevReplyAt, &r.CreatedAt, &r.UpdatedAt}
+	return []any{&r.Id, &r.GameId, &r.UserId, &r.Content, &r.DevReply, &r.DevReplyBy, &r.DevReplyAt, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt}
 }
 
 func scanUserReviewWithRating(r *UserReview) []any {
 	return append(scanUserReview(r), &r.Rating)
 }
 
-// CreateUserReview 发长评（一游戏一评，重复 409 语义由哨兵上抛）。
+// CreateUserReview 发长评（一游戏一评，重复 409 语义由哨兵上抛）。唯一键
+// 命中已移除的软删记录时复活该行（作者重评 = 覆盖正文并清软删标记，
+// created_at 保留首次时间），否则按 ErrUserReviewExists 上抛。
 func (m *AdminModel) CreateUserReview(r *UserReview) (*UserReview, error) {
 	now := nowUTC()
 	res, err := m.db.Exec(
@@ -148,6 +152,9 @@ func (m *AdminModel) CreateUserReview(r *UserReview) (*UserReview, error) {
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			if revived := m.reviveDeletedReview(r.GameId, r.UserId, r.Content, now); revived != nil {
+				return revived, nil
+			}
 			return nil, ErrUserReviewExists
 		}
 		return nil, err
@@ -160,6 +167,34 @@ func (m *AdminModel) CreateUserReview(r *UserReview) (*UserReview, error) {
 	r.CreatedAt = now
 	r.UpdatedAt = now
 	return r, nil
+}
+
+// reviveDeletedReview 复活软删评价（作者重评路径）：覆盖正文并清 deleted_at。
+// 命中未软删（0 行）时返回 nil，由调用方按 ErrUserReviewExists 处理。
+func (m *AdminModel) reviveDeletedReview(gameID string, userID int64, content, now string) *UserReview {
+	res, err := m.db.Exec(
+		`UPDATE game_user_reviews SET content = ?, deleted_at = '', updated_at = ?
+		 WHERE game_id = ? AND user_id = ? AND deleted_at <> ''`,
+		content, now, gameID, userID)
+	if err != nil {
+		return nil
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil
+	}
+	return m.getUserReviewByGameUser(gameID, userID)
+}
+
+// getUserReviewByGameUser 一游戏一评回读（复活路径复用唯一键定位）。
+func (m *AdminModel) getUserReviewByGameUser(gameID string, userID int64) *UserReview {
+	var r UserReview
+	if err := m.db.QueryRow(
+		`SELECT `+userReviewColumns+` FROM game_user_reviews WHERE game_id = ? AND user_id = ?`,
+		gameID, userID,
+	).Scan(scanUserReview(&r)...); err != nil {
+		return nil
+	}
+	return &r
 }
 
 // GetUserReview 按主键查（不带评分 JOIN；作者/归属校验用轻查询）。
@@ -177,18 +212,19 @@ func (m *AdminModel) GetUserReview(id int64) (*UserReview, error) {
 	return &r, nil
 }
 
-// ListUserReviewsByGame 公开长评列表（新在前，带作者评分 LEFT JOIN）。
+// ListUserReviewsByGame 公开长评列表（新在前，带作者评分 LEFT JOIN；只含
+// 未被移除的软删可见评价）。
 func (m *AdminModel) ListUserReviewsByGame(gameId string, limit, offset int) ([]*UserReview, int, error) {
 	var total int
 	if err := m.db.QueryRow(
-		`SELECT COUNT(*) FROM game_user_reviews WHERE game_id = ?`, gameId,
+		`SELECT COUNT(*) FROM game_user_reviews WHERE game_id = ? AND deleted_at = ''`, gameId,
 	).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	rows, err := m.db.Query(
-		`SELECT r.id, r.game_id, r.user_id, r.content, r.dev_reply, r.dev_reply_by, r.dev_reply_at, r.created_at, r.updated_at, COALESCE(g.rating, 0)
+		`SELECT r.id, r.game_id, r.user_id, r.content, r.dev_reply, r.dev_reply_by, r.dev_reply_at, r.created_at, r.updated_at, r.deleted_at, COALESCE(g.rating, 0)
 		 FROM game_user_reviews r LEFT JOIN game_ratings g ON g.game_id = r.game_id AND g.user_id = r.user_id
-		 WHERE r.game_id = ? ORDER BY r.id DESC LIMIT ? OFFSET ?`,
+		 WHERE r.game_id = ? AND r.deleted_at = '' ORDER BY r.id DESC LIMIT ? OFFSET ?`,
 		gameId, limit, offset,
 	)
 	if err != nil {
@@ -206,11 +242,12 @@ func (m *AdminModel) ListUserReviewsByGame(gameId string, limit, offset int) ([]
 	return out, total, rows.Err()
 }
 
-// UpdateUserReview 作者改评（content 覆盖，updated_at 前移）。
+// UpdateUserReview 作者改评（content 覆盖，updated_at 前移；已移除的评价
+// 不再可编辑——公开视图已隐藏，作者应重评复活而非编辑旧评）。
 func (m *AdminModel) UpdateUserReview(id int64, content string) (*UserReview, error) {
 	now := nowUTC()
 	res, err := m.db.Exec(
-		`UPDATE game_user_reviews SET content = ?, updated_at = ? WHERE id = ?`,
+		`UPDATE game_user_reviews SET content = ?, updated_at = ? WHERE id = ? AND deleted_at = ''`,
 		content, now, id,
 	)
 	if err != nil {
@@ -225,17 +262,36 @@ func (m *AdminModel) UpdateUserReview(id int64, content string) (*UserReview, er
 	return m.GetUserReview(id)
 }
 
-// DeleteUserReview 物理删除（管理处置「移除评价」）。
+// DeleteUserReview 管理处置「移除评价」：软删（置 deleted_at，公开列表隐藏、
+// 内容保留供恢复与审计；作者可重评复活、管理可恢复）。
 func (m *AdminModel) DeleteUserReview(id int64) error {
-	_, err := m.db.Exec(`DELETE FROM game_user_reviews WHERE id = ?`, id)
+	_, err := m.db.Exec(
+		`UPDATE game_user_reviews SET deleted_at = ? WHERE id = ? AND deleted_at = ''`,
+		nowUTC(), id,
+	)
 	return err
 }
 
-// UpsertDevReply 开发者回复（覆盖式：同评一条官方回复，可更新）。
+// RestoreUserReview 恢复被移除的评价（清软删标记）；返回是否命中一条已移除
+// 记录（未移除/不存在 → false）。
+func (m *AdminModel) RestoreUserReview(id int64) (bool, error) {
+	res, err := m.db.Exec(
+		`UPDATE game_user_reviews SET deleted_at = '', updated_at = ? WHERE id = ? AND deleted_at <> ''`,
+		nowUTC(), id,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
+
+// UpsertDevReply 开发者回复（覆盖式：同评一条官方回复，可更新；已移除的
+// 评价不再可回复）。
 func (m *AdminModel) UpsertDevReply(id, by int64, content string) (*UserReview, error) {
 	now := nowUTC()
 	if _, err := m.db.Exec(
-		`UPDATE game_user_reviews SET dev_reply = ?, dev_reply_by = ?, dev_reply_at = ?, updated_at = ? WHERE id = ?`,
+		`UPDATE game_user_reviews SET dev_reply = ?, dev_reply_by = ?, dev_reply_at = ?, updated_at = ? WHERE id = ? AND deleted_at = ''`,
 		content, by, now, now, id,
 	); err != nil {
 		return nil, err

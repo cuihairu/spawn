@@ -136,9 +136,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		rest.Route{Method: http.MethodGet, Path: "/admin/games/:id/versions", Handler: AdminListVersionsHandler(serverCtx)},
 		rest.Route{Method: http.MethodPost, Path: "/admin/games/:id/versions/:versionId/publish", Handler: PublishVersionHandler(serverCtx)},
 		rest.Route{Method: http.MethodPost, Path: "/admin/games/:id/versions/:versionId/revoke", Handler: RevokeVersionHandler(serverCtx)},
-		// GP-401 评价举报处置：驳回（评价保留）/移除（评价删除+同评未决结案）
+		// GP-401 评价举报处置：驳回（评价保留）/移除（评价软删+同评未决结案）
 		rest.Route{Method: http.MethodGet, Path: "/admin/review-reports", Handler: ListReviewReportsHandler(serverCtx)},
 		rest.Route{Method: http.MethodPost, Path: "/admin/review-reports/:id/handle", Handler: HandleReviewReportHandler(serverCtx)},
+		// GP-401 移除可恢复：被软删的长评恢复回公开列表（作者重评亦可复活）
+		rest.Route{Method: http.MethodPost, Path: "/admin/reviews/:id/restore", Handler: RestoreReviewHandler(serverCtx)},
 		rest.Route{Method: http.MethodGet, Path: "/admin/audit", Handler: ListAuditLogsHandler(serverCtx)},
 		// GP-403 单层渠道推广（F22）：渠道登记/列表/变更/启停与效果计数；
 		// 变更历史复用 /admin/audit?resource_type=promo_channel。

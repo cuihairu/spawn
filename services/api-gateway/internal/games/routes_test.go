@@ -123,6 +123,7 @@ func TestGameProxyRoutesGP401Passthrough(t *testing.T) {
 		{http.MethodPost, "/partner/games/g-1/reviews/7/reply", `{"content":"感谢反馈，下一版本优化。"}`},
 		{http.MethodGet, "/admin/review-reports?status=pending", ""},
 		{http.MethodPost, "/admin/review-reports/9/handle", `{"action":"dismiss"}`},
+		{http.MethodPost, "/admin/reviews/9/restore", ""},
 		{http.MethodPost, "/games/g-1/favorite", ""},
 		{http.MethodDelete, "/games/g-1/favorite", ""},
 		{http.MethodGet, "/me/favorites", ""},
