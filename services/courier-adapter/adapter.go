@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/tappi/tappi/services/courier-adapter/internal/config"
 	"github.com/tappi/tappi/services/courier-adapter/internal/handler"
@@ -41,6 +44,14 @@ func run() error {
 
 	ctx := svc.NewServiceContext(c)
 	handler.RegisterHandlers(server, ctx)
+
+	// GP-303 活跃上报 outbox 重投（进程信号 ctx；客户端 nil 时 NewRelay 返回
+	// nil，不启动扫描——与 user-service/payments 同款口径）。
+	bgCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if ctx.ActivityRelay != nil {
+		go ctx.ActivityRelay.Run(bgCtx)
+	}
 
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()

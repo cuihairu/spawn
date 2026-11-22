@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/tappi/tappi/services/courier-adapter/courier"
 	"github.com/tappi/tappi/services/courier-adapter/internal/svc"
@@ -43,6 +45,12 @@ func (l *SessionLogic) GameSession(spawnGameID, authHeader string, userID int64)
 	if err != nil {
 		return nil, err
 	}
+
+	// GP-303 回流判定源：游戏会话签发成功 = 账号×游戏活跃事实（登录行为），
+	// 上报 promotions（outbox 先落再同步首投，PROMOTIONS_URL 未配置 no-op；
+	// 上报成败不影响会话主流程）。
+	l.svcCtx.ActivityReport.Report(l.ctx, strconv.FormatInt(userID, 10), spawnGameID,
+		time.Now().UTC().Format(time.RFC3339Nano))
 
 	t, err := l.svcCtx.Tickets.Issue(userID, mapping.CourierGameId, mapping.Env, sess)
 	if err != nil {

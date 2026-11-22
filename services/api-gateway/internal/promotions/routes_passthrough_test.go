@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,5 +89,23 @@ func TestRegisterPromotionsRoutesGP301Passthrough(t *testing.T) {
 	}
 	if len(hits) != before+1 {
 		t.Fatalf("internal activities reached upstream: hits=%+v", hits[before+1:])
+	}
+
+	// GP-302/GP-303 服务间直连面：奖励评估（payments HMAC）与活跃上报
+	// （courier-adapter X-Internal-Token）都不经网关暴露。
+	for _, p := range []string{"/internal/reward-evaluations", "/internal/player-activity"} {
+		s2sBefore := len(hits)
+		resp, err := http.Post(base+p, "application/json", strings.NewReader(`{}`))
+		if err != nil {
+			t.Fatalf("POST %s via gateway: %v", p, err)
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			t.Fatalf("POST %s must not be proxied (status=200)", p)
+		}
+		if len(hits) != s2sBefore {
+			t.Fatalf("POST %s reached upstream: hits=%+v", p, hits[s2sBefore:])
+		}
 	}
 }

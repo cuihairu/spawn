@@ -174,6 +174,12 @@ type testEnv struct {
 
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
+	return newTestEnvCfg(t, nil)
+}
+
+// newTestEnvCfg 在标准桩之上允许测试改写配置（如接 promotions 活跃上报桩）。
+func newTestEnvCfg(t *testing.T, mutate func(*config.Config)) *testEnv {
+	t.Helper()
 
 	cour := &courierStub{}
 	// 预占空闲端口再释放（go-zero 不暴露 listener 句柄，与 game-catalog 同款）
@@ -200,6 +206,9 @@ func newTestEnv(t *testing.T) *testEnv {
 	cfg.UserService.BaseURL = httptest.NewServer(userStub()).URL
 	cfg.UserService.Timeout = 2000
 	cfg.Ticket.TTLSeconds = 120
+	if mutate != nil {
+		mutate(&cfg)
+	}
 
 	svcCtx := svc.NewServiceContext(cfg)
 	// 与 adapter.go 生产装配一致：注册 logic 层错误处理器（状态码生效）

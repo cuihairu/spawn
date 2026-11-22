@@ -134,6 +134,14 @@ type RewardEvaluateRequest struct {
 	CumulativeCents int64 `json:"cumulative_cents,optional"`
 }
 
+// GP-303 回流判定源上报（courier-adapter S2S，游戏会话签发成功后）：
+// 账号×游戏活跃事实。ActiveAt 缺省 = 受理时刻。
+type InternalPlayerActivityRequest struct {
+	AccountId string `json:"account_id"`
+	GameId    string `json:"game_id"`
+	ActiveAt  string `json:"active_at,optional"`
+}
+
 // RewardGrantView 奖励发放账本视图。
 type RewardGrantView struct {
 	Id              int64           `json:"id"`

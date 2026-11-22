@@ -176,6 +176,10 @@ services:
       # GP-307 售后工单 orderId 归属强校验：订单事实权威在 payments。
       # 令牌与 payments 侧 INTERNAL_TOKEN 同值；未配置 = 校验跳过（fail-open）。
       PAYMENTS_URL: http://payments:8898
+      # GP-303 回流判定源上报：游戏会话签发成功 = 账号×游戏活跃事实 →
+      # promotions /internal/player-activity（X-Internal-Token 同令牌）。
+      # 未配置 = 上报不发起（no-op），游戏会话主流程不受影响。
+      PROMOTIONS_URL: http://promotions:8902
       INTERNAL_TOKEN: "${INTERNAL_TOKEN:-}"
     depends_on:
       - user-service

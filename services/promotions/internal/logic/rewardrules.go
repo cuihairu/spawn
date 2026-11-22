@@ -95,7 +95,10 @@ func toInt64(v any) (int64, bool) {
 //     含档位序号）；退款后净额跌破已发档位 → 该档位发放置 revoked（评估
 //     时重算，不追回已撤销前的消耗）。
 //   - 回流：人群定向机制（audience.type + 评估请求 audience_type）GP-302
-//     已就位，回流人群标签判定源（登录行为数据）未建，见 todo。
+//     已就位；回流人群判定源（账号×游戏登录行为事实，courier-adapter 会话
+//     签发上报）已建，评估时按活动配置的缺席阈值（audience.returning_
+//     threshold_days）判定——曾活跃且距本次回流前已缺席 >= 阈值即命中。
+//     阈值缺省 30 天、运营按活动覆盖，机制层不写死业务数值（口径随配置）。
 
 // FirstPurchaseSpec 首充奖励规格。
 type FirstPurchaseSpec struct {
@@ -404,6 +407,50 @@ func periodCovers(cfg map[string]any, paidAt string) bool {
 		return false
 	}
 	return true
+}
+
+// 人群类型（audience.type）：空/all 全体；returning 回流（GP-303，判定源
+// 为账号×游戏活跃记录，评估时按缺席阈值计算标签再比对）。
+const (
+	AudienceAll       = "all"
+	AudienceReturning = "returning"
+
+	// defaultReturningThresholdDays 回流缺席阈值缺省（运营可按活动覆盖，
+	// audience.returning_threshold_days）；业务数值不在此写死，口径随配置。
+	defaultReturningThresholdDays = 30
+	// maxReturningThresholdDays 回流阈值上限（3650 天）。
+	maxReturningThresholdDays = 3650
+)
+
+// validateAudience 草稿校验人群配置。类型为空/all 全体；其它类型（含
+// returning、new_user 等）为不透明人群标签（matchTarget 按评估请求携带的
+// 标签字符串相等判定），不在此白名单；仅 returning 的缺席阈值须为
+// 1..3650 天（缺省 30，草稿即校验，发布快照同口径）。
+func validateAudience(aud map[string]any) error {
+	if aud == nil {
+		return nil
+	}
+	if t, _ := aud["type"].(string); t == AudienceReturning {
+		if v, ok := aud["returning_threshold_days"]; ok {
+			days, ok := toInt64(v)
+			if !ok || days < 1 || days > maxReturningThresholdDays {
+				return newAPIError(http.StatusBadRequest, "回流阈值须为 1-3650 天")
+			}
+		}
+	}
+	return nil
+}
+
+// returningThresholdDays 取活动快照的回流缺席阈值（缺省 30 天；非法回落
+// 缺省，fail-closed 语义由 evaluate 侧的命中判定承担）。
+func returningThresholdDays(cfg map[string]any) int {
+	aud := snapshotMap(cfg, "audience")
+	if v, ok := aud["returning_threshold_days"]; ok {
+		if d, ok := toInt64(v); ok && d >= 1 && d <= maxReturningThresholdDays {
+			return int(d)
+		}
+	}
+	return defaultReturningThresholdDays
 }
 
 // matchTarget 区服/渠道/游戏/人群命中判定。人群：audience.type 为空或

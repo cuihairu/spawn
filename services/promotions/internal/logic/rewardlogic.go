@@ -113,7 +113,7 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 			l.Errorf("parse snapshot activity=%d: %v", p.ActivityId, err)
 			continue
 		}
-		if err := matchTarget(cfg, req.GameId, req.ServerId, req.Channel, req.AudienceType); err != nil {
+		if err := matchTarget(cfg, req.GameId, req.ServerId, req.Channel, l.playerSegment(cfg, req)); err != nil {
 			continue
 		}
 		if !periodCovers(cfg, paidAt) {
@@ -323,6 +323,47 @@ func (l *RewardLogic) Evaluate(rawBody []byte, signature string) (*types.RewardE
 		"first_purchase": req.FirstPurchase, "cumulative_cents": req.CumulativeCents,
 	})
 	return resp, nil
+}
+
+// playerSegment 计算该活动视角下的玩家人群标签。普通定向（audience.type
+// 非 returning）直接用评估请求携带的 audience_type；回流（GP-303）由本服务
+// 判定源计算：曾活跃且距上次活跃已缺席 >= 活动阈值 → "returning"，否则空
+// （缺省不带标签 = matchTarget fail-closed 不命中）。判定源缺记录/解析失败
+// 一律不命中（宁可少发不误发）。
+func (l *RewardLogic) playerSegment(cfg map[string]any, req types.RewardEvaluateRequest) string {
+	if t, _ := snapshotMap(cfg, "audience")["type"].(string); t != AudienceReturning {
+		return req.AudienceType
+	}
+	label, err := l.returningLabel(req.AccountId, req.GameId, cfg)
+	if err != nil {
+		return ""
+	}
+	return label
+}
+
+// returningLabel 回流判定：账号×游戏活跃记录的上一次活跃时刻（report 时
+// previous=旧 last，故为「本次回流前」的最近活跃）距今 >= 阈值天 → 回流。
+func (l *RewardLogic) returningLabel(accountID, gameID string, cfg map[string]any) (string, error) {
+	act, err := l.svcCtx.ActivityPlayer.GetPlayerActivity(accountID, gameID)
+	if err == model.ErrPlayerActivityNotFound {
+		return "", nil // 无任何历史记录 = 首见，不是回流
+	}
+	if err != nil {
+		l.Errorf("get player activity account=%s game=%s failed: %v", accountID, gameID, err)
+		return "", newAPIError(http.StatusInternalServerError, "查询活跃记录失败")
+	}
+	if strings.TrimSpace(act.PreviousActiveAt) == "" {
+		return "", nil // 只有一次活跃 = 尚未缺席过
+	}
+	prev, err := time.Parse(time.RFC3339Nano, act.PreviousActiveAt)
+	if err != nil {
+		return "", nil // 解析失败 fail-closed：不判回流
+	}
+	threshold := time.Duration(returningThresholdDays(cfg)) * 24 * time.Hour
+	if time.Since(prev) >= threshold {
+		return AudienceReturning, nil
+	}
+	return "", nil
 }
 
 // emitRewardGranted GP-402/F24：向数据面板投 reward_granted 事实事件。

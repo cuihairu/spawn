@@ -19,7 +19,10 @@ type ServiceContext struct {
 	ActivityDB *model.ActivityModel
 	RewardDB   *model.RewardGrantModel
 	GiftPackDB *model.GiftPackModel
-	Notify     *notify.Client
+	// ActivityPlayer GP-303 回流判定源：账号×游戏活跃记录（courier-adapter
+	// 会话签发上报）。表始终建；未接上游时为空表（回流活动不命中，fail-closed）。
+	ActivityPlayer *model.PlayerActivityModel
+	Notify         *notify.Client
 	// AnalyticsSvc GP-402 经营分析事实投递口（data-panel /internal/events）；
 	// DATA_PANEL_URL 未配置时为 no-op。
 	AnalyticsSvc analytics.Client
@@ -59,6 +62,11 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := giftPackDB.CreateTables(); err != nil {
 		panic(fmt.Sprintf("create gift pack tables: %v", err))
 	}
+	// GP-303 回流判定源（表始终建：回流机制不依赖部署面接线，无记录即不命中）
+	playerActivityDB := model.NewPlayerActivityModel(db)
+	if err := playerActivityDB.CreateTables(); err != nil {
+		panic(fmt.Sprintf("create player activity tables: %v", err))
+	}
 	// GP-402 经营分析事实投递（DATA_PANEL_URL 未配置 = no-op）：失败先落
 	// outbox（幂等持久化），由 Relay 定时重投；outbox 表始终建（后续部署
 	// 补数据面板时免迁移），未启用时不写行。
@@ -92,6 +100,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		ActivityDB:      activityDB,
 		RewardDB:        rewardDB,
 		GiftPackDB:      giftPackDB,
+		ActivityPlayer:  playerActivityDB,
 		Notify:          notifyClient,
 		AnalyticsSvc:    analyticsClient,
 		AnalyticsRelay:  analyticsRelay,

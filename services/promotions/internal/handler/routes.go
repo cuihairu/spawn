@@ -64,6 +64,8 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 	server.AddRoutes([]rest.Route{
 		{Method: http.MethodPost, Path: "/internal/reward-evaluations", Handler: EvaluateRewardHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/internal/gift-pack-redemptions", Handler: RedeemGiftPackHandler(svcCtx)},
+		// GP-303 回流判定源上报（courier-adapter 会话签发成功）
+		{Method: http.MethodPost, Path: "/internal/player-activity", Handler: InternalPlayerActivityHandler(svcCtx)},
 	})
 
 	// GP-301 玩家侧活动列表（公开读，仅全体人群展示摘要）

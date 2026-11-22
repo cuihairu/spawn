@@ -77,8 +77,8 @@ func TestNewServiceContext_Success(t *testing.T) {
 	c.Notify.CommunityUrl = "http://127.0.0.1:1"
 	sc := NewServiceContext(c)
 	if sc == nil || sc.Auth == nil || sc.ActivityDB == nil || sc.RewardDB == nil ||
-		sc.GiftPackDB == nil || sc.Notify == nil || sc.AnalyticsSvc == nil ||
-		sc.AnalyticsRelay == nil || sc.AnalyticsOutbox == nil ||
+		sc.GiftPackDB == nil || sc.ActivityPlayer == nil || sc.Notify == nil ||
+		sc.AnalyticsSvc == nil || sc.AnalyticsRelay == nil || sc.AnalyticsOutbox == nil ||
 		sc.NotifyRelay == nil || sc.NotifyOutbox == nil {
 		t.Fatal("service context 装配不完整（存在空依赖）")
 	}
@@ -119,17 +119,25 @@ func TestNewServiceContext_PanicArms(t *testing.T) {
 		_ = model.NewActivityModel(db).CreateTables()
 		_ = model.NewRewardGrantModel(db).CreateTables()
 	}), "create gift pack tables")
-	// analytics outbox 建失败（预置前四表）
+	// 玩家活跃表建失败（预置活动+奖励+礼包表）
 	assertPanic(t, roCfg(t, func(db *sql.DB) {
 		_ = model.NewActivityModel(db).CreateTables()
 		_ = model.NewRewardGrantModel(db).CreateTables()
 		_ = model.NewGiftPackModel(db).CreateTables()
+	}), "create player activity tables")
+	// analytics outbox 建失败（预置前五表）
+	assertPanic(t, roCfg(t, func(db *sql.DB) {
+		_ = model.NewActivityModel(db).CreateTables()
+		_ = model.NewRewardGrantModel(db).CreateTables()
+		_ = model.NewGiftPackModel(db).CreateTables()
+		_ = model.NewPlayerActivityModel(db).CreateTables()
 	}), "create analytics outbox tables")
-	// notify outbox 建失败（预置前五表）
+	// notify outbox 建失败（预置前六表）
 	assertPanic(t, roCfg(t, func(db *sql.DB) {
 		_ = model.NewActivityModel(db).CreateTables()
 		_ = model.NewRewardGrantModel(db).CreateTables()
 		_ = model.NewGiftPackModel(db).CreateTables()
+		_ = model.NewPlayerActivityModel(db).CreateTables()
 		_ = model.NewAnalyticsOutboxModel(db).CreateTables()
 	}), "create notify outbox tables")
 }

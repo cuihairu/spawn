@@ -102,6 +102,10 @@ func validate(cfg *types.ActivityConfig) error {
 			return newAPIError(http.StatusBadRequest, "奖励类型须为 multiplier/first_purchase/cumulative_recharge")
 		}
 	}
+	// GP-303 回流人群配置草稿即校验（类型白名单 + 阈值 1..3650，缺省 30）
+	if err := validateAudience(cfg.Audience); err != nil {
+		return err
+	}
 	return nil
 }
 

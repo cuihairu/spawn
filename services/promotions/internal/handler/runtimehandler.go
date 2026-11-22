@@ -5,6 +5,9 @@ package handler
 // 游戏服侧 S2S 返回完整快照（含人群/触发明细，按调用方玩家上下文消费）。
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -47,5 +50,34 @@ func InternalListActivitiesHandler(svcCtx *svc.ServiceContext) http.HandlerFunc 
 		}
 		items := logic.ListRuntimeSnapshots(svcCtx, logx.WithContext(r.Context()), req.GameId, time.Now())
 		httpx.OkJsonCtx(r.Context(), w, types.RuntimeSnapshotListResponse{Items: items})
+	}
+}
+
+// InternalPlayerActivityHandler GP-303 回流判定源上报（S2S 专用不进网关）：
+// courier-adapter 游戏会话签发成功后上报账号×游戏活跃事实。X-Internal-Token
+// 先于解析严格比对，未配置恒 403（fail-closed，与活动快照同款）。
+func InternalPlayerActivityHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("X-Internal-Token")
+		if svcCtx.Config.Internal.Token == "" || token != svcCtx.Config.Internal.Token {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":"internal player activity disabled"}`))
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, fmt.Errorf("读取活跃上报失败: %w", err))
+			return
+		}
+		var req types.InternalPlayerActivityRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, fmt.Errorf("活跃上报解析失败"))
+			return
+		}
+		if err := logic.RecordPlayerActivity(svcCtx, logx.WithContext(r.Context()), &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, map[string]any{"recorded": true})
 	}
 }

@@ -53,4 +53,17 @@ type Config struct {
 	Ticket struct {
 		TTLSeconds int64 `json:",default=120"`
 	}
+
+	// Promotions GP-303 回流判定源上报（游戏会话签发成功 = 账号×游戏活跃
+	// 事实 → promotions /internal/player-activity）。BaseURL 空 = 未接促销
+	// 服务（no-op，上报不发起，游戏会话主流程不受影响）；Token 与
+	// promotions 侧 INTERNAL_TOKEN 同值。
+	Promotions struct {
+		BaseURL               string `json:",env=PROMOTIONS_URL,optional"`
+		InternalToken         string `json:",env=INTERNAL_TOKEN,optional"`
+		Timeout               int64  `json:",default=3000,env=PROMOTIONS_TIMEOUT"`
+		OutboxIntervalSeconds int64  `json:",default=30,env=PROMOTIONS_OUTBOX_INTERVAL_SECONDS"`
+		OutboxMaxAttempts     int64  `json:",default=10,env=PROMOTIONS_OUTBOX_MAX_ATTEMPTS"`
+		OutboxRetentionHours  int64  `json:",default=168,env=PROMOTIONS_OUTBOX_RETENTION_HOURS"`
+	}
 }
