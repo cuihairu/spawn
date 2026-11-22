@@ -12,13 +12,17 @@ import (
 
 // User 用户模型
 type User struct {
-	Id        int64          `json:"id"`
-	Username  string         `json:"username"`
-	Email     string         `json:"email"`
-	Password  string         `json:"-"` // 不返回密码
-	Nickname  sql.NullString `json:"nickname"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	Id       int64          `json:"id"`
+	Username string         `json:"username"`
+	Email    string         `json:"email"`
+	Password string         `json:"-"` // 不返回密码
+	Nickname sql.NullString `json:"nickname"`
+	// PromoChannel GP-403 注册归因渠道（单层渠道 code，来自推广点击解析）；
+	// 空 = 自然流量。注册时持久化，登录事实事件携带以支持首次活跃渠道归因。
+	// 列可空（存量/未归因行 NULL），读侧归一为空串，见 FindOne 的 NullString 扫描。
+	PromoChannel string    `json:"promo_channel,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // 缓存参数：进程内 TTL+LRU（设计决策见 docs/development-guide.md
@@ -43,6 +47,9 @@ type UserStore interface {
 	FindByUsername(username string) (*User, error)
 	FindByEmail(email string) (*User, error)
 	Update(user *User) error
+	// UpdatePromoChannel GP-403：持久化注册归因渠道（register 时写入，
+	// 登录事实事件读取以支持首次活跃渠道归因）。空串表示清除归因。
+	UpdatePromoChannel(id int64, channel string) error
 	CheckUsernameExists(username string) (bool, error)
 	CheckEmailExists(email string) (bool, error)
 }
@@ -72,15 +79,15 @@ func (m *UserModel) invalidateKeys(keys ...string) {
 // Create 创建用户
 func (m *UserModel) Create(user *User) error {
 	query := `
-		INSERT INTO users (username, email, password, nickname, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO users (username, email, password, nickname, promo_channel, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`
 
 	now := time.Now()
 	user.CreatedAt = now
 	user.UpdatedAt = now
 
-	result, err := m.db.Exec(query, user.Username, user.Email, user.Password, user.Nickname, user.CreatedAt, user.UpdatedAt)
+	result, err := m.db.Exec(query, user.Username, user.Email, user.Password, user.Nickname, user.PromoChannel, user.CreatedAt, user.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("创建用户失败: %w", err)
 	}
@@ -104,14 +111,15 @@ func (m *UserModel) FindByUsername(username string) (*User, error) {
 	}
 
 	query := `
-		SELECT id, username, email, password, nickname, created_at, updated_at
+		SELECT id, username, email, password, nickname, promo_channel, created_at, updated_at
 		FROM users WHERE username = ?
 	`
 
 	user := &User{}
+	var promo sql.NullString // promo_channel 可空（存量/未归因行 NULL），归一为空串
 	err := m.db.QueryRow(query, username).Scan(
 		&user.Id, &user.Username, &user.Email, &user.Password,
-		&user.Nickname, &user.CreatedAt, &user.UpdatedAt,
+		&user.Nickname, &promo, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -121,6 +129,7 @@ func (m *UserModel) FindByUsername(username string) (*User, error) {
 		return nil, fmt.Errorf("查询用户失败: %w", err)
 	}
 
+	user.PromoChannel = promo.String
 	m.cache.Set(key, *user)
 	return user, nil
 }
@@ -133,14 +142,15 @@ func (m *UserModel) FindByEmail(email string) (*User, error) {
 	}
 
 	query := `
-		SELECT id, username, email, password, nickname, created_at, updated_at
+		SELECT id, username, email, password, nickname, promo_channel, created_at, updated_at
 		FROM users WHERE email = ?
 	`
 
 	user := &User{}
+	var promo sql.NullString // promo_channel 可空（存量/未归因行 NULL），归一为空串
 	err := m.db.QueryRow(query, email).Scan(
 		&user.Id, &user.Username, &user.Email, &user.Password,
-		&user.Nickname, &user.CreatedAt, &user.UpdatedAt,
+		&user.Nickname, &promo, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -150,6 +160,7 @@ func (m *UserModel) FindByEmail(email string) (*User, error) {
 		return nil, fmt.Errorf("查询用户失败: %w", err)
 	}
 
+	user.PromoChannel = promo.String
 	m.cache.Set(key, *user)
 	return user, nil
 }
@@ -162,14 +173,15 @@ func (m *UserModel) FindOne(id int64) (*User, error) {
 	}
 
 	query := `
-		SELECT id, username, email, password, nickname, created_at, updated_at
+		SELECT id, username, email, password, nickname, promo_channel, created_at, updated_at
 		FROM users WHERE id = ?
 	`
 
 	user := &User{}
+	var promo sql.NullString
 	err := m.db.QueryRow(query, id).Scan(
 		&user.Id, &user.Username, &user.Email, &user.Password,
-		&user.Nickname, &user.CreatedAt, &user.UpdatedAt,
+		&user.Nickname, &promo, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -179,6 +191,7 @@ func (m *UserModel) FindOne(id int64) (*User, error) {
 		return nil, fmt.Errorf("查询用户失败: %w", err)
 	}
 
+	user.PromoChannel = promo.String
 	m.cache.Set(key, *user)
 	return user, nil
 }
@@ -209,6 +222,21 @@ func (m *UserModel) Update(user *User) error {
 		userKeyEmail(oldEmail),
 		userKeyEmail(user.Email), // 防 A→B→A 翻转后的旧映射残留
 	)
+	return nil
+}
+
+// UpdatePromoChannel 持久化注册归因渠道（GP-403）。写后失效用户三键缓存，
+// 后续登录经 FindByUsername 读到新值。
+func (m *UserModel) UpdatePromoChannel(id int64, channel string) error {
+	if _, err := m.db.Exec(`UPDATE users SET promo_channel = ? WHERE id = ?`, channel, id); err != nil {
+		return fmt.Errorf("更新归因渠道失败: %w", err)
+	}
+	u, err := m.FindOne(id)
+	if err == nil {
+		m.invalidateKeys(userKeyID(id), userKeyUsername(u.Username), userKeyEmail(u.Email))
+	} else {
+		m.invalidateKeys(userKeyID(id))
+	}
 	return nil
 }
 
@@ -249,6 +277,7 @@ func (m *UserModel) CreateUsersTable() error {
 			email TEXT NOT NULL UNIQUE,
 			password TEXT NOT NULL,
 			nickname TEXT,
+			promo_channel TEXT,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)
@@ -264,6 +293,7 @@ func (m *UserModel) CreateUsersTable() error {
 				email VARCHAR(100) NOT NULL UNIQUE,
 				password VARCHAR(255) NOT NULL,
 				nickname VARCHAR(100),
+				promo_channel VARCHAR(64),
 				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 				INDEX idx_username (username),
@@ -276,5 +306,51 @@ func (m *UserModel) CreateUsersTable() error {
 		}
 	}
 
+	// 存量库补列（GP-403 注册归因渠道）：CREATE TABLE IF NOT EXISTS 不会给
+	// 已有表加列，故补一次 ALTER（列已存在视为成功，不阻断启动）。
+	return m.migratePromoChannel()
+}
+
+// migratePromoChannel 为存量 users 补 promo_channel 列（GP-403 注册归因渠道
+// 持久化；幂等：SQLite PRAGMA / MySQL SHOW COLUMNS 枚举，枚举失败跳过不阻断）。
+func (m *UserModel) migratePromoChannel() error {
+	const name = "promo_channel"
+	has := false
+	if rows, err := m.db.Query(`PRAGMA table_info(users)`); err == nil {
+		has = columnPresent(rows, 1, name)
+		rows.Close()
+	} else if rows, err := m.db.Query(`SHOW COLUMNS FROM users`); err == nil {
+		// MySQL：SHOW COLUMNS（第 1 列为列名）
+		has = columnPresent(rows, 0, name)
+		rows.Close()
+	}
+	if has {
+		return nil
+	}
+	if _, err := m.db.Exec(`ALTER TABLE users ADD COLUMN promo_channel VARCHAR(64)`); err != nil {
+		// 列已存在（并发）或方言差异：忽略，不阻断
+	}
 	return nil
+}
+
+// columnPresent 遍历列枚举结果集，判断指定列是否存在（读第 idx 列为列名）。
+func columnPresent(rows *sql.Rows, idx int, name string) bool {
+	for rows.Next() {
+		cols, err := rows.Columns()
+		if err != nil || idx >= len(cols) {
+			return false
+		}
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return false
+		}
+		if s, ok := vals[idx].(string); ok && s == name {
+			return true
+		}
+	}
+	return false
 }

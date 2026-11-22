@@ -1,0 +1,8 @@
+# 根构建上下文瘦身（services/*/Dockerfile 均以仓库根为 context）。
+.git
+.github
+docs
+apps
+deploy
+node_modules
+**/node_modules

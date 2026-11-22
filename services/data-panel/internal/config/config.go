@@ -18,4 +18,28 @@ type Config struct {
 	Auth struct {
 		JWTSecret string `json:",env=JWT_SECRET"`
 	}
+
+	// Internal S2S 摄入口令（GP-402）：/internal/events 事件摄入按
+	// X-Internal-Token 严格比对，空令牌（含未配置）时摄入端点整体
+	// 拒绝（fail-closed，不留默认口令）。
+	Internal struct {
+		Token string `json:",env=INTERNAL_TOKEN,optional"`
+	}
+
+	// Analytics 经营分析查询权限（GP-402）：漏斗/留存/活动效果/账单核对
+	// 仅对 AdminUserIds 名单内的用户开放（社区 Moderation.AdminUserIds 同款）。
+	// 名单为逗号分隔串（"1" 或 "1,2"）。用 string 而非 []string：go-zero 对
+	// 无 yaml 同名字段的 []string 解析 env 会报 type mismatch（expect slice,
+	// actual number），单值 "1" 直接起不来（同 game-catalog Auth.AdminUserIds）。
+	Analytics struct {
+		AdminUserIds string `json:",env=ADMIN_USER_IDS,optional"`
+	}
+
+	// GameCatalog 角色权威（GP-404 合作方自助数据面）：合作方自助端点经
+	// game-catalog GET /me 判角色与 partner 归属（单一事实源，不复制角色
+	// 数据）。BaseURL 未配置时该端点整体 fail-closed（502）。
+	GameCatalog struct {
+		BaseURL string `json:",optional,env=GAMECATALOG_BASE_URL"`
+		Timeout int64  `json:",default=5000,optional,env=GAMECATALOG_TIMEOUT"`
+	}
 }

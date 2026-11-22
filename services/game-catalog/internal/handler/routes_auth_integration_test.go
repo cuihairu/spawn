@@ -24,6 +24,20 @@ const testJWTSecret = "routes-integration-secret"
 // newAuthedTestServer 启动真实的 go-zero rest 服务器（含 RegisterHandlers 路由注册），
 // 返回 base URL 与签发令牌的工具函数。端口取自空闲端口，数据目录隔离到临时目录。
 func newAuthedTestServer(t *testing.T) (string, func(claims utils.JWTClaims) string) {
+	return newAuthedTestServerConfig(t, nil)
+}
+
+// newAuthedTestServerConfig 同 newAuthedTestServer，但允许测试侧微调 config
+// （GP-403 用：设置 Internal.Token 以覆盖 S2S 守卫的通过与拒绝两侧）。
+func newAuthedTestServerConfig(t *testing.T, mutate func(*config.Config)) (string, func(claims utils.JWTClaims) string) {
+	base, sign, _ := newAuthedTestServerSvc(t, mutate)
+	return base, sign
+}
+
+// newAuthedTestServerSvc 同 newAuthedTestServerConfig，但额外返回 ServiceContext
+// 供测试侧重装事件投递面（GP-402 outbox 用：handler 持指针，启动后改字段
+// 依旧生效）。
+func newAuthedTestServerSvc(t *testing.T, mutate func(*config.Config)) (string, func(claims utils.JWTClaims) string, *svc.ServiceContext) {
 	t.Helper()
 
 	// 与 game.go 生产装配一致：注册 logic 层错误处理器（404/500 状态码生效）
@@ -46,7 +60,10 @@ func newAuthedTestServer(t *testing.T) (string, func(claims utils.JWTClaims) str
 	c.Package.Dir = t.TempDir() + "/packages"
 	c.Auth.JWTSecret = testJWTSecret
 	// 引导 user 1 为 platform_admin，覆盖 GP-103 角色守卫与后台链路
-	c.Auth.AdminUserIds = []string{"1"}
+	c.Auth.AdminUserIds = "1"
+	if mutate != nil {
+		mutate(&c)
+	}
 
 	svcCtx := svc.NewServiceContext(c)
 	server := rest.MustNewServer(c.RestConf)
@@ -81,7 +98,7 @@ func newAuthedTestServer(t *testing.T) (string, func(claims utils.JWTClaims) str
 		}
 		return signed
 	}
-	return base, sign
+	return base, sign, svcCtx
 }
 
 func validRouteClaims() utils.JWTClaims {

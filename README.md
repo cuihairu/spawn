@@ -12,11 +12,15 @@ The [nightly rolling Release](https://github.com/cuihairu/spawn/releases/tag/nig
 
 | Artifact | Contents |
 | --- | --- |
-| `spawn-<service>-linux-amd64` ×7 | Binaries for seven services — api-gateway, community, content-service, data-panel, game-catalog, user-service, user-service-rpc (CGO build with embedded SQLite driver); run directly after `chmod +x`. Config lives in each service's `etc/` directory in the repo; inject a MySQL connection string via `DATASOURCE` to switch storage. realtime-hub is not shipped as a nightly binary — run it from source or via `docker compose` |
+| `spawn-<service>-linux-amd64` ×7 | Binaries for seven services — api-gateway, community, content-service, data-panel, game-catalog, user-service, user-service-rpc (CGO builds; five of the seven — community, content-service, data-panel, game-catalog and user-service — embed the SQLite driver); run directly after `chmod +x`. Config lives in each service's `etc/` directory in the repo; inject a MySQL connection string via `DATASOURCE` to switch storage. realtime-hub, courier-adapter, payments and promotions are not shipped as nightly binaries — run them from source or via `docker compose` |
 | `spawn-web-client-linux-amd64.tar.gz` | Static build of the web site; serve it from any static server after extracting |
+| `spawn-gateway-nightly-linux-{amd64,arm64}.deb` | Debian packages for api-gateway: install with `sudo dpkg -i`, a systemd unit and `/etc/spawn-gateway/gateway-api.yaml` ship inside, then `systemctl start spawn-gateway`; uninstall with `dpkg -r spawn-gateway` |
+| `spawn-gateway-nightly-linux-{amd64,arm64}.rpm` | RPM packages for api-gateway: install with `sudo rpm -i`, same unit and config layout; uninstall with `rpm -e spawn-gateway` |
+| `spawn-gateway-nightly-windows-amd64.zip` | Native Windows executable for api-gateway; extract and run directly, config from `services/api-gateway/etc/gateway-api.yaml` in this repo |
+| `spawn-gateway-nightly-windows-amd64.msi` | Windows installer for api-gateway; places the executable and a sample config under `Program Files\spawn-gateway` |
 | `SHA256SUMS.txt` | Checksums for all assets; verify with `sha256sum -c SHA256SUMS.txt` in the same directory |
 
-Mobile APKs and service container images are not part of the nightly delivery (Android packaging depends on a local gradle flow; build images yourself from `services/*/Dockerfile`). No stable release yet; documentation site at <https://cuihairu.github.io/spawn/>.
+Native installers cover api-gateway only: it has no CGO SQLite driver dependency (user-service-rpc is the other service without one), so it cross-compiles statically for both Linux architectures and Windows. The other six services ship as amd64 binaries and have no installer packages. Package versions are `0.0.0~nightly<date>.<sha7>` (deb) and `0.0.0-nightly<date>.<sha7>` (rpm) — rolling build marks, not releases. The arm64 rpm carries `aarch64` architecture metadata and the arm64 deb carries `arm64`, so each architecture installs normally. Mobile APKs and service container images are not part of the nightly delivery (Android packaging depends on a local gradle flow; build images yourself from `services/*/Dockerfile`). No stable release yet; documentation site at <https://cuihairu.github.io/spawn/>.
 
 ## Monorepo Layout
 
@@ -52,7 +56,7 @@ Mobile APKs and service container images are not part of the nightly delivery (A
 ```
 
 > The tree above is a roadmap. For actual status see `services/README.md` and `apps/README.md`:
-> the eight services plus web-client and mobile-app have code; matchmaking/crawler-jobs,
+> the eleven services plus web-client and mobile-app have code; matchmaking/crawler-jobs,
 > mini-program, and admin-console have not been created yet; `platform/` (infra/devops/observability)
 > and `packages/` (ui-kit/data-models/shared-utils) are README-only placeholders — only `packages/config`
 > has landed (see `packages/README.md` and `platform/README.md`).
@@ -73,6 +77,9 @@ Ports and metric details are documented in the "Monitoring & Metrics (Prometheus
 | community | 8892 | 9094 |
 | api-gateway | 8800 | 9095 |
 | data-panel | 8896 | 9097 |
+| courier-adapter | 8897 | 9098 |
+| payments | 8898 | 9099 |
+| promotions | 8902 | 9103 |
 | user-service-rpc | 8080 (gRPC) | 9096 |
 
 ### Module Responsibilities at a Glance
@@ -157,13 +164,13 @@ Guides, news, and comments service; go-zero implementation with SQLite/MySQL dua
 - Port: 8891
 
 #### 4. API Gateway (`services/api-gateway`)
-Unified access layer combining BFF aggregation and a five-way reverse proxy; only one unified API surface is exposed (all mobile-app calls go through this single address).
+Unified access layer combining BFF aggregation and a nine-way reverse proxy; only one unified API surface is exposed (all mobile-app calls go through this single address).
 - `POST /auth/login` - User login (proxied to user-service)
 - `GET /games/featured` - Featured games
 - `GET /users/:id/recommendations` - User recommendations
 - `GET /home/feed` - Home feed aggregation (featured games / hot posts / topics / guides, four concurrent calls with field trimming + per-upstream failure degradation)
 - `GET /s/p/:id` - Post share-card jump page (og meta + `spawn://` deep link + web entry)
-- Reverse proxy: community (posts/topics/follows/likes/post comments/notifications), content (guides/comments), users (register/profile), games (list/detail), data-panel (match stats) — full route coverage
+- Reverse proxy: community (posts/topics/follows/likes/post comments/notifications/direct messages), content (guides/comments), users (register/profile/login), games (list/detail/admin/partner), data-panel (match stats), courier-adapter (game sessions/redemption/support tickets/admin mapping), payments (orders/products/deliveries/statements/coupons/callbacks), promotions (activities/gift packs) — full route coverage
 - Port: 8800
 
 #### 5. Data Panel Service (`services/data-panel`)
@@ -191,7 +198,16 @@ WebSocket hub: JWT-authenticated `/ws` upgrade, `/internal/publish` event fanout
 #### 8. User Service RPC (`services/user-service-rpc`)
 Cluster-internal gRPC port of the user domain (etcd service registration), called by other services and not exposed through the gateway. Business port 8080, /metrics 9096.
 
-#### 9. Web Client (`apps/web-client`)
+#### 9. Courier Adapter Service (`services/courier-adapter`)
+Go-zero adapter between spawn and the Courier game-server side: platform account binding, game login/ticket verification/role mapping (GP-201), sessions, redemption codes, official announcements and support tickets (GP-307). Proxied through the gateway as a route group; not shipped as a nightly binary. Port: 8897, /metrics 9098.
+
+#### 10. Payments Service (`services/payments`)
+Payment access for the mobile entry (GP-202): product configuration, orders, refunds, vendor statements (GP-205), delivery configuration and redelivery (GP-203), coupons (GP-305), partner self-service statements (GP-404), and channel callbacks. SQLite/MySQL dual driver; proxied through the gateway; not shipped as a nightly binary. Port: 8898, /metrics 9099.
+
+#### 11. Promotions Service (`services/promotions`)
+Activities and gift packs (GP-301/302/303/304): activity state machine with immutable version snapshots, runtime reward evaluation (HMAC-verified S2S from payments), first-charge/cumulative-charge rules, gift-pack code inventory and claims, and activity messages on publish (GP-306). SQLite/MySQL dual driver; proxied through the gateway; not shipped as a nightly binary. Port: 8902, /metrics 9103.
+
+#### 12. Web Client (`apps/web-client`)
 React 19 + Vite + React Router 7 frontend. Pages: home (login & recommendations), discover (one-request home feed), games library + game detail, guide list/detail/editor, community (post feed with latest/hot/my-posts/followed modes + keyword search), post detail, notifications (nav bell with unread badge + `/notifications` center: like/comment/reply/follow, mark-all-read), profile, match-stats dashboard (KPI cards + per-game table via the gateway). Guides support "All/Mine" filtering with draft and published save states; guide comments support nested replies and likes; posts support like/share/comments (reply with parent comment, author-only delete); the games library offers keyword search, genre filtering, and pagination, with game cards linking to detail pages that surface related guides. Browsing works without login; write operations require login. Dark theme, responsive layout.
 
 ### Technical Highlights
@@ -201,10 +217,11 @@ fetch game data for recommendations, with failure fallback; content-service fetc
 from game-catalog with circuit breaking, retries, and Prometheus metrics. Game repository and
 user recommendation logic have unit tests. `docker-compose.yaml` brings up all services with one
 command, and each service directory has its own `Dockerfile` (user-service-rpc has none; it is
-cluster-internal). The five SQLite-backed services (user-service, game-catalog, content-service,
-community, data-panel) run on the SQLite/MySQL dual driver (a DSN containing `file:` uses
-SQLite; inject a MySQL connection string in production), with in-process TTL+LRU read caching;
-concurrency safety is guaranteed by connection-pool clamping and the cache itself. user-service-rpc
+cluster-internal). Eight services — the core five (user-service, game-catalog, content-service,
+community, data-panel) plus courier-adapter, payments and promotions — run on the SQLite/MySQL
+dual driver (a DSN containing `file:` uses SQLite; inject a MySQL connection string in
+production); the core five also keep in-process TTL+LRU read caching, with concurrency safety
+guaranteed by connection-pool clamping and the cache itself. user-service-rpc
 is a gRPC service without a storage layer, and realtime-hub is stateless (in-memory registry).
 
 ### Quick Start
@@ -222,6 +239,9 @@ go run services/user-service/user.go -f services/user-service/etc/user-api.yaml
 go run services/content-service/content.go -f services/content-service/etc/content-api.yaml
 go run services/community/community.go -f services/community/etc/community-api.yaml
 go run services/data-panel/data-panel.go -f services/data-panel/etc/data-panel-api.yaml
+go run services/courier-adapter/adapter.go -f services/courier-adapter/etc/adapter-api.yaml
+go run services/payments/payments.go -f services/payments/etc/payments-api.yaml
+go run services/promotions/promotions.go -f services/promotions/etc/promotions-api.yaml
 go run services/realtime-hub/realtime-hub.go -f services/realtime-hub/etc/realtime-hub.yaml
 go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
 
@@ -240,6 +260,9 @@ cd apps/web-client && npm install && npm run dev
 | community | 8892 | Community service (posts/topics/follows/likes) | Done |
 | data-panel | 8896 | Match-stats panel service (ingest + query) | Done |
 | realtime-hub | 8893 | WebSocket hub (publish fanout, presence, signaling) | Done |
+| courier-adapter | 8897 | Courier game-server adapter (sessions/redemption/support) | Done |
+| payments | 8898 | Payments (orders/delivery/statements/coupons) | Done |
+| promotions | 8902 | Promotions (activities/gift packs/reward evaluation) | Done |
 | user-service-rpc | 8080 (gRPC) | User service RPC (cluster-internal) | Done |
 | web-client | 5173 | Web frontend | Done |
 | mobile-app | — | React Native (Expo) client | In progress — M0–M3 + M4 milestone 1 landed (see `docs/mobile_plan.md`) |

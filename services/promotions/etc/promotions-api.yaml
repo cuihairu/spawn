@@ -1,0 +1,27 @@
+Name: promotions-api
+Host: 0.0.0.0
+Port: 8902
+
+# 接入域数据库：DSN 含 file:/.db 走 SQLite（默认本地文件，零配置），
+# 生产用 MySQL 连接串 + DATASOURCE 环境变量覆盖（与 game-catalog 同款探测）。
+MySQL:
+  DataSource: "file:data/promotions.db"
+
+# 平台 JWT 校验密钥（与 user-service 共享；生产环境用 JWT_SECRET 覆盖）
+Auth:
+  JWTSecret: "tappi-user-service-jwt-secret-key-2024"
+
+# 平台角色权威（读 /me 判定活动配置管理面）
+GameCatalog:
+  BaseURL: "http://localhost:8890"
+  Timeout: 5000
+
+Prometheus:
+  Host: 0.0.0.0
+  Port: 9103
+
+Log:
+  ServiceName: promotions-api
+  Mode: console
+  Encoding: json
+  Level: info

@@ -304,6 +304,9 @@ export default function CommunityScreen() {
         <Pressable style={styles.topicManage} onPress={() => router.push('/topics')}>
           <Text style={styles.topicManageText}>圈子管理 ›</Text>
         </Pressable>
+        <Pressable style={styles.topicManage} onPress={() => router.push('/design')}>
+          <Text style={styles.topicManageText}>设计拆解 ›</Text>
+        </Pressable>
       </ScrollView>
 
       <View style={styles.searchRow}>

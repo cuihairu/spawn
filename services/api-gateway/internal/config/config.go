@@ -46,5 +46,20 @@ type Config struct {
 			BaseURL string `json:",env=REALTIME_HUB_URL,optional"`
 			Timeout int64  `json:",default=5000"`
 		}
+		// GP-201 Courier 适配服务：游戏会话票据/绑定/注销同步/映射管理面。
+		CourierAdapter struct {
+			BaseURL string `json:",env=COURIER_ADAPTER_URL,optional"`
+			Timeout int64  `json:",default=5000"`
+		}
+		// GP-202 支付接入服务：商品配置/下单/回调验签接缝。
+		Payments struct {
+			BaseURL string `json:",env=PAYMENTS_URL,optional"`
+			Timeout int64  `json:",default=5000"`
+		}
+		// GP-301 活动/促销配置服务：活动状态机/版本快照管理面。
+		Promotions struct {
+			BaseURL string `json:",env=PROMOTIONS_URL,optional"`
+			Timeout int64  `json:",default=5000"`
+		}
 	}
 }

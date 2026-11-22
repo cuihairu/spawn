@@ -35,6 +35,7 @@ type ServiceContext struct {
 	NotificationRepo model.NotificationStore
 	MessageRepo      model.DirectMessageStore
 	ReportRepo       model.ReportStore
+	DesignRepo       model.DesignStore
 
 	// BlockedWords 归一化后的敏感词表（空配置回落内置默认）；
 	// AdminSet 审核管理员 id 集合（配置预计算，举报队列查看与处置用）。
@@ -127,6 +128,14 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := messageModel.CreateDirectMessagesTable(); err != nil {
 		panic(fmt.Sprintf("创建私信表失败: %v", err))
 	}
+	designModel := model.NewDesignModel(db)
+	if err := designModel.CreateBreakdownsTable(); err != nil {
+		panic(fmt.Sprintf("创建拆解表失败: %v", err))
+	}
+	// 首批拆解种子（空表写入；失败不阻断社区服务启动）
+	if err := designModel.SeedIfEmpty(); err != nil {
+		logx.Errorf("写入拆解种子数据失败（跳过）: %v", err)
+	}
 
 	// 审核配置：敏感词空配置回落内置默认表；管理员集合预计算成 map 供 O(1) 判断。
 	blockedWords := moderation.NormalizeWords(c.Moderation.BlockedWords)
@@ -148,6 +157,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		CommentRepo:      commentModel,
 		NotificationRepo: notificationModel,
 		MessageRepo:      messageModel,
+		DesignRepo:       designModel,
 		ReportRepo:       reportModel,
 		BlockedWords:     blockedWords,
 		AdminSet:         adminSet,

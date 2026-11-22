@@ -64,7 +64,7 @@ func TestClientMetrics_RequestCountedByResult(t *testing.T) {
 	transientBefore := testutil.ToFloat64(m.requests.WithLabelValues(resultTransient))
 
 	// 瞬时错误（5xx）→ transient_error。
-	cl.retry = retryConfig{maxAttempts: 1, baseDelay: 0, maxDelay: 0}
+	cl.retry = retryConfig{MaxAttempts: 1, BaseDelay: 0, MaxDelay: 0}
 	if _, err := cl.GetGameById(context.Background(), "g1"); err == nil {
 		t.Fatal("expected transient error")
 	}
@@ -87,7 +87,7 @@ func TestClientMetrics_BreakerOpenCounted(t *testing.T) {
 
 	m, opts := newIsolatedMetrics()
 	opts.breaker = NewBreaker(1, time.Minute)
-	opts.retry = retryConfig{maxAttempts: 3, baseDelay: 0, maxDelay: 0}
+	opts.retry = retryConfig{MaxAttempts: 3, BaseDelay: 0, MaxDelay: 0}
 
 	cl := newTestServerWithOptions(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -119,7 +119,7 @@ func TestClientMetrics_RetriesAndDurationCollected(t *testing.T) {
 	m := newClientMetrics(reg)
 	opts := defaultClientOptions()
 	opts.metrics = m
-	opts.retry = retryConfig{maxAttempts: 3, baseDelay: time.Millisecond, maxDelay: 0}
+	opts.retry = retryConfig{MaxAttempts: 3, BaseDelay: time.Millisecond, MaxDelay: 0}
 
 	cl := newTestServerWithOptions(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -165,7 +165,7 @@ func TestClientMetrics_BreakerStateGaugeViaOnChange(t *testing.T) {
 	m, opts := newIsolatedMetrics()
 	b, advance := fakeClockBreaker(1, time.Minute)
 	opts.breaker = b
-	opts.retry = retryConfig{maxAttempts: 1, baseDelay: 0, maxDelay: 0}
+	opts.retry = retryConfig{MaxAttempts: 1, BaseDelay: 0, MaxDelay: 0}
 	attachBreakerMetrics(b, m)
 
 	if got := testutil.ToFloat64(m.breakerState); got != 0 {

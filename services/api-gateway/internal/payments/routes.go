@@ -1,0 +1,82 @@
+package payments
+
+import (
+	"net/http"
+	"time"
+
+	"github.com/tappi/tappi/services/api-gateway/internal/proxy"
+	"github.com/tappi/tappi/services/api-gateway/internal/svc"
+	"github.com/zeromicro/go-zero/rest"
+)
+
+// RegisterPaymentsRoutes GP-202 支付接入服务反代（BFF：mobile 统一入口）。
+// 商品配置/下单/订单查询/回调都是小 JSON，走普通反代；Authorization 头
+// 透传，鉴权与角色在 payments 侧（管理面角色再经 game-catalog /me 权威判定）。
+func RegisterPaymentsRoutes(server *rest.Server, serverCtx *svc.ServiceContext) {
+	cfg := serverCtx.Config.Upstreams.Payments
+	if cfg.BaseURL == "" {
+		// 未配置（如独立部署不带支付服务）则不注册路由，网关其余功能不受影响
+		return
+	}
+	timeout := time.Millisecond * time.Duration(cfg.Timeout)
+	upstream, err := proxy.NewUpstream(cfg.BaseURL, timeout)
+	if err != nil {
+		panic(err)
+	}
+	h := upstream.Handler()
+
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodPost, Path: "/games/:gameId/orders", Handler: h},
+		{Method: http.MethodGet, Path: "/games/:gameId/orders/:orderId", Handler: h},
+		{Method: http.MethodGet, Path: "/games/:gameId/skus", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/products/:id", Handler: h},
+		{Method: http.MethodPatch, Path: "/admin/products/:id/enabled", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/games/:gameId/products", Handler: h},
+		// GP-203 发货面：游戏服发货接口配置 + 投递列表/补单（管理面角色守卫
+		// 在 payments 侧经 game-catalog /me 权威判定）。/internal/deliveries
+		// 为 S2S 专用，**不进网关**（只配密钥的进程内 Deliver 钩子调用）。
+		{Method: http.MethodPut, Path: "/admin/games/:gameId/delivery", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/games/:gameId/delivery", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/deliveries", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/deliveries/:orderId/redeliver", Handler: h},
+		{Method: http.MethodPatch, Path: "/admin/deliveries/:orderId/target", Handler: h},
+		// GP-204 订单面：玩家我的订单列表 + 运营订单投影检索/详情/退款/审计。
+		{Method: http.MethodGet, Path: "/games/:gameId/orders", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/orders", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/orders/:orderId", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/orders/:orderId/refund", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/refunds", Handler: h},
+		// 审计回读挂域内路径：上游路径（/admin/audit）与 games 组（game-catalog）
+		// 的审计同名，走 HandlerFor 转发时还原成上游路径。
+		{Method: http.MethodGet, Path: "/admin/payments/audit", Handler: upstream.HandlerFor("/admin/audit")},
+		// GP-205 厂商对账单：生成/列表/详情/结算单录入/确认/导出。
+		{Method: http.MethodPost, Path: "/admin/statements", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/statements", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/statements/:id", Handler: h},
+		{Method: http.MethodPut, Path: "/admin/statements/:id/settlement", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/statements/:id/confirm", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/statements/:id/resolve", Handler: h},
+		// GP-404 异议轮次时间线（版本化留痕查询，管理面）
+		{Method: http.MethodGet, Path: "/admin/statements/:id/disputes", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/statements/:id/export", Handler: h},
+		// GP-404 合作方自助账单确认与结算差异（角色 partner + partner_id 行级
+		// 隔离在 payments 侧；/internal/deliveries 仍不进网关）。
+		{Method: http.MethodGet, Path: "/partner/statements", Handler: h},
+		{Method: http.MethodGet, Path: "/partner/statements/differences", Handler: h},
+		{Method: http.MethodGet, Path: "/partner/statements/:id", Handler: h},
+		{Method: http.MethodGet, Path: "/partner/statements/:id/export", Handler: h},
+		{Method: http.MethodPost, Path: "/partner/statements/:id/confirm", Handler: h},
+		{Method: http.MethodPost, Path: "/partner/statements/:id/dispute", Handler: h},
+		// GP-305 优惠券：玩家领取/我的券 + 管理面定义/状态机/列表。
+		{Method: http.MethodPost, Path: "/coupons/:id/claim", Handler: h},
+		{Method: http.MethodGet, Path: "/coupons/my", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/coupons", Handler: h},
+		{Method: http.MethodPut, Path: "/admin/coupons/:id", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/coupons/:id/publish", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/coupons/:id/disable", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/coupons/:id/revise", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/coupons", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/coupons/:id", Handler: h},
+		{Method: http.MethodPost, Path: "/callback/:channel", Handler: h},
+	})
+}

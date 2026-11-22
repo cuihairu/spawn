@@ -1,0 +1,627 @@
+package model
+
+// GP-401 游戏评价（F04）与收藏（F05）：玩家评分、长评、评价举报、开发者
+// 回复、收藏游戏。表建在 CreateAdminTables（与区服/预约同批），CRUD 在本
+// 文件（servermodel.go 同款：方法挂 *AdminModel，归属校验在 logic 层）。
+// 命名避开既有提审域（game_reviews/GameReview/ListReviews 为审核队列，
+// 玩家长评一律 UserReview 前缀）。
+
+import (
+	"database/sql"
+	"errors"
+	"strings"
+)
+
+// queryer 事务内查询面（*sql.DB 与 *sql.Tx 同形，投票事务共用）。
+type queryer interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+// 评价举报状态（community reports 同款三态：未决/驳回/已处置）。
+const (
+	ReviewReportPending   = "pending"
+	ReviewReportDismissed = "dismissed"
+	ReviewReportResolved  = "resolved"
+)
+
+// 哨兵 ErrUserReviewNotFound / ErrUserReviewExists / ErrReviewReportNotFound
+// 与其余域哨兵同放 adminmodel.go。
+
+// RatingSummary 评分聚合（1-5 星均值 + 人数；无评分 count=0 average=0）。
+type RatingSummary struct {
+	Average float64 `json:"average"`
+	Count   int64   `json:"count"`
+}
+
+// UserReview 玩家长评（一游戏一评 UNIQUE(game_id,user_id)）；开发者回复
+// 单条直接挂列（官方回复覆盖式更新，不建楼）。DeletedAt 非空 = 已被管理
+// 处置移除（软删，公开列表隐藏、作者可重评复活、管理可恢复）。
+type UserReview struct {
+	Id         int64  `json:"id"`
+	GameId     string `json:"game_id"`
+	UserId     int64  `json:"user_id"`
+	Rating     int    `json:"rating"` // 作者当前评分（0=未评分，列表 LEFT JOIN 评分表）
+	Content    string `json:"content"`
+	DevReply   string `json:"dev_reply"`
+	DevReplyBy int64  `json:"dev_reply_by"`
+	DevReplyAt string `json:"dev_reply_at"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+	DeletedAt  string `json:"deleted_at"`
+	Votes      int64  `json:"votes"` // 有用票数（列表 COUNT 派生）
+}
+
+// ReviewReport 长评举报（UNIQUE(reporter_id,review_id) 一人一评一报）。
+type ReviewReport struct {
+	Id         int64  `json:"id"`
+	ReviewId   int64  `json:"review_id"`
+	GameId     string `json:"game_id"`
+	ReporterId int64  `json:"reporter_id"`
+	Reason     string `json:"reason"`
+	Status     string `json:"status"`
+	HandledBy  int64  `json:"handled_by"`
+	CreatedAt  string `json:"created_at"`
+	HandledAt  string `json:"handled_at"`
+}
+
+// GameFavorite 收藏游戏（复合主键幂等）。
+type GameFavorite struct {
+	GameId    string `json:"game_id"`
+	UserId    int64  `json:"user_id"`
+	CreatedAt string `json:"created_at"`
+}
+
+// ---- 玩家评分（F04） ----
+
+// UpsertUserRating 写/覆盖评分（1-5 由 logic 校验）。UPDATE 命中即覆盖，
+// 未命中 INSERT，撞主键（并发首评）退回 UPDATE，双方言无差异。
+func (m *AdminModel) UpsertUserRating(gameId string, userId int64, rating int) error {
+	now := nowUTC()
+	res, err := m.db.Exec(
+		`UPDATE game_ratings SET rating = ?, updated_at = ? WHERE game_id = ? AND user_id = ?`,
+		rating, now, gameId, userId,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 1 {
+		return nil
+	}
+	if _, err := m.db.Exec(
+		`INSERT INTO game_ratings (game_id, user_id, rating, updated_at) VALUES (?, ?, ?, ?)`,
+		gameId, userId, rating, now,
+	); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			_, err = m.db.Exec(
+				`UPDATE game_ratings SET rating = ?, updated_at = ? WHERE game_id = ? AND user_id = ?`,
+				rating, now, gameId, userId,
+			)
+		}
+		return err
+	}
+	return nil
+}
+
+// GetRatingSummary 评分聚合（AVG 空集 NULL → 0）。
+func (m *AdminModel) GetRatingSummary(gameId string) (*RatingSummary, error) {
+	var count int64
+	var avg sql.NullFloat64
+	err := m.db.QueryRow(
+		`SELECT COUNT(*), AVG(rating) FROM game_ratings WHERE game_id = ?`, gameId,
+	).Scan(&count, &avg)
+	if err != nil {
+		return nil, err
+	}
+	s := &RatingSummary{Count: count}
+	if avg.Valid {
+		s.Average = avg.Float64
+	}
+	return s, nil
+}
+
+// GetUserRating 单人当前评分（未评分 0, nil）。
+func (m *AdminModel) GetUserRating(gameId string, userId int64) (int, error) {
+	var rating int
+	err := m.db.QueryRow(
+		`SELECT rating FROM game_ratings WHERE game_id = ? AND user_id = ?`, gameId, userId,
+	).Scan(&rating)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return rating, nil
+}
+
+// ---- 玩家长评（F04） ----
+
+const userReviewColumns = "id, game_id, user_id, content, dev_reply, dev_reply_by, dev_reply_at, created_at, updated_at, deleted_at"
+
+// scanUserReview 附加尾列 rating（列表 JOIN 评分表 COALESCE 0，单查不 JOIN）。
+func scanUserReview(r *UserReview) []any {
+	return []any{&r.Id, &r.GameId, &r.UserId, &r.Content, &r.DevReply, &r.DevReplyBy, &r.DevReplyAt, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt}
+}
+
+func scanUserReviewWithRating(r *UserReview) []any {
+	return append(scanUserReview(r), &r.Rating, &r.Votes)
+}
+
+// CreateUserReview 发长评（一游戏一评，重复 409 语义由哨兵上抛）。唯一键
+// 命中已移除的软删记录时复活该行（作者重评 = 覆盖正文并清软删标记，
+// created_at 保留首次时间），否则按 ErrUserReviewExists 上抛。
+func (m *AdminModel) CreateUserReview(r *UserReview) (*UserReview, error) {
+	now := nowUTC()
+	res, err := m.db.Exec(
+		`INSERT INTO game_user_reviews (game_id, user_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		r.GameId, r.UserId, r.Content, now, now,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			if revived := m.reviveDeletedReview(r.GameId, r.UserId, r.Content, now); revived != nil {
+				return revived, nil
+			}
+			return nil, ErrUserReviewExists
+		}
+		return nil, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+	r.Id = id
+	r.CreatedAt = now
+	r.UpdatedAt = now
+	return r, nil
+}
+
+// reviveDeletedReview 复活软删评价（作者重评路径）：覆盖正文并清 deleted_at。
+// 命中未软删（0 行）时返回 nil，由调用方按 ErrUserReviewExists 处理。
+func (m *AdminModel) reviveDeletedReview(gameID string, userID int64, content, now string) *UserReview {
+	res, err := m.db.Exec(
+		`UPDATE game_user_reviews SET content = ?, deleted_at = '', updated_at = ?
+		 WHERE game_id = ? AND user_id = ? AND deleted_at <> ''`,
+		content, now, gameID, userID)
+	if err != nil {
+		return nil
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil
+	}
+	return m.getUserReviewByGameUser(gameID, userID)
+}
+
+// getUserReviewByGameUser 一游戏一评回读（复活路径复用唯一键定位）。
+func (m *AdminModel) getUserReviewByGameUser(gameID string, userID int64) *UserReview {
+	var r UserReview
+	if err := m.db.QueryRow(
+		`SELECT `+userReviewColumns+` FROM game_user_reviews WHERE game_id = ? AND user_id = ?`,
+		gameID, userID,
+	).Scan(scanUserReview(&r)...); err != nil {
+		return nil
+	}
+	return &r
+}
+
+// GetUserReview 按主键查（不带评分 JOIN；作者/归属校验用轻查询）。
+func (m *AdminModel) GetUserReview(id int64) (*UserReview, error) {
+	var r UserReview
+	err := m.db.QueryRow(
+		`SELECT `+userReviewColumns+` FROM game_user_reviews WHERE id = ?`, id,
+	).Scan(scanUserReview(&r)...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrUserReviewNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// ListUserReviewsByGame 公开长评列表（带作者评分 LEFT JOIN 与有用票 COUNT
+// 派生；只含未被移除的软删可见评价）。byVotes 为真按票数降序（同票新在前），
+// 否则新在前。返回 (items, total)。
+func (m *AdminModel) ListUserReviewsByGame(gameId string, limit, offset int, byVotes bool) ([]*UserReview, int, error) {
+	var total int
+	if err := m.db.QueryRow(
+		`SELECT COUNT(*) FROM game_user_reviews WHERE game_id = ? AND deleted_at = ''`, gameId,
+	).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	order := "r.id DESC"
+	if byVotes {
+		order = "votes DESC, r.id DESC"
+	}
+	rows, err := m.db.Query(
+		`SELECT r.id, r.game_id, r.user_id, r.content, r.dev_reply, r.dev_reply_by, r.dev_reply_at, r.created_at, r.updated_at, r.deleted_at, COALESCE(g.rating, 0),
+			(SELECT COUNT(*) FROM review_votes v WHERE v.review_id = r.id) AS votes
+		 FROM game_user_reviews r LEFT JOIN game_ratings g ON g.game_id = r.game_id AND g.user_id = r.user_id
+		 WHERE r.game_id = ? AND r.deleted_at = '' ORDER BY `+order+` LIMIT ? OFFSET ?`,
+		gameId, limit, offset,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := make([]*UserReview, 0, 8)
+	for rows.Next() {
+		var r UserReview
+		if err := rows.Scan(scanUserReviewWithRating(&r)...); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, &r)
+	}
+	return out, total, rows.Err()
+}
+
+// VoteReview 长评有用票（一人一评一票）：评价存在、归属该游戏且未被移除才
+// 可投（否则 ErrUserReviewNotFound）；同人重复投幂等（IGNORE 不重复计数），
+// 返回最新票数。事务保证「校验存在 + 入票 + 计数」原子。
+func (m *AdminModel) VoteReview(gameId string, reviewId, userId int64) (int64, error) {
+	tx, err := m.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err := reviewVotable(tx, gameId, reviewId); err != nil {
+		return 0, err
+	}
+	now := nowUTC()
+	if _, err := tx.Exec(
+		`INSERT OR IGNORE INTO review_votes (review_id, user_id, created_at) VALUES (?, ?, ?)`,
+		reviewId, userId, now,
+	); err != nil {
+		if _, err2 := tx.Exec(
+			`INSERT IGNORE INTO review_votes (review_id, user_id, created_at) VALUES (?, ?, ?)`,
+			reviewId, userId, now,
+		); err2 != nil {
+			return 0, err2
+		}
+	}
+	votes, err := reviewVoteCount(tx, reviewId)
+	if err != nil {
+		return 0, err
+	}
+	return votes, tx.Commit()
+}
+
+// UnvoteReview 取消有用票（幂等：未投过删除 0 行），返回最新票数。
+func (m *AdminModel) UnvoteReview(gameId string, reviewId, userId int64) (int64, error) {
+	tx, err := m.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err := reviewVotable(tx, gameId, reviewId); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(
+		`DELETE FROM review_votes WHERE review_id = ? AND user_id = ?`, reviewId, userId,
+	); err != nil {
+		return 0, err
+	}
+	votes, err := reviewVoteCount(tx, reviewId)
+	if err != nil {
+		return 0, err
+	}
+	return votes, tx.Commit()
+}
+
+// reviewVotable 校验评价可投票（存在、属该游戏、未移除）；否则哨兵上抛。
+func reviewVotable(q queryer, gameId string, reviewId int64) error {
+	var exists int
+	err := q.QueryRow(
+		`SELECT 1 FROM game_user_reviews WHERE id = ? AND game_id = ? AND deleted_at = ''`, reviewId, gameId,
+	).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrUserReviewNotFound
+	}
+	return err
+}
+
+// reviewVoteCount 统计单条长评的有用票数。
+func reviewVoteCount(q queryer, reviewId int64) (int64, error) {
+	var votes int64
+	if err := q.QueryRow(
+		`SELECT COUNT(*) FROM review_votes WHERE review_id = ?`, reviewId,
+	).Scan(&votes); err != nil {
+		return 0, err
+	}
+	return votes, nil
+}
+
+// UpdateUserReview 作者改评（content 覆盖，updated_at 前移；已移除的评价
+// 不再可编辑——公开视图已隐藏，作者应重评复活而非编辑旧评）。
+func (m *AdminModel) UpdateUserReview(id int64, content string) (*UserReview, error) {
+	now := nowUTC()
+	res, err := m.db.Exec(
+		`UPDATE game_user_reviews SET content = ?, updated_at = ? WHERE id = ? AND deleted_at = ''`,
+		content, now, id,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// MySQL RowsAffected 只计变更行：内容未变也视为更新成功，回读校验存在性
+		if _, err := m.GetUserReview(id); err != nil {
+			return nil, err
+		}
+	}
+	return m.GetUserReview(id)
+}
+
+// DeleteUserReview 管理处置「移除评价」：软删（置 deleted_at，公开列表隐藏、
+// 内容保留供恢复与审计；作者可重评复活、管理可恢复）。
+func (m *AdminModel) DeleteUserReview(id int64) error {
+	_, err := m.db.Exec(
+		`UPDATE game_user_reviews SET deleted_at = ? WHERE id = ? AND deleted_at = ''`,
+		nowUTC(), id,
+	)
+	return err
+}
+
+// RestoreUserReview 恢复被移除的评价（清软删标记）；返回是否命中一条已移除
+// 记录（未移除/不存在 → false）。
+func (m *AdminModel) RestoreUserReview(id int64) (bool, error) {
+	res, err := m.db.Exec(
+		`UPDATE game_user_reviews SET deleted_at = '', updated_at = ? WHERE id = ? AND deleted_at <> ''`,
+		nowUTC(), id,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
+
+// UpsertDevReply 开发者回复（覆盖式：同评一条官方回复，可更新；已移除的
+// 评价不再可回复）。
+func (m *AdminModel) UpsertDevReply(id, by int64, content string) (*UserReview, error) {
+	now := nowUTC()
+	if _, err := m.db.Exec(
+		`UPDATE game_user_reviews SET dev_reply = ?, dev_reply_by = ?, dev_reply_at = ?, updated_at = ? WHERE id = ? AND deleted_at = ''`,
+		content, by, now, now, id,
+	); err != nil {
+		return nil, err
+	}
+	return m.GetUserReview(id)
+}
+
+// ---- 评价举报（F04） ----
+
+const reviewReportColumns = "id, review_id, game_id, reporter_id, reason, status, handled_by, created_at, handled_at"
+
+func scanReviewReport(r *ReviewReport) []any {
+	return []any{&r.Id, &r.ReviewId, &r.GameId, &r.ReporterId, &r.Reason, &r.Status, &r.HandledBy, &r.CreatedAt, &r.HandledAt}
+}
+
+// CreateReviewReport 举报（UNIQUE(reporter_id,review_id) 幂等：重复举报返回
+// 既有记录与 created=false，与开服预约同款 INSERT OR IGNORE 语义）。
+func (m *AdminModel) CreateReviewReport(r *ReviewReport) (*ReviewReport, bool, error) {
+	now := nowUTC()
+	res, err := m.db.Exec(
+		`INSERT OR IGNORE INTO review_reports (review_id, game_id, reporter_id, reason, status, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		r.ReviewId, r.GameId, r.ReporterId, r.Reason, ReviewReportPending, now,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "syntax") || strings.Contains(err.Error(), "near") {
+			res, err = m.db.Exec(
+				`INSERT IGNORE INTO review_reports (review_id, game_id, reporter_id, reason, status, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?)`,
+				r.ReviewId, r.GameId, r.ReporterId, r.Reason, ReviewReportPending, now,
+			)
+		}
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	if n, _ := res.RowsAffected(); n == 1 {
+		if id, err := res.LastInsertId(); err == nil && id > 0 {
+			r.Id = id
+		}
+		r.Status = ReviewReportPending
+		r.CreatedAt = now
+		return r, true, nil
+	}
+	existing, err := m.getReviewReport(r.ReporterId, r.ReviewId)
+	return existing, false, err
+}
+
+// getReviewReport 按 (reporter_id, review_id) 查既有举报（幂等回读）。
+func (m *AdminModel) getReviewReport(reporterId, reviewId int64) (*ReviewReport, error) {
+	var r ReviewReport
+	err := m.db.QueryRow(
+		`SELECT `+reviewReportColumns+` FROM review_reports WHERE reporter_id = ? AND review_id = ?`,
+		reporterId, reviewId,
+	).Scan(scanReviewReport(&r)...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrReviewReportNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// GetReviewReport 按主键查举报。
+func (m *AdminModel) GetReviewReport(id int64) (*ReviewReport, error) {
+	var r ReviewReport
+	err := m.db.QueryRow(
+		`SELECT `+reviewReportColumns+` FROM review_reports WHERE id = ?`, id,
+	).Scan(scanReviewReport(&r)...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrReviewReportNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// ListReviewReports 管理举报队列（status 空为全部，新在前）。
+func (m *AdminModel) ListReviewReports(status string, limit, offset int) ([]*ReviewReport, int, error) {
+	q := `SELECT COUNT(*) FROM review_reports`
+	args := []any{}
+	if status != "" {
+		q += ` WHERE status = ?`
+		args = append(args, status)
+	}
+	var total int
+	if err := m.db.QueryRow(q, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	q = `SELECT ` + reviewReportColumns + ` FROM review_reports`
+	if status != "" {
+		q += ` WHERE status = ?`
+	}
+	q += ` ORDER BY id DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := m.db.Query(q, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := make([]*ReviewReport, 0, 8)
+	for rows.Next() {
+		var r ReviewReport
+		if err := rows.Scan(scanReviewReport(&r)...); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, &r)
+	}
+	return out, total, rows.Err()
+}
+
+// DecideReviewReportIfPending 未决才可处置（TOCTOU 条件更新，返回命中与否）。
+func (m *AdminModel) DecideReviewReportIfPending(id, handledBy int64, status string) (bool, error) {
+	res, err := m.db.Exec(
+		`UPDATE review_reports SET status = ?, handled_by = ?, handled_at = ? WHERE id = ? AND status = ?`,
+		status, handledBy, nowUTC(), id, ReviewReportPending,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	// MySQL 只计变更行：pending→pending 不存在（状态必变），0 即非未决
+	return n == 1, nil
+}
+
+// ResolvePendingReportsForReview 移除评价后同评其余未决举报批量结案
+// （queue 不留指向已删评价的悬空未决项）。
+func (m *AdminModel) ResolvePendingReportsForReview(reviewId, handledBy int64) error {
+	_, err := m.db.Exec(
+		`UPDATE review_reports SET status = ?, handled_by = ?, handled_at = ? WHERE review_id = ? AND status = ?`,
+		ReviewReportResolved, handledBy, nowUTC(), reviewId, ReviewReportPending,
+	)
+	return err
+}
+
+// ListPendingReportersByReview 同评未决举报的举报人（去重）。批量结案前取
+// 受众，供处置结果通知（GP-401 举报人通知回路）。
+func (m *AdminModel) ListPendingReportersByReview(reviewId int64) ([]int64, error) {
+	rows, err := m.db.Query(
+		`SELECT DISTINCT reporter_id FROM review_reports WHERE review_id = ? AND status = ?`,
+		reviewId, ReviewReportPending,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]int64, 0, 2)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// ---- 收藏游戏（F05） ----
+
+// AddFavorite 收藏（幂等：重复收藏返回既有与 created=false）。
+func (m *AdminModel) AddFavorite(gameId string, userId int64) (*GameFavorite, bool, error) {
+	now := nowUTC()
+	res, err := m.db.Exec(
+		`INSERT OR IGNORE INTO game_favorites (game_id, user_id, created_at) VALUES (?, ?, ?)`,
+		gameId, userId, now,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "syntax") || strings.Contains(err.Error(), "near") {
+			res, err = m.db.Exec(
+				`INSERT IGNORE INTO game_favorites (game_id, user_id, created_at) VALUES (?, ?, ?)`,
+				gameId, userId, now,
+			)
+		}
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	if n, _ := res.RowsAffected(); n == 1 {
+		return &GameFavorite{GameId: gameId, UserId: userId, CreatedAt: now}, true, nil
+	}
+	existing, err := m.getFavorite(gameId, userId)
+	return existing, false, err
+}
+
+func (m *AdminModel) getFavorite(gameId string, userId int64) (*GameFavorite, error) {
+	var f GameFavorite
+	err := m.db.QueryRow(
+		`SELECT game_id, user_id, created_at FROM game_favorites WHERE game_id = ? AND user_id = ?`,
+		gameId, userId,
+	).Scan(&f.GameId, &f.UserId, &f.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+// RemoveFavorite 取消收藏（未收藏也是成功，幂等）。
+func (m *AdminModel) RemoveFavorite(gameId string, userId int64) error {
+	_, err := m.db.Exec(`DELETE FROM game_favorites WHERE game_id = ? AND user_id = ?`, gameId, userId)
+	return err
+}
+
+// ListMyFavorites 我的收藏（新在前）。
+func (m *AdminModel) ListMyFavorites(userId int64, limit int) ([]*GameFavorite, error) {
+	rows, err := m.db.Query(
+		`SELECT game_id, user_id, created_at FROM game_favorites WHERE user_id = ? ORDER BY created_at DESC, game_id ASC LIMIT ?`,
+		userId, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*GameFavorite, 0, 8)
+	for rows.Next() {
+		var f GameFavorite
+		if err := rows.Scan(&f.GameId, &f.UserId, &f.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, &f)
+	}
+	return out, rows.Err()
+}
+
+// ListFavoriteUsersByGame 收藏人群（上线通知受众，去重自然成立）。
+func (m *AdminModel) ListFavoriteUsersByGame(gameId string, limit int) ([]int64, error) {
+	rows, err := m.db.Query(
+		`SELECT user_id FROM game_favorites WHERE game_id = ? ORDER BY user_id LIMIT ?`,
+		gameId, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]int64, 0, 16)
+	for rows.Next() {
+		var uid int64
+		if err := rows.Scan(&uid); err != nil {
+			return nil, err
+		}
+		out = append(out, uid)
+	}
+	return out, rows.Err()
+}

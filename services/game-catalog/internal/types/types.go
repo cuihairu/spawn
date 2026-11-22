@@ -86,8 +86,10 @@ type UpdateGameTagsRequest struct {
 	Tags []string `json:"tags"`
 }
 
+// GameDetailResponse 详情（GP-401 附玩家评分聚合；与运营编辑分 score 分离）。
 type GameDetailResponse struct {
-	Game Game `json:"game"`
+	Game   Game              `json:"game"`
+	Rating RatingSummaryView `json:"rating"`
 }
 
 type FeaturedGamesResponse struct {
@@ -238,6 +240,9 @@ type CreateVersionRequest struct {
 type VersionPathRequest struct {
 	Id        string `path:"id"`
 	VersionId string `path:"versionId"`
+	// Channel GP-403 渠道标识（可选）：渠道包追踪。下载带渠道时计一条
+	// 渠道包下载（无效渠道不阻断下载，仅不计计数）。
+	Channel string `form:"channel,optional"`
 }
 
 type VersionListResponse struct {
@@ -274,4 +279,340 @@ type MeResponse struct {
 	Username  string `json:"username"`
 	Role      string `json:"role"`
 	PartnerId int64  `json:"partner_id"`
+}
+
+// GP-201 区服目录/充值目标：合作方维护区服，玩家公开读开放区服。
+type GameServer struct {
+	Id     int64  `json:"id"`
+	GameId string `json:"game_id"`
+	Name   string `json:"name"`
+	Region string `json:"region"`
+	Status string `json:"status"`
+	Sort   int64  `json:"sort"`
+	// GP-306 开服计划：排期开服时间（RFC3339；空 = 未排期），开服表展示。
+	PlannedOpenAt string `json:"planned_open_at"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
+// CreateServerRequest 新建区服（path id = game id）；status 缺省 open，
+// 可选 open/maintenance/closed；planned_open_at 为开服计划（可选）。
+type CreateServerRequest struct {
+	Id            string `path:"id"`
+	Name          string `json:"name"`
+	Region        string `json:"region,optional"`
+	Status        string `json:"status,optional"`
+	Sort          int64  `json:"sort,optional"`
+	PlannedOpenAt string `json:"planned_open_at,optional"`
+}
+
+// UpdateServerRequest 更新区服（改名/迁移/状态变更/开服排期）；空字段保持原值。
+type UpdateServerRequest struct {
+	Id            string `path:"id"`
+	ServerId      int64  `path:"serverId"`
+	Name          string `json:"name,optional"`
+	Region        string `json:"region,optional"`
+	Status        string `json:"status,optional"`
+	Sort          int64  `json:"sort,optional"`
+	PlannedOpenAt string `json:"planned_open_at,optional"`
+}
+
+type ServerListResponse struct {
+	Items []GameServer `json:"items"`
+}
+
+// GP-306 开服预约：玩家对未开服区服预约，开服时收到提醒（只发一次）。
+type ServerPathRequest struct {
+	Id       string `path:"id"`
+	ServerId int64  `path:"serverId"`
+}
+
+type ReserveServerResponse struct {
+	ServerId      int64  `json:"server_id"`
+	GameId        string `json:"game_id"`
+	Status        string `json:"status"`
+	PlannedOpenAt string `json:"planned_open_at"`
+	Created       bool   `json:"created"`
+}
+
+type MyReservationView struct {
+	GameId        string `json:"game_id"`
+	ServerId      int64  `json:"server_id"`
+	ServerName    string `json:"server_name"`
+	ServerStatus  string `json:"server_status"`
+	PlannedOpenAt string `json:"planned_open_at"`
+	NotifiedAt    string `json:"notified_at"`
+	CreatedAt     string `json:"created_at"`
+}
+
+type MyReservationsResponse struct {
+	Items []MyReservationView `json:"items"`
+}
+
+// InternalReservationUsersResponse S2S：游戏维度去重预约人群（活动通知受众）。
+type InternalReservationUsersResponse struct {
+	GameId  string  `json:"game_id"`
+	UserIds []int64 `json:"user_ids"`
+}
+
+// ==================== GP-401 游戏评价（F04） ====================
+
+// RateGameRequest 玩家评分（1-5 整数星，重复提交覆盖上一评分）。
+type RateGameRequest struct {
+	Id     string `path:"id"`
+	Rating int    `json:"rating"`
+}
+
+// RatingSummaryView 评分聚合（average 为 1-5 均值；无评分 count=0 average=0）。
+type RatingSummaryView struct {
+	Average float64 `json:"average"`
+	Count   int64   `json:"count"`
+}
+
+type RateGameResponse struct {
+	GameId  string            `json:"game_id"`
+	Rating  int               `json:"rating"`
+	Summary RatingSummaryView `json:"summary"`
+}
+
+// CreateGameReviewRequest 发长评（10-4000 字；一游戏一评，重复 409，改评走 PUT）。
+type CreateGameReviewRequest struct {
+	Id      string `path:"id"`
+	Content string `json:"content"`
+}
+
+// UpdateGameReviewRequest 作者改评（path reviewId 为长评 id）。
+type UpdateGameReviewRequest struct {
+	Id       string `path:"id"`
+	ReviewId int64  `path:"reviewId"`
+	Content  string `json:"content"`
+}
+
+// UserReviewView 玩家长评（公开列表视图；Rating 为作者当前评分，0=未评分；
+// DevReply 为开发者官方回复，单条覆盖式）。DeletedAt 非空 = 已被移除（仅
+// 管理恢复视图可见，公开列表不出现）。
+type UserReviewView struct {
+	Id         int64  `json:"id"`
+	GameId     string `json:"game_id"`
+	UserId     int64  `json:"user_id"`
+	Rating     int    `json:"rating"`
+	Content    string `json:"content"`
+	DevReply   string `json:"dev_reply"`
+	DevReplyBy int64  `json:"dev_reply_by"`
+	DevReplyAt string `json:"dev_reply_at"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+	DeletedAt  string `json:"deleted_at,omitempty"`
+	Votes      int64  `json:"votes"`
+}
+
+type GameReviewListRequest struct {
+	Id     string `path:"id"`
+	Limit  int64  `form:"limit,default=20"`
+	Offset int64  `form:"offset,default=0"`
+	// Sort 排序：空或 "new" = 新在前（默认）；"votes" = 有用票数降序。
+	Sort string `form:"sort,optional"`
+}
+
+type GameReviewListResponse struct {
+	Items  []UserReviewView `json:"items"`
+	Total  int              `json:"total"`
+	Limit  int64            `json:"limit"`
+	Offset int64            `json:"offset"`
+}
+
+// ReportGameReviewRequest 举报长评（一人一评一报，重复举报返回既有记录）。
+type ReportGameReviewRequest struct {
+	Id       string `path:"id"`
+	ReviewId int64  `path:"reviewId"`
+	Reason   string `json:"reason"`
+}
+
+// VoteGameReviewRequest 长评有用票（POST=投/取消投由 method 区分；
+// path reviewId 为长评 id）。
+type VoteGameReviewRequest struct {
+	Id       string `path:"id"`
+	ReviewId int64  `path:"reviewId"`
+}
+
+// VoteGameReviewResponse 投票结果（Voted 反映当前是否已投；Votes 为最新票数）。
+type VoteGameReviewResponse struct {
+	ReviewId int64 `json:"review_id"`
+	Votes    int64 `json:"votes"`
+	Voted    bool  `json:"voted"`
+}
+
+type ReportGameReviewResponse struct {
+	Id      int64 `json:"id"`
+	Created bool  `json:"created"`
+}
+
+// ReplyGameReviewRequest 开发者回复长评（合作方仅限自有游戏；覆盖式更新）。
+type ReplyGameReviewRequest struct {
+	Id       string `path:"id"`
+	ReviewId int64  `path:"reviewId"`
+	Content  string `json:"content"`
+}
+
+// ListReviewReportsRequest 管理举报队列查询（status 空=全部）。
+type ListReviewReportsRequest struct {
+	Status string `form:"status,optional"`
+	Limit  int64  `form:"limit,default=20"`
+	Offset int64  `form:"offset,default=0"`
+}
+
+// ReviewReportView 举报记录（管理视图）。
+type ReviewReportView struct {
+	Id         int64  `json:"id"`
+	ReviewId   int64  `json:"review_id"`
+	GameId     string `json:"game_id"`
+	ReporterId int64  `json:"reporter_id"`
+	Reason     string `json:"reason"`
+	Status     string `json:"status"`
+	HandledBy  int64  `json:"handled_by"`
+	CreatedAt  string `json:"created_at"`
+	HandledAt  string `json:"handled_at"`
+}
+
+type ReviewReportsListResponse struct {
+	Items []ReviewReportView `json:"items"`
+	Total int                `json:"total"`
+}
+
+// HandleReviewReportRequest 处置举报：dismiss 驳回（评价保留），
+// remove 移除评价（同评其余未决举报一并结案）。
+type HandleReviewReportRequest struct {
+	Id     int64  `path:"id"`
+	Action string `json:"action"`
+}
+
+// RestoreReviewRequest 恢复被移除的评价（管理面，path id）。
+type RestoreReviewRequest struct {
+	Id int64 `path:"id"`
+}
+
+// ==================== GP-401 收藏游戏（F05） ====================
+
+// FavoriteGameResponse 收藏结果（重复收藏幂等 created=false）。
+type FavoriteGameResponse struct {
+	GameId  string `json:"game_id"`
+	Created bool   `json:"created"`
+}
+
+// FavoriteItemView 我的收藏条目（收藏时快照不可得，回读游戏现状含状态）。
+type FavoriteItemView struct {
+	Game        Game   `json:"game"`
+	FavoritedAt string `json:"favorited_at"`
+}
+
+type MyFavoritesResponse struct {
+	Items []FavoriteItemView `json:"items"`
+}
+
+// ==================== GP-403 单层渠道推广（F22） ====================
+// 口径边界：只做单层归因（渠道 → 用户），不引入多级代理——渠道表无
+// parent_id 列，代理层级不随本任务默认引入。
+
+// PromoChannelView 渠道登记视图（不含未定义字段，避免内部实现外泄）。
+type PromoChannelView struct {
+	Id                     int64  `json:"id"`
+	Code                   string `json:"code"`
+	Name                   string `json:"name"`
+	AttributionWindowHours int64  `json:"attribution_window_hours"`
+	Status                 string `json:"status"`
+	CreatedAt              string `json:"created_at"`
+	UpdatedAt              string `json:"updated_at"`
+}
+
+type PromoChannelListResponse struct {
+	Items []PromoChannelView `json:"items"`
+	Total int                `json:"total"`
+}
+
+// CreatePromoChannelRequest 登记渠道：code 为渠道标识（推广链接
+// ?channel=<code>），全局唯一；window_hours 为归因窗口小时数，缺省 72
+// （logic 侧 0-720 校验；显式传 0 = 立即失效，不开放归因）。
+type CreatePromoChannelRequest struct {
+	Code        string `json:"code"`
+	Name        string `json:"name"`
+	WindowHours int64  `json:"window_hours,optional,default=72"`
+}
+
+// UpdatePromoChannelRequest 变更渠道（PATCH）：改名与/或改归因窗口；
+// 改窗口不追改既有点击（历史结算不变，只影响其后新点击）。
+type UpdatePromoChannelRequest struct {
+	Id          int64  `path:"id"`
+	Name        string `json:"name,optional"`
+	WindowHours int64  `json:"window_hours,optional"`
+}
+
+// SetPromoChannelStatusRequest 启用/停用渠道（disabled 渠道链接不再计点击）。
+type SetPromoChannelStatusRequest struct {
+	Id     int64  `path:"id"`
+	Status string `json:"status"`
+}
+
+// PromoChannelStatsResponse 渠道包/渠道效果计数（点击/下载/归因人数）。
+type PromoChannelStatsResponse struct {
+	Channel         string `json:"channel"`
+	Clicks          int64  `json:"clicks"`
+	Downloads       int64  `json:"downloads"`
+	AttributedUsers int64  `json:"attributed_users"`
+}
+
+// ResolvePromoLinkRequest 推广链接落地解析：channel 为渠道标识，click_id
+// 由客户端生成（重放幂等），game_id 供下载侧关联游戏。
+type ResolvePromoLinkRequest struct {
+	Channel string `form:"channel"`
+	ClickId string `form:"click_id"`
+	GameId  string `form:"game_id,optional"`
+}
+
+// ResolvePromoLinkResponse 解析结果：有效渠道返回窗口秒数（客户端可据此
+// 在窗口外提示失效）；渠道无效/停用返回 404（不泄露渠道存在性由 logic 决定）。
+type ResolvePromoLinkResponse struct {
+	Channel    string `json:"channel"`
+	ClickId    string `json:"click_id"`
+	WindowSecs int64  `json:"window_secs"`
+}
+
+// PromoLinkResolveResponse S2S 解析（user-service 注册时带 click_id 回调）：
+// 返回渠道标识与是否在归因窗口内（注册时刻与点击时刻比较）。
+type PromoLinkResolveResponse struct {
+	Channel     string `json:"channel"`
+	ChannelId   int64  `json:"channel_id"`
+	ClickedAt   string `json:"clicked_at"`
+	WindowHours int64  `json:"window_hours"`
+	InWindow    bool   `json:"in_window"`
+}
+
+// PromoDownloadClickRequest 渠道包下载登记（渠道包追踪计数）。
+type PromoDownloadClickRequest struct {
+	Channel string `form:"channel"`
+	GameId  string `form:"game_id,optional"`
+}
+
+// PromoChannelListRequest 渠道列表分页查询（管理面）。
+type PromoChannelListRequest struct {
+	Limit  int64 `form:"limit,default=20"`
+	Offset int64 `form:"offset,default=0"`
+}
+
+// PromoDownloadClickResponse 渠道包下载登记结果（计数失败不阻断，恒 200）。
+type PromoDownloadClickResponse struct{}
+
+// ChannelStatsRequest 渠道效果计数查询：code 为渠道标识（path），
+// from/to 为可选时间区间（RFC3339 或 YYYY-MM-DD，空=不限下界/上界）。
+type ChannelStatsRequest struct {
+	Code string `path:"code"`
+	From string `form:"from,optional"`
+	To   string `form:"to,optional"`
+}
+
+// ResolveClickRequest S2S 归因解析请求（user-service 注册时携带）：
+// click_id 为推广点击标识，registered_at 为注册时刻，user_id 为注册用户。
+type ResolveClickRequest struct {
+	ClickId      string `json:"click_id"`
+	RegisteredAt string `json:"registered_at"`
+	UserID       int64  `json:"user_id,optional"`
 }

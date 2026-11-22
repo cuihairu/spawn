@@ -45,15 +45,18 @@ spawn/
 ├── apps/                 # 面向最终用户的应用
 │   ├── web-client        # Web 站点（React 19 + Vite：登录/榜单/攻略/评论/社区/通知）
 │   └── mobile-app        # React Native（Expo）客户端（游戏/发现/社区/战绩/我的）
-├── services/             # 微服务（以下八个均已落地）
+├── services/             # 微服务（以下十一个均已落地）
 │   ├── user-service      # 用户服务 API（:8888，JWT 签发方）
 │   ├── user-service-rpc  # 用户服务 RPC（gRPC :8080，集群内部）
 │   ├── game-catalog      # 游戏库、榜单、推荐（:8890）
 │   ├── content-service   # 攻略、评论、收藏（:8891）
 │   ├── community         # 帖子、话题、关注、点赞、通知、私信、审核（:8892）
 │   ├── data-panel        # 战绩摄入与查询（:8896）
+│   ├── courier-adapter   # Courier 游戏服适配（:8897）
+│   ├── payments          # 支付接入（:8898）
+│   ├── promotions        # 活动与礼包（:8902）
 │   ├── realtime-hub      # WebSocket 实时中枢（:8893，非 go-zero）
-│   └── api-gateway       # BFF 聚合 + 五路反代（:8800）
+│   └── api-gateway       # BFF 聚合 + 九路反代（:8800）
 ├── packages/             # 共享包（config 已落地；ui-kit/data-models 等为规划）
 ├── platform/             # 基础设施（规划）
 ├── deploy/               # compose 与观测栈配置

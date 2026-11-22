@@ -28,6 +28,10 @@ type RegisterRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Nickname string `json:"nickname,optional"`
+	// GP-403 渠道归因（F22 单层渠道推广）：ClickId 为推广链接落地返回的
+	// 点击标识，注册时据此向 game-catalog 解析渠道并判定归因窗口；两项
+	// 均可选，缺省即自然流量（注册流程不因归因失败中断）。
+	ClickId string `json:"click_id,optional"`
 }
 
 type Request struct {

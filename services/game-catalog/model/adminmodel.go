@@ -37,6 +37,12 @@ const (
 	VersionStatusRejected  = "rejected"
 	VersionStatusPublished = "published"
 	VersionStatusRevoked   = "revoked"
+
+	// 区服状态（GP-201）：open 可进/可充值，maintenance 维护中，closed 下线
+	// （玩家侧隐藏，仅合作方后台可见，保留充值对账记录）。
+	ServerStatusOpen        = "open"
+	ServerStatusMaintenance = "maintenance"
+	ServerStatusClosed      = "closed"
 )
 
 var (
@@ -45,6 +51,17 @@ var (
 	ErrVersionNotFound      = errors.New("version not found")
 	ErrVersionPackageLocked = errors.New("version package locked")
 	ErrOwnershipMissing     = errors.New("game ownership missing")
+	ErrServerNotFound       = errors.New("server not found")
+	ErrReservationNotFound  = errors.New("reservation not found")
+
+	// GP-401 玩家长评（UserReview 区别于提审 GameReview）
+	ErrUserReviewNotFound   = errors.New("user review not found")
+	ErrUserReviewExists     = errors.New("user review already exists")
+	ErrReviewReportNotFound = errors.New("review report not found")
+
+	// GP-403 单层渠道推广（F22）：渠道标识与推广点击
+	ErrPromoChannelNotFound = errors.New("promo channel not found")
+	ErrPromoClickNotFound   = errors.New("promo click not found")
 )
 
 // Partner 合作方主体（F11）：先最小化人工审核，在线签约后续再考虑。
@@ -105,6 +122,32 @@ type GameVersion struct {
 	CreatedAt       string `json:"created_at"`
 }
 
+// GameServer 游戏区服（GP-201 区服目录）：合作方维护，玩家公开读开放区服；
+// 同时作为充值目标（充值按 game_id + server_id 定位区服）。
+type GameServer struct {
+	Id     int64  `json:"id"`
+	GameId string `json:"game_id"`
+	Name   string `json:"name"`
+	Region string `json:"region"`
+	Status string `json:"status"`
+	Sort   int64  `json:"sort"`
+	// GP-306 开服计划：排期开服时间（RFC3339；空 = 未排期），开服表展示用。
+	PlannedOpenAt string `json:"planned_open_at"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
+// ServerReservation 开服预约（GP-306 F21）：UNIQUE(server_id,user_id) 幂等；
+// notified_at 置位后开服提醒不再重发（提醒只发一次）。
+type ServerReservation struct {
+	Id         int64  `json:"id"`
+	GameId     string `json:"game_id"`
+	ServerId   int64  `json:"server_id"`
+	UserId     int64  `json:"user_id"`
+	NotifiedAt string `json:"notified_at"`
+	CreatedAt  string `json:"created_at"`
+}
+
 // AuditLog 操作审计（设计 §4：绑定/映射/能力变更均写审计）。
 type AuditLog struct {
 	Id           int64  `json:"id"`
@@ -151,6 +194,70 @@ type AdminStore interface {
 	// GP-105 包体托管：上传后回填哈希/大小/托管地址；取当前已发布版本。
 	UpdateVersionPackage(id, hash string, sizeBytes int64, storageUrl string) (*GameVersion, error)
 	GetLatestPublishedVersion(gameId string) (*GameVersion, error)
+
+	// GP-201 区服目录/充值目标：合作方维护，玩家公开读（隐藏 closed）。
+	CreateGameServer(gameId string, s *GameServer) (*GameServer, error)
+	GetGameServer(id int64) (*GameServer, error)
+	ListGameServers(gameId string, includeClosed bool) ([]*GameServer, error)
+	UpdateGameServer(s *GameServer) (*GameServer, error)
+
+	// GP-306 开服计划与预约：预约幂等（UNIQUE(server_id,user_id)）、取消幂等；
+	// 开服提醒只发一次（notified_at 置位），游戏维度去重人群供版本/活动通知；
+	// 排期到点由定时扫描自动开服（条件 UPDATE 幂等，不依赖合作方手动 PATCH）。
+	ReserveServer(r *ServerReservation) (*ServerReservation, bool, error)
+	ListScheduledServers(limit int) ([]*GameServer, error)
+	OpenServerIfDue(id int64, currentStatus, plannedOpenAt string) (bool, error)
+	GetReservation(serverId, userId int64) (*ServerReservation, error)
+	CancelReservation(serverId, userId int64) error
+	ListMyReservations(userId int64, limit int) ([]*ServerReservation, error)
+	ListReservationUsersByGame(gameId string, limit int) ([]int64, error)
+	ListUnnotifiedReservations(serverId int64) ([]*ServerReservation, error)
+	MarkReservationsNotified(serverId int64) error
+
+	// GP-401 游戏评价（F04）：评分覆盖式（一游戏一评分），长评一游戏一评
+	//（UNIQUE 幂等语义），举报一人一评一报，开发者回复官方单条。
+	UpsertUserRating(gameId string, userId int64, rating int) error
+	GetRatingSummary(gameId string) (*RatingSummary, error)
+	GetUserRating(gameId string, userId int64) (int, error)
+	CreateUserReview(r *UserReview) (*UserReview, error)
+	GetUserReview(id int64) (*UserReview, error)
+	ListUserReviewsByGame(gameId string, limit, offset int, byVotes bool) ([]*UserReview, int, error)
+	// VoteReview 长评有用票（一人一评一票，幂等：已投票不改计数，仍返回
+	// 最新票数）；评价不存在/已移除/不属该游戏返回 ErrUserReviewNotFound。
+	VoteReview(gameId string, reviewId, userId int64) (int64, error)
+	// UnvoteReview 取消有用票（未投过票幂等：删除 0 行，返回最新票数）。
+	UnvoteReview(gameId string, reviewId, userId int64) (int64, error)
+	UpdateUserReview(id int64, content string) (*UserReview, error)
+	// DeleteUserReview 软删（deleted_at 置位，公开隐藏、内容保留）；
+	// RestoreUserReview 恢复被移除评价（返回是否命中已移除记录）。
+	DeleteUserReview(id int64) error
+	RestoreUserReview(id int64) (bool, error)
+	UpsertDevReply(id, by int64, content string) (*UserReview, error)
+	CreateReviewReport(r *ReviewReport) (*ReviewReport, bool, error)
+	GetReviewReport(id int64) (*ReviewReport, error)
+	ListReviewReports(status string, limit, offset int) ([]*ReviewReport, int, error)
+	DecideReviewReportIfPending(id, handledBy int64, status string) (bool, error)
+	ResolvePendingReportsForReview(reviewId, handledBy int64) error
+	ListPendingReportersByReview(reviewId int64) ([]int64, error)
+
+	// GP-401 收藏游戏（F05）：收藏幂等；收藏人群为上线通知受众。
+	AddFavorite(gameId string, userId int64) (*GameFavorite, bool, error)
+	RemoveFavorite(gameId string, userId int64) error
+	ListMyFavorites(userId int64, limit int) ([]*GameFavorite, error)
+	ListFavoriteUsersByGame(gameId string, limit int) ([]int64, error)
+
+	// GP-403 单层渠道推广（F22）：渠道登记、推广点击与归因计数。
+	CreatePromoChannel(code, name string, windowHours int64) (*PromoChannel, error)
+	GetPromoChannel(id int64) (*PromoChannel, error)
+	GetPromoChannelByCode(code string) (*PromoChannel, error)
+	ListPromoChannels(limit, offset int) ([]*PromoChannel, error)
+	UpdatePromoChannel(id int64, name string, windowHours int64) (*PromoChannel, error)
+	SetPromoChannelStatus(id int64, status string) (*PromoChannel, error)
+	RecordPromoClick(clickId string, ch *PromoChannel, kind, gameId, now string) (*PromoClick, error)
+	GetPromoClick(clickId string) (*PromoClick, error)
+	MarkClickAttributed(clickId string, userId int64) (bool, error)
+	ChannelStats(channelCode, from, to string) (*ChannelStats, error)
+	PrunePromoClicks(cutoff string, maxRows int64) (int64, error)
 
 	WriteAudit(entry *AuditLog) error
 	ListAuditLogs(resourceType string, limit, offset int) ([]*AuditLog, int, error)
@@ -281,6 +388,217 @@ func (m *AdminModel) CreateAdminTables() error {
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 		},
 		{
+			`CREATE TABLE IF NOT EXISTS game_servers (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				game_id VARCHAR(64) NOT NULL,
+				name VARCHAR(128) NOT NULL,
+				region VARCHAR(64) NOT NULL DEFAULT '',
+				status VARCHAR(16) NOT NULL DEFAULT 'open',
+				sort INTEGER NOT NULL DEFAULT 0,
+				planned_open_at VARCHAR(32) NOT NULL DEFAULT '',
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS game_servers (
+				id BIGINT AUTO_INCREMENT PRIMARY KEY,
+				game_id VARCHAR(64) NOT NULL,
+				name VARCHAR(128) NOT NULL,
+				region VARCHAR(64) NOT NULL DEFAULT '',
+				status VARCHAR(16) NOT NULL DEFAULT 'open',
+				sort BIGINT NOT NULL DEFAULT 0,
+				planned_open_at VARCHAR(32) NOT NULL DEFAULT '',
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				KEY idx_servers_game (game_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-306 开服预约：UNIQUE(server_id,user_id) 幂等锚，重复预约返回既有行
+			`CREATE TABLE IF NOT EXISTS server_reservations (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				game_id VARCHAR(64) NOT NULL,
+				server_id INTEGER NOT NULL,
+				user_id INTEGER NOT NULL,
+				notified_at VARCHAR(32) NOT NULL DEFAULT '',
+				created_at VARCHAR(32) NOT NULL,
+				UNIQUE (server_id, user_id)
+			)`,
+			`CREATE TABLE IF NOT EXISTS server_reservations (
+				id BIGINT AUTO_INCREMENT PRIMARY KEY,
+				game_id VARCHAR(64) NOT NULL,
+				server_id BIGINT NOT NULL,
+				user_id BIGINT NOT NULL,
+				notified_at VARCHAR(32) NOT NULL DEFAULT '',
+				created_at VARCHAR(32) NOT NULL,
+				UNIQUE KEY uq_reservation_server_user (server_id, user_id),
+				KEY idx_reservations_game (game_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-401 玩家评分（F04）：1-5 星，一游戏一评分（复合主键覆盖式）
+			`CREATE TABLE IF NOT EXISTS game_ratings (
+				game_id VARCHAR(64) NOT NULL,
+				user_id INTEGER NOT NULL,
+				rating INTEGER NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				PRIMARY KEY (game_id, user_id)
+			)`,
+			`CREATE TABLE IF NOT EXISTS game_ratings (
+				game_id VARCHAR(64) NOT NULL,
+				user_id BIGINT NOT NULL,
+				rating INTEGER NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				PRIMARY KEY (game_id, user_id),
+				KEY idx_ratings_game (game_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-401 玩家长评（F04）：一游戏一评（UNIQUE 409 幂等语义），
+			// 开发者回复单条挂列（官方回复覆盖式更新）
+			`CREATE TABLE IF NOT EXISTS game_user_reviews (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				game_id VARCHAR(64) NOT NULL,
+				user_id INTEGER NOT NULL,
+				content VARCHAR(4000) NOT NULL,
+				dev_reply VARCHAR(2000) NOT NULL DEFAULT '',
+				dev_reply_by INTEGER NOT NULL DEFAULT 0,
+				dev_reply_at VARCHAR(32) NOT NULL DEFAULT '',
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				deleted_at VARCHAR(32) NOT NULL DEFAULT '',
+				UNIQUE (game_id, user_id)
+			)`,
+			`CREATE TABLE IF NOT EXISTS game_user_reviews (
+				id BIGINT AUTO_INCREMENT PRIMARY KEY,
+				game_id VARCHAR(64) NOT NULL,
+				user_id BIGINT NOT NULL,
+				content VARCHAR(4000) NOT NULL,
+				dev_reply VARCHAR(2000) NOT NULL DEFAULT '',
+				dev_reply_by BIGINT NOT NULL DEFAULT 0,
+				dev_reply_at VARCHAR(32) NOT NULL DEFAULT '',
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				deleted_at VARCHAR(32) NOT NULL DEFAULT '',
+				UNIQUE KEY uq_user_review_game_user (game_id, user_id),
+				KEY idx_user_reviews_game (game_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-401 评价举报（F04）：UNIQUE(reporter_id,review_id) 一人一评一报
+			`CREATE TABLE IF NOT EXISTS review_reports (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				review_id INTEGER NOT NULL,
+				game_id VARCHAR(64) NOT NULL,
+				reporter_id INTEGER NOT NULL,
+				reason VARCHAR(1024) NOT NULL DEFAULT '',
+				status VARCHAR(16) NOT NULL DEFAULT 'pending',
+				handled_by INTEGER NOT NULL DEFAULT 0,
+				created_at VARCHAR(32) NOT NULL,
+				handled_at VARCHAR(32) NOT NULL DEFAULT '',
+				UNIQUE (reporter_id, review_id)
+			)`,
+			`CREATE TABLE IF NOT EXISTS review_reports (
+				id BIGINT AUTO_INCREMENT PRIMARY KEY,
+				review_id BIGINT NOT NULL,
+				game_id VARCHAR(64) NOT NULL,
+				reporter_id BIGINT NOT NULL,
+				reason VARCHAR(1024) NOT NULL DEFAULT '',
+				status VARCHAR(16) NOT NULL DEFAULT 'pending',
+				handled_by BIGINT NOT NULL DEFAULT 0,
+				created_at VARCHAR(32) NOT NULL,
+				handled_at VARCHAR(32) NOT NULL DEFAULT '',
+				UNIQUE KEY uq_review_report_reporter_review (reporter_id, review_id),
+				KEY idx_review_reports_status (status)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-401 收藏游戏（F05）：复合主键幂等；收藏人群为上线通知受众
+			`CREATE TABLE IF NOT EXISTS game_favorites (
+				game_id VARCHAR(64) NOT NULL,
+				user_id INTEGER NOT NULL,
+				created_at VARCHAR(32) NOT NULL,
+				PRIMARY KEY (game_id, user_id)
+			)`,
+			`CREATE TABLE IF NOT EXISTS game_favorites (
+				game_id VARCHAR(64) NOT NULL,
+				user_id BIGINT NOT NULL,
+				created_at VARCHAR(32) NOT NULL,
+				PRIMARY KEY (game_id, user_id),
+				KEY idx_favorites_user (user_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-401 长评有用票（F04）：一人一评一票（复合主键幂等，无票数
+			// 冗余列——计数按本表 COUNT 派生，天然无漂移；按票数排序用
+			// 相关子查询）。长评软删后其票保留（恢复评价即还原计数）。
+			`CREATE TABLE IF NOT EXISTS review_votes (
+				review_id INTEGER NOT NULL,
+				user_id INTEGER NOT NULL,
+				created_at VARCHAR(32) NOT NULL,
+				PRIMARY KEY (review_id, user_id)
+			)`,
+			`CREATE TABLE IF NOT EXISTS review_votes (
+				review_id BIGINT NOT NULL,
+				user_id BIGINT NOT NULL,
+				created_at VARCHAR(32) NOT NULL,
+				PRIMARY KEY (review_id, user_id),
+				KEY idx_review_votes_review (review_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-403 推广渠道（F22）：单层渠道（无 parent_id，多级代理不进首版），
+			// code 为渠道标识（推广链接 ?channel=<code>），归因窗口小时数，
+			// status active/disabled，disabled 链接不再计点击与归因
+			`CREATE TABLE IF NOT EXISTS promo_channels (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				code VARCHAR(64) NOT NULL,
+				name VARCHAR(128) NOT NULL,
+				attribution_window_hours INTEGER NOT NULL DEFAULT 72,
+				status VARCHAR(16) NOT NULL DEFAULT 'active',
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				UNIQUE (code)
+			)`,
+			`CREATE TABLE IF NOT EXISTS promo_channels (
+				id BIGINT AUTO_INCREMENT PRIMARY KEY,
+				code VARCHAR(64) NOT NULL,
+				name VARCHAR(128) NOT NULL,
+				attribution_window_hours INT NOT NULL DEFAULT 72,
+				status VARCHAR(16) NOT NULL DEFAULT 'active',
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				UNIQUE KEY uq_promo_channels_code (code)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			// GP-403 推广点击（F22）：点击即落一条（归因窗口结算凭据），
+			// click_id 唯一供注册回调携带；渠道包追踪：每次下载也记一条 channel 字段
+			`CREATE TABLE IF NOT EXISTS promo_clicks (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				click_id VARCHAR(64) NOT NULL,
+				channel_id INTEGER NOT NULL,
+				channel VARCHAR(64) NOT NULL DEFAULT '',
+				user_id INTEGER NOT NULL DEFAULT 0,
+				kind VARCHAR(16) NOT NULL DEFAULT 'click',
+				game_id VARCHAR(64) NOT NULL DEFAULT '',
+				occurred_at VARCHAR(32) NOT NULL,
+				created_at VARCHAR(32) NOT NULL,
+				UNIQUE (click_id)
+			)`,
+			`CREATE TABLE IF NOT EXISTS promo_clicks (
+				id BIGINT AUTO_INCREMENT PRIMARY KEY,
+				click_id VARCHAR(64) NOT NULL,
+				channel_id INTEGER NOT NULL,
+				channel VARCHAR(64) NOT NULL DEFAULT '',
+				user_id BIGINT NOT NULL DEFAULT 0,
+				kind VARCHAR(16) NOT NULL DEFAULT 'click',
+				game_id VARCHAR(64) NOT NULL DEFAULT '',
+				occurred_at VARCHAR(32) NOT NULL,
+				created_at VARCHAR(32) NOT NULL,
+				UNIQUE KEY uq_promo_clicks_click_id (click_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
 			`CREATE TABLE IF NOT EXISTS audit_logs (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				actor_id INTEGER NOT NULL DEFAULT 0,
@@ -315,7 +633,119 @@ func (m *AdminModel) CreateAdminTables() error {
 		}
 	}
 	// 既有库的 game_versions 无 GP-104 渠道包列：幂等补齐（SQLite PRAGMA → MySQL SHOW COLUMNS）。
-	return m.migrateVersionColumns()
+	if err := m.migrateVersionColumns(); err != nil {
+		return err
+	}
+	// GP-306 开服计划列：存量 game_servers 表补 planned_open_at（幂等）
+	if err := m.migrateServerColumns(); err != nil {
+		return err
+	}
+	// GP-401 软删列：存量 game_user_reviews 表补 deleted_at（幂等）
+	return m.migrateUserReviewColumns()
+}
+
+// serverMigrateColumns 存量 game_servers 表待补列（迁移与定义共用，顺序无关）。
+var serverMigrateColumns = []struct{ name, ddl string }{
+	{name: "planned_open_at", ddl: "VARCHAR(32) NOT NULL DEFAULT ''"},
+}
+
+// migrateServerColumns 为存量 game_servers 表补齐 GP-306 列（幂等，缺列才
+// ALTER；SQLite PRAGMA 枚举 / MySQL SHOW COLUMNS，无法枚举时跳过不阻断）。
+func (m *AdminModel) migrateServerColumns() error {
+	existing := map[string]bool{}
+	if rows, err := m.db.Query(`PRAGMA table_info(game_servers)`); err == nil {
+		for rows.Next() {
+			var cid int
+			var name, ctype string
+			var notnull, pk int
+			var dflt sql.NullString
+			if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err == nil {
+				existing[name] = true
+			}
+		}
+		rows.Close()
+	} else {
+		// MySQL：SHOW COLUMNS
+		rows, err2 := m.db.Query(`SHOW COLUMNS FROM game_servers`)
+		if err2 != nil {
+			return nil // 无法枚举列信息时跳过迁移（不阻断启动）
+		}
+		for rows.Next() {
+			var field, ctype, nullb, key, extra string
+			var dflt sql.NullString
+			if err := rows.Scan(&field, &ctype, &nullb, &key, &dflt, &extra); err == nil {
+				existing[field] = true
+			}
+		}
+		rows.Close()
+	}
+	for _, c := range serverMigrateColumns {
+		if existing[c.name] {
+			continue
+		}
+		if _, err := m.db.Exec(
+			`ALTER TABLE game_servers ADD COLUMN ` + c.name + ` ` + c.ddl); err != nil {
+			// 列已存在（并发建表）或方言差异：忽略该列，不阻断
+			continue
+		}
+	}
+	return nil
+}
+
+// columnDef 待补列定义（列名 + 双方言同形 DDL）。
+type columnDef struct{ name, ddl string }
+
+// addMissingColumns 为存量表补齐缺列（幂等，缺列才 ALTER；SQLite PRAGMA
+// table_info → MySQL SHOW COLUMNS 枚举，无法枚举时跳过不阻断启动）。
+func (m *AdminModel) addMissingColumns(table string, cols []columnDef) error {
+	existing := map[string]bool{}
+	if rows, err := m.db.Query(`PRAGMA table_info(` + table + `)`); err == nil {
+		for rows.Next() {
+			var cid int
+			var name, ctype string
+			var notnull, pk int
+			var dflt sql.NullString
+			if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err == nil {
+				existing[name] = true
+			}
+		}
+		rows.Close()
+	} else {
+		rows, err2 := m.db.Query(`SHOW COLUMNS FROM ` + table)
+		if err2 != nil {
+			return nil // 无法枚举列信息时跳过迁移（不阻断启动）
+		}
+		for rows.Next() {
+			var field, ctype, nullb, key, extra string
+			var dflt sql.NullString
+			if err := rows.Scan(&field, &ctype, &nullb, &key, &dflt, &extra); err == nil {
+				existing[field] = true
+			}
+		}
+		rows.Close()
+	}
+	for _, c := range cols {
+		if existing[c.name] {
+			continue
+		}
+		if _, err := m.db.Exec(
+			`ALTER TABLE ` + table + ` ADD COLUMN ` + c.name + ` ` + c.ddl); err != nil {
+			// 列已存在（并发建表）或方言差异：忽略该列，不阻断
+			continue
+		}
+	}
+	return nil
+}
+
+// userReviewMigrateColumns 存量 game_user_reviews 待补列（GP-401 软删）。
+var userReviewMigrateColumns = []columnDef{
+	{"deleted_at", "VARCHAR(32) NOT NULL DEFAULT ''"},
+}
+
+// migrateUserReviewColumns 为存量 game_user_reviews 表补齐 GP-401 软删列
+// （幂等，缺列才 ALTER）。
+func (m *AdminModel) migrateUserReviewColumns() error {
+	return m.addMissingColumns("game_user_reviews", userReviewMigrateColumns)
 }
 
 // versionColumns 渠道包列（迁移与扫描共用定义，顺序即 SELECT 尾列）。

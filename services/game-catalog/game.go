@@ -4,13 +4,19 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/tappi/tappi/services/game-catalog/internal/config"
 	"github.com/tappi/tappi/services/game-catalog/internal/handler"
 	"github.com/tappi/tappi/services/game-catalog/internal/logic"
+	"github.com/tappi/tappi/services/game-catalog/internal/openscan"
+	"github.com/tappi/tappi/services/game-catalog/internal/promoprune"
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 
 	"github.com/zeromicro/go-zero/core/conf"
@@ -45,6 +51,34 @@ func run() error {
 
 	ctx := svc.NewServiceContext(c)
 	handler.RegisterHandlers(server, ctx)
+
+	// GP-306 排期到点自动开服：周期扫描（账号信号面，与 payments 发货恢复
+	// 同款），ctx 取消即退出。
+	scanCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go openscan.NewRunner(ctx, time.Second*time.Duration(c.OpenScan.IntervalSeconds)).Run(scanCtx)
+
+	// GP-402 经营分析 outbox 重投：data-panel 短时不可达时补偿投递（本地
+	// 持久化，重启续扫），ctx 取进程信号面；DATA_PANEL_URL 未配置时
+	// NewRelay 返回 nil，不启动。
+	if ctx.AnalyticsRelay != nil {
+		go ctx.AnalyticsRelay.Run(scanCtx)
+	}
+
+	// GP-306/401 业务通知 outbox 重投：community 短时不可达时补偿投递（本地
+	// 持久化，重启续扫），ctx 取进程信号面；COMMUNITY_URL 未配置时
+	// NewRelay 返回 nil，不启动。
+	if ctx.NotifyRelay != nil {
+		go ctx.NotifyRelay.Run(scanCtx)
+	}
+
+	// GP-403 渠道点击归档：周期清理过期/超量 promo_clicks（纯本地 DB，无外部
+	// 依赖，恒启动；retention/maxRows 取 0 时 PruneOnce 为 no-op）。
+	pruner := promoprune.NewPruner(ctx,
+		time.Hour*24*time.Duration(c.Promo.PruneRetentionDays),
+		c.Promo.PruneMaxRows,
+		time.Hour*time.Duration(c.Promo.PruneIntervalHours))
+	go pruner.Run(scanCtx)
 
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()

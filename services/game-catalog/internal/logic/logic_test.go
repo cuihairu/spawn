@@ -48,6 +48,10 @@ func newLogicSvcCtx(t *testing.T) *svc.ServiceContext {
 	if err := repo.CreateGamesTable(); err != nil {
 		t.Fatalf("CreateGamesTable: %v", err)
 	}
+	admin := model.NewAdminModel(db)
+	if err := admin.CreateAdminTables(); err != nil {
+		t.Fatalf("CreateAdminTables: %v", err)
+	}
 	var games []*model.Game
 	if err := json.Unmarshal([]byte(sampleGamesJSON), &games); err != nil {
 		t.Fatalf("parse sample games: %v", err)
@@ -55,7 +59,7 @@ func newLogicSvcCtx(t *testing.T) *svc.ServiceContext {
 	if err := repo.Seed(games); err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
-	return &svc.ServiceContext{GameRepository: repo}
+	return &svc.ServiceContext{GameRepository: repo, AdminRepository: admin}
 }
 
 func gameIds(games []types.Game) []string {

@@ -67,10 +67,59 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 	// 的版本，未发布/跨游戏一律 404 不泄露存在性。
 	server.AddRoutes([]rest.Route{
 		{Method: http.MethodGet, Path: "/games/:id/versions/latest", Handler: LatestVersionHandler(serverCtx)},
+		// GP-201 公开区服列表（充值目标）：只对已上架游戏开放，隐藏 closed
+		{Method: http.MethodGet, Path: "/games/:id/servers", Handler: PublicListServersHandler(serverCtx)},
 	})
 	server.AddRoutes(rest.WithMiddleware(auth,
 		rest.Route{Method: http.MethodGet, Path: "/games/:id/versions/:versionId/download", Handler: DownloadVersionHandler(serverCtx)},
 	))
+
+	// GP-306 开服计划与预约（F21）：玩家预约/取消/我的预约（player 即可；
+	// 已开服 409、重复预约幂等返回既有）。开服提醒在区服 open 过渡时触发
+	//（PartnerUpdateServer），版本通知在版本发布时触发（AdminLogic）。
+	server.AddRoutes(rest.WithMiddleware(auth,
+		rest.Route{Method: http.MethodPost, Path: "/games/:id/servers/:serverId/reserve", Handler: ReserveServerHandler(serverCtx)},
+		rest.Route{Method: http.MethodDelete, Path: "/games/:id/servers/:serverId/reserve", Handler: CancelReservationHandler(serverCtx)},
+		rest.Route{Method: http.MethodGet, Path: "/games/:id/reservations/me", Handler: MyReservationsHandler(serverCtx)},
+	))
+
+	// GP-401 游戏评价（F04）：长评列表公开读（详情附评分聚合）；评分/发评/
+	// 改评/举报走平台 JWT（player 即可）。开发者回复在合作方路由组（自有
+	// 游戏）；举报处置在管理路由组。
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/games/:id/reviews", Handler: ListGameReviewsHandler(serverCtx)},
+	})
+	server.AddRoutes(rest.WithMiddleware(auth,
+		rest.Route{Method: http.MethodPost, Path: "/games/:id/rating", Handler: RateGameHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/games/:id/reviews", Handler: CreateGameReviewHandler(serverCtx)},
+		rest.Route{Method: http.MethodPut, Path: "/games/:id/reviews/:reviewId", Handler: UpdateGameReviewHandler(serverCtx)},
+		// GP-401 长评有用票：一人一评一票（POST 投 / DELETE 撤，均幂等）。
+		rest.Route{Method: http.MethodPost, Path: "/games/:id/reviews/:reviewId/vote", Handler: VoteGameReviewHandler(serverCtx)},
+		rest.Route{Method: http.MethodDelete, Path: "/games/:id/reviews/:reviewId/vote", Handler: UnvoteGameReviewHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/games/:id/reviews/:reviewId/report", Handler: ReportGameReviewHandler(serverCtx)},
+		// GP-401 收藏游戏（F05）：收藏/取消幂等；我的收藏列表。上线通知
+		//（game_launch）在游戏上架过渡时向收藏人群扇出（AdminLogic）。
+		rest.Route{Method: http.MethodPost, Path: "/games/:id/favorite", Handler: FavoriteGameHandler(serverCtx)},
+		rest.Route{Method: http.MethodDelete, Path: "/games/:id/favorite", Handler: UnfavoriteGameHandler(serverCtx)},
+		rest.Route{Method: http.MethodGet, Path: "/me/favorites", Handler: MyFavoritesHandler(serverCtx)},
+	))
+
+	// GP-306 S2S：游戏维度去重预约人群（promotions 活动通知受众）。
+	// X-Internal-Token 校验在 handler 内先于 body 解析；S2S 专用不进网关。
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/internal/games/:id/reservation-users", Handler: InternalReservationUsersHandler(serverCtx)},
+	})
+
+	// GP-403 单层渠道推广（F22）：推广链接落地解析与渠道包下载登记公开
+	// 免登录（落地页通常在登录前打开，链接参数即归因输入）；渠道登记、
+	// 变更历史与效果计数走管理面。渠道表无上级字段——多级代理不在本任务。
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/promo/resolve", Handler: ResolvePromoLinkHandler(serverCtx)},
+		{Method: http.MethodPost, Path: "/promo/download-click", Handler: PromoDownloadClickHandler(serverCtx)},
+		// S2S：user-service 注册时按 click_id 解析归因（X-Internal-Token
+		// 守卫，handler 内先校验；不进网关）
+		{Method: http.MethodPost, Path: "/internal/promo/clicks/:clickId/resolve", Handler: InternalResolveClickHandler(serverCtx)},
+	})
 
 	// 运营后台（GP-103）：platform_admin/operator 方可访问；
 	// 角色授予收紧为 platform_admin（最小权限）。
@@ -90,7 +139,19 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		rest.Route{Method: http.MethodGet, Path: "/admin/games/:id/versions", Handler: AdminListVersionsHandler(serverCtx)},
 		rest.Route{Method: http.MethodPost, Path: "/admin/games/:id/versions/:versionId/publish", Handler: PublishVersionHandler(serverCtx)},
 		rest.Route{Method: http.MethodPost, Path: "/admin/games/:id/versions/:versionId/revoke", Handler: RevokeVersionHandler(serverCtx)},
+		// GP-401 评价举报处置：驳回（评价保留）/移除（评价软删+同评未决结案）
+		rest.Route{Method: http.MethodGet, Path: "/admin/review-reports", Handler: ListReviewReportsHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/admin/review-reports/:id/handle", Handler: HandleReviewReportHandler(serverCtx)},
+		// GP-401 移除可恢复：被软删的长评恢复回公开列表（作者重评亦可复活）
+		rest.Route{Method: http.MethodPost, Path: "/admin/reviews/:id/restore", Handler: RestoreReviewHandler(serverCtx)},
 		rest.Route{Method: http.MethodGet, Path: "/admin/audit", Handler: ListAuditLogsHandler(serverCtx)},
+		// GP-403 单层渠道推广（F22）：渠道登记/列表/变更/启停与效果计数；
+		// 变更历史复用 /admin/audit?resource_type=promo_channel。
+		rest.Route{Method: http.MethodPost, Path: "/admin/promo/channels", Handler: CreatePromoChannelHandler(serverCtx)},
+		rest.Route{Method: http.MethodGet, Path: "/admin/promo/channels", Handler: ListPromoChannelsHandler(serverCtx)},
+		rest.Route{Method: http.MethodPatch, Path: "/admin/promo/channels/:id", Handler: UpdatePromoChannelHandler(serverCtx)},
+		rest.Route{Method: http.MethodPost, Path: "/admin/promo/channels/:id/status", Handler: SetPromoChannelStatusHandler(serverCtx)},
+		rest.Route{Method: http.MethodGet, Path: "/admin/promo/channels/:code/stats", Handler: PromoChannelStatsHandler(serverCtx)},
 	)...)
 	server.AddRoutes(rest.WithMiddleware(auth, adminRoutes...))
 
@@ -103,6 +164,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			rest.Route{Method: http.MethodGet, Path: "/partner/games/:id/versions", Handler: PartnerListVersionsHandler(serverCtx)},
 			// GP-105 平台托管包体上传（multipart，流式落盘）
 			rest.Route{Method: http.MethodPost, Path: "/partner/games/:id/versions/:versionId/package", Handler: PartnerUploadPackageHandler(serverCtx)},
+			// GP-201 区服目录/充值目标：合作方维护自有游戏的区服
+			rest.Route{Method: http.MethodPost, Path: "/partner/games/:id/servers", Handler: PartnerCreateServerHandler(serverCtx)},
+			rest.Route{Method: http.MethodGet, Path: "/partner/games/:id/servers", Handler: PartnerListServersHandler(serverCtx)},
+			rest.Route{Method: http.MethodPatch, Path: "/partner/games/:id/servers/:serverId", Handler: PartnerUpdateServerHandler(serverCtx)},
+			// GP-401 开发者回复长评（自有游戏，官方单条覆盖式）
+			rest.Route{Method: http.MethodPost, Path: "/partner/games/:id/reviews/:reviewId/reply", Handler: ReplyGameReviewHandler(serverCtx)},
 		)...,
 	))
 }

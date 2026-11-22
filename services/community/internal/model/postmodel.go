@@ -49,6 +49,10 @@ type PostStore interface {
 	ListLikedPosts(userId, limit, offset int64) ([]types.Post, int64)
 	Hot(limit int64) []types.Post
 	HotForUser(followedTopicIds, followedAuthorIds []int64, limit int64) []types.Post
+	// GP-307 官方公告：置顶运营位、官方身份置位、公告入口聚合。
+	SetPinned(id int64, pinned bool) error
+	SetAuthorOfficial(id int64, official bool) error
+	Announcements(limit int64) []types.Post
 }
 
 var _ PostStore = (*PostModel)(nil)
@@ -62,7 +66,7 @@ func NewPostModel(db *sql.DB) *PostModel {
 	}
 }
 
-const postColumns = "id, topic_id, author_id, author_name, title, content, images, type, tags, view_count, like_count, comment_count, share_count, is_pinned, is_hot, status, created_at, updated_at"
+const postColumns = "id, topic_id, author_id, author_name, title, content, images, type, tags, view_count, like_count, comment_count, share_count, is_pinned, is_hot, status, created_at, updated_at, author_official"
 
 // CreatePostsTable 创建帖子表（开发使用）。先尝试 SQLite 方言，失败回落
 // MySQL（与 user-service.CreateUsersTable 同款双格式策略）。
@@ -86,7 +90,8 @@ func (m *PostModel) CreatePostsTable() error {
 			is_hot INTEGER NOT NULL DEFAULT 0,
 			status VARCHAR(16) NOT NULL DEFAULT 'published',
 			created_at VARCHAR(32) NOT NULL,
-			updated_at VARCHAR(32) NOT NULL
+			updated_at VARCHAR(32) NOT NULL,
+			author_official INTEGER NOT NULL DEFAULT 0
 		)
 	`
 
@@ -110,7 +115,8 @@ func (m *PostModel) CreatePostsTable() error {
 				is_hot TINYINT NOT NULL DEFAULT 0,
 				status VARCHAR(16) NOT NULL DEFAULT 'published',
 				created_at VARCHAR(32) NOT NULL,
-				updated_at VARCHAR(32) NOT NULL
+				updated_at VARCHAR(32) NOT NULL,
+				author_official TINYINT NOT NULL DEFAULT 0
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 		`
 		if _, err := m.db.Exec(query); err != nil {
@@ -118,7 +124,29 @@ func (m *PostModel) CreatePostsTable() error {
 		}
 	}
 
-	return nil
+	return m.migratePostColumns()
+}
+
+// migratePostColumns 存量库列迁移（GP-307 author_official 官方身份）：
+// 尝试 ALTER ADD COLUMN，「duplicate column」类报错 = 已存在视为成功
+// （与 game-catalog 迁移同款探测，双方言各试一次）。
+func (m *PostModel) migratePostColumns() error {
+	var lastErr error
+	for _, ddl := range []string{
+		`ALTER TABLE posts ADD COLUMN author_official INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE posts ADD COLUMN author_official TINYINT NOT NULL DEFAULT 0`,
+	} {
+		if _, err := m.db.Exec(ddl); err != nil {
+			msg := strings.ToLower(err.Error())
+			if strings.Contains(msg, "duplicate column") || strings.Contains(msg, "already exists") {
+				return nil
+			}
+			lastErr = err
+			continue
+		}
+		return nil
+	}
+	return lastErr
 }
 
 // Seed 按给定条目写入帖子（显式保留 id，跳过 nil 与非正 id），
@@ -129,12 +157,12 @@ func (m *PostModel) Seed(posts []*types.Post) error {
 			continue
 		}
 		if _, err := m.db.Exec(
-			`INSERT INTO posts (`+postColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO posts (`+postColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			post.Id, post.TopicId, post.AuthorId, post.AuthorName, post.Title, post.Content,
 			encodeStringList(post.Images), post.Type, encodeStringList(post.Tags),
 			post.ViewCount, post.LikeCount, post.CommentCount, post.ShareCount,
 			boolToInt(post.IsPinned), boolToInt(post.IsHot), post.Status,
-			post.CreatedAt, post.UpdatedAt,
+			post.CreatedAt, post.UpdatedAt, boolToInt(post.AuthorOfficial),
 		); err != nil {
 			return fmt.Errorf("写入帖子失败: %w", err)
 		}
@@ -188,10 +216,10 @@ func postKey(id int64) string { return "id:" + strconv.FormatInt(id, 10) }
 func scanPost(scan func(dest ...interface{}) error) (*types.Post, error) {
 	p := &types.Post{}
 	var images, tags string
-	var pinned, hot int64
+	var pinned, hot, official int64
 	if err := scan(&p.Id, &p.TopicId, &p.AuthorId, &p.AuthorName, &p.Title, &p.Content,
 		&images, &p.Type, &tags, &p.ViewCount, &p.LikeCount, &p.CommentCount,
-		&p.ShareCount, &pinned, &hot, &p.Status, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		&p.ShareCount, &pinned, &hot, &p.Status, &p.CreatedAt, &p.UpdatedAt, &official); err != nil {
 		return nil, err
 	}
 	var err error
@@ -203,6 +231,7 @@ func scanPost(scan func(dest ...interface{}) error) (*types.Post, error) {
 	}
 	p.IsPinned = pinned != 0
 	p.IsHot = hot != 0
+	p.AuthorOfficial = official != 0
 	return p, nil
 }
 
@@ -239,7 +268,8 @@ func (m *PostModel) Get(id int64) (*types.Post, error) {
 }
 
 // Create 新建帖子：TrimSpace 文本、type 默认 discussion、计数归零、published，
-// 自增主键落库，失效新行缓存键（防御同 id 重建路径）。
+// 自增主键落库，失效新行缓存键（防御同 id 重建路径）。author_official 默认
+// 0，官方身份由 SetAuthorOfficial 在创建后按角色权威置位（GP-307）。
 func (m *PostModel) Create(topicId, authorId int64, authorName string, req *types.CreatePostReq) (*types.Post, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	postType := strings.TrimSpace(req.Type)
@@ -264,11 +294,11 @@ func (m *PostModel) Create(topicId, authorId int64, authorName string, req *type
 	result, err := m.db.Exec(
 		`INSERT INTO posts (topic_id, author_id, author_name, title, content, images,
 			type, tags, view_count, like_count, comment_count, share_count,
-			is_pinned, is_hot, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			is_pinned, is_hot, status, created_at, updated_at, author_official)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.TopicId, p.AuthorId, p.AuthorName, p.Title, p.Content,
 		encodeStringList(p.Images), p.Type, encodeStringList(p.Tags),
-		0, 0, 0, 0, 0, 0, p.Status, p.CreatedAt, p.UpdatedAt,
+		0, 0, 0, 0, 0, 0, p.Status, p.CreatedAt, p.UpdatedAt, 0,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("写入帖子失败: %w", err)
@@ -515,7 +545,7 @@ func (m *PostModel) ListLikedPosts(userId, limit, offset int64) ([]types.Post, i
 	rows, err := m.db.Query(
 		`SELECT p.id, p.topic_id, p.author_id, p.author_name, p.title, p.content, p.images,
 			p.type, p.tags, p.view_count, p.like_count, p.comment_count, p.share_count,
-			p.is_pinned, p.is_hot, p.status, p.created_at, p.updated_at
+			p.is_pinned, p.is_hot, p.status, p.created_at, p.updated_at, p.author_official
 		 FROM post_likes pl
 		 JOIN posts p ON p.id = pl.post_id
 		 WHERE pl.user_id = ? AND p.status != 'deleted'
@@ -590,6 +620,60 @@ func (m *PostModel) IncrementComments(id int64) (*types.Post, error) {
 
 	m.cache.Delete(postKey(id))
 	return p, nil
+}
+
+// SetPinned 置顶/取消置顶（GP-307 官方公告运营位，管理面调用）。
+// 幂等（重复置同值成功）；帖子不存在/已删除 → ErrPostNotFound。
+func (m *PostModel) SetPinned(id int64, pinned bool) error {
+	if _, err := m.getFromDB(id); err != nil {
+		return err
+	}
+	if _, err := m.db.Exec(`UPDATE posts SET is_pinned = ?, updated_at = ? WHERE id = ?`,
+		boolToInt(pinned), time.Now().UTC().Format(time.RFC3339), id); err != nil {
+		return fmt.Errorf("帖子置顶状态更新失败: %w", err)
+	}
+	m.cache.Delete(postKey(id))
+	return nil
+}
+
+// SetAuthorOfficial 官方身份置位/撤销（GP-307：管理员发言=官方帖，
+// 由创建逻辑按角色权威调用；幂等）。
+func (m *PostModel) SetAuthorOfficial(id int64, official bool) error {
+	if _, err := m.db.Exec(`UPDATE posts SET author_official = ? WHERE id = ?`,
+		boolToInt(official), id); err != nil {
+		return fmt.Errorf("帖子官方身份更新失败: %w", err)
+	}
+	m.cache.Delete(postKey(id))
+	return nil
+}
+
+// Announcements 官方公告列表（GP-307 公告入口）：author_official=1 且
+// published，置顶优先其余按 id 倒序（新公告在前），limit 钳制 ≤50。
+func (m *PostModel) Announcements(limit int64) []types.Post {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	rows, err := m.db.Query(
+		`SELECT `+postColumns+` FROM posts
+		 WHERE status = 'published' AND author_official = 1
+		 ORDER BY is_pinned DESC, id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	out := make([]types.Post, 0, limit)
+	for rows.Next() {
+		p, err := scanPost(rows.Scan)
+		if err != nil {
+			return nil
+		}
+		out = append(out, clonePost(*p))
+	}
+	return out
 }
 
 // PostListFilter 列表过滤条件（与原文件仓字段一致）。

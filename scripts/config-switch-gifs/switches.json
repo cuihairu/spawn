@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "comment": "DOC-GIF 配置开关效果清单（唯一事实源）。capture=true 的开关由 generate.py 驱动真实服务出 off/on 终端证据 + 循环 GIF，兼作配置效果回归测试（行为断言不过即红）；capture=false 的开关无单服务可截图面（全栈联动/时间维度/部署面），进文档页文末手工验证清单，不配图不编造。",
+  "services": {
+    "community": { "dir": "services/community", "binary": "community", "port": 18992 },
+    "data-panel": { "dir": "services/data-panel", "binary": "data-panel", "port": 18996 },
+    "game-catalog": { "dir": "services/game-catalog", "binary": "game-catalog", "port": 18990 },
+    "realtime-hub": { "dir": "services/realtime-hub", "binary": "realtime-hub", "port": 18993 }
+  },
+  "switches": [
+    {
+      "key": "community-blocked-words",
+      "service": "community",
+      "group": "内容审核",
+      "group_en": "Moderation",
+      "config": "Moderation.BlockedWords",
+      "name": "敏感词表",
+      "name_en": "Blocked words list",
+      "effect": "发帖/评论/拆解文本命中词表即 400 拒绝；表空回落内置默认词表。演示：含「违禁演示词」的帖子 off=200 发布成功 / on=400 被拒。",
+      "effect_en": "Posts/comments/guide text containing a listed word is rejected with 400; an empty list falls back to the built-in defaults. Demo post: off=200 accepted, on=400 rejected.",
+      "capture": true
+    },
+    {
+      "key": "community-moderation-admin-ids",
+      "service": "community",
+      "group": "内容审核",
+      "group_en": "Moderation",
+      "config": "Moderation.AdminUserIds",
+      "name": "审核管理员名单",
+      "name_en": "Moderation admin allowlist",
+      "effect": "名单内用户可置顶帖/处置举报/精选拆解；名单外 403。演示：用户 7 置顶帖子 off=403 / on=200。",
+      "effect_en": "Users on the allowlist can pin posts, handle reports and feature breakdowns; others get 403. Demo: user 7 pins a post, off=403 / on=200.",
+      "capture": true
+    },
+    {
+      "key": "community-internal-token",
+      "service": "community",
+      "group": "服务间令牌",
+      "group_en": "S2S tokens",
+      "config": "Internal.Token",
+      "name": "内部通知令牌（GP-306）",
+      "name_en": "Internal notification token (GP-306)",
+      "effect": "POST /internal/notifications 按令牌严格比对；未配置恒 403（fail-closed）。演示：带正确令牌调用 off=403 / on=200 created=1。",
+      "effect_en": "POST /internal/notifications compares X-Internal-Token strictly; unconfigured always 403 (fail-closed). Demo with the right token: off=403 / on=200 created=1.",
+      "capture": true
+    },
+    {
+      "key": "data-panel-internal-token",
+      "service": "data-panel",
+      "group": "服务间令牌",
+      "group_en": "S2S tokens",
+      "config": "Internal.Token",
+      "name": "经营分析摄入口令（GP-402）",
+      "name_en": "Analytics ingest token (GP-402)",
+      "effect": "POST /internal/events 事实事件摄入按令牌严格比对；空令牌整体拒绝。演示：摄入一条事件 off=403 / on=200 accepted=1。",
+      "effect_en": "POST /internal/events compares X-Internal-Token strictly; an empty token rejects everything. Demo ingesting one event: off=403 / on=200 accepted=1.",
+      "capture": true
+    },
+    {
+      "key": "data-panel-analytics-admin-ids",
+      "service": "data-panel",
+      "group": "数据面板",
+      "group_en": "Data panel",
+      "config": "Analytics.AdminUserIds",
+      "name": "分析查询名单",
+      "name_en": "Analytics query allowlist",
+      "effect": "漏斗/留存/活动效果等分析查询端点仅名单内用户可读，名单为空全关。演示：用户 7 查询 overview off=403 / on=200。",
+      "effect_en": "Analytics query endpoints (funnel/retention/campaign) are readable only by allowlisted users; an empty list closes all. Demo: user 7 queries overview, off=403 / on=200.",
+      "capture": true
+    },
+    {
+      "key": "game-catalog-internal-token",
+      "service": "game-catalog",
+      "group": "服务间令牌",
+      "group_en": "S2S tokens",
+      "config": "Internal.Token",
+      "name": "目录内部端点令牌",
+      "name_en": "Catalog internal endpoint token",
+      "effect": "GET /internal/games/:id/reservation-users（活动通知受众）按令牌严格比对；空令牌恒 403。演示：查询游戏 1 预约人群 off=403 / on=200。",
+      "effect_en": "GET /internal/games/:id/reservation-users (campaign notification audience) compares the token strictly; empty token always 403. Demo querying game 1: off=403 / on=200.",
+      "capture": true
+    },
+    {
+      "key": "realtime-hub-internal-token",
+      "service": "realtime-hub",
+      "group": "服务间令牌",
+      "group_en": "S2S tokens",
+      "config": "InternalToken",
+      "name": "实时投递令牌",
+      "name_en": "Realtime publish token",
+      "effect": "POST /internal/publish 服务间投递按令牌严格比对；未配置恒 403。演示：投递一帧 off=403 / on=200 delivered=0。",
+      "effect_en": "POST /internal/publish compares the token strictly; unconfigured always 403. Demo publishing a frame: off=403 / on=200 delivered=0.",
+      "capture": true
+    },
+    {
+      "key": "realtime-hub-push-webhook",
+      "service": "realtime-hub",
+      "group": "实时通道",
+      "group_en": "Realtime",
+      "config": "PushWebhook",
+      "name": "离线推送 webhook",
+      "name_en": "Offline push webhook",
+      "effect": "目标用户零投递（不在线）时回调该地址转厂商推送；空 = 不推。演示：向离线用户 42 投递，接收器 off=无回调 / on=收到 POST。",
+      "effect_en": "When a target user has zero live deliveries (offline), the hub calls this URL for vendor push bridging; empty = no call. Demo publishing to offline user 42: receiver off=no callback / on=POST received.",
+      "capture": true
+    },
+    {
+      "key": "gateway-upstream-base-urls",
+      "service": "api-gateway",
+      "group": "网关接线",
+      "group_en": "Gateway wiring",
+      "config": "Upstreams.*.BaseURL",
+      "name": "上游服务地址",
+      "name_en": "Upstream base URLs",
+      "effect": "反代路由按上游地址转发；上游不可达时网关回 502。效果面在部署面（需同时跑上下游），列手工验证。",
+      "effect_en": "Proxy routes forward to the configured upstreams; unreachable upstream yields 502. Observable only with a running stack, so manual verification.",
+      "capture": false
+    },
+    {
+      "key": "community-realtime-url",
+      "service": "community",
+      "group": "实时通道",
+      "group_en": "Realtime",
+      "config": "Realtime.Url",
+      "name": "实时推送联动",
+      "name_en": "Realtime push wiring",
+      "effect": "配置后站内通知经 realtime-hub /internal/publish 实时下发；空 = 不推（通知仅落库）。观察面在客户端 WS 流，列手工验证。",
+      "effect_en": "When set, notifications are also pushed live via realtime-hub /internal/publish; empty = DB only. Observable on the client WS stream, so manual verification.",
+      "capture": false
+    },
+    {
+      "key": "realtime-hub-redis-addr",
+      "service": "realtime-hub",
+      "group": "实时通道",
+      "group_en": "Realtime",
+      "config": "RedisAddr",
+      "name": "Redis 跨实例投递",
+      "name_en": "Redis cross-instance relay",
+      "effect": "配置后启用 Redis pub/sub 跨实例帧投递（尽力而为）；空 = 单实例内存模式。效果面需 Redis 与多实例部署，列手工验证。",
+      "effect_en": "When set, frames relay across instances via Redis pub/sub (best effort); empty = single-instance in-memory. Requires Redis and a multi-instance deployment, so manual verification.",
+      "capture": false
+    },
+    {
+      "key": "game-catalog-notify-url",
+      "service": "game-catalog",
+      "group": "服务间联动",
+      "group_en": "S2S wiring",
+      "config": "Notify.Url / Notify.Token",
+      "name": "审核回执通知",
+      "name_en": "Review outcome notification",
+      "effect": "提审状态流转时回调 community 内部通知端点；未配置 = no-op。联动需 community 同跑，列手工验证。",
+      "effect_en": "Game review status changes call back the community internal notification endpoint; unconfigured = no-op. Requires community running, so manual verification.",
+      "capture": false
+    },
+    {
+      "key": "game-catalog-analytics-base-url",
+      "service": "game-catalog",
+      "group": "服务间联动",
+      "group_en": "S2S wiring",
+      "config": "Analytics.BaseURL / Analytics.Token",
+      "name": "目录事件上报",
+      "name_en": "Catalog event forwarding",
+      "effect": "目录侧事实事件 fire-and-forget 上报 data-panel /internal/events；BaseURL 未配置 = no-op。联动需 data-panel 同跑，列手工验证。",
+      "effect_en": "Catalog facts are forwarded fire-and-forget to data-panel /internal/events; BaseURL unset = no-op. Requires data-panel running, so manual verification.",
+      "capture": false
+    },
+    {
+      "key": "payments-coupon-lock-ttl",
+      "service": "payments",
+      "group": "交易",
+      "group_en": "Payments",
+      "config": "Coupon.LockTtlSeconds / ReleaseIntervalSeconds",
+      "name": "优惠券锁定超时释放",
+      "name_en": "Coupon lock timeout release",
+      "effect": "锁定超时的优惠券被后台扫描释放回可领池；TTL 内保持锁定。效果沿时间轴展开且需 payments+adapter 全链路，列手工验证。",
+      "effect_en": "Coupons locked past the TTL are swept back to the claimable pool; within TTL they stay locked. Unfolds over time and needs the payments+adapter stack, so manual verification.",
+      "capture": false
+    },
+    {
+      "key": "user-service-token-expire",
+      "service": "user-service",
+      "group": "认证",
+      "group_en": "Auth",
+      "config": "Auth.TokenExpire",
+      "name": "令牌有效期（天）",
+      "name_en": "Token lifetime (days)",
+      "effect": "登录签发 JWT 的过期时限；效果沿时间轴展开（过期后 401），无即时前后帧差，列手工验证。",
+      "effect_en": "Expiry horizon of JWTs issued at login; the effect unfolds over time (401 after expiry), so no immediate off/on frame difference — manual verification.",
+      "capture": false
+    }
+  ]
+}

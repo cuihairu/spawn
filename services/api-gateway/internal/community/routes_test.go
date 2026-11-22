@@ -64,6 +64,20 @@ func TestCommunityProxyRoutesPassthrough(t *testing.T) {
 	if last.method != http.MethodPost || last.path != "/api/v1/topics" || last.body != `{"name":"n"}` {
 		t.Fatalf("last hit = %+v", last)
 	}
+
+	// DESIGN-001 设计拆解：品类聚合公开读透传（路径参数端点同 Handler）
+	designResp, err := http.Get(l + "/api/v1/design/categories")
+	if err != nil {
+		t.Fatalf("GET design: %v", err)
+	}
+	designBody := readAll(t, designResp.Body)
+	designResp.Body.Close()
+	if designResp.StatusCode != 200 || designBody != `{"proxied":true}` {
+		t.Fatalf("design GET status=%d body=%q", designResp.StatusCode, designBody)
+	}
+	if len(hits) != 3 || hits[2].method != http.MethodGet || hits[2].path != "/api/v1/design/categories" {
+		t.Fatalf("design hits = %+v", hits)
+	}
 }
 
 func startTestServer(t *testing.T, serverCtx *svc.ServiceContext) string {

@@ -1,0 +1,328 @@
+package model
+
+// GP-401 评价域模型单测：评分覆盖/聚合、长评唯一约束/列表 JOIN 评分、
+// 举报幂等与未决处置、收藏幂等与人群查询。
+
+import (
+	"errors"
+	"testing"
+)
+
+func TestUserRating_UpsertAndSummary(t *testing.T) {
+	m := newTestAdminModel(t)
+
+	if rating, err := m.GetUserRating("g-1", 7); err != nil || rating != 0 {
+		t.Fatalf("unrated = %d/%v, want 0/nil", rating, err)
+	}
+
+	if err := m.UpsertUserRating("g-1", 7, 4); err != nil {
+		t.Fatalf("rate: %v", err)
+	}
+	if err := m.UpsertUserRating("g-1", 8, 2); err != nil {
+		t.Fatalf("rate: %v", err)
+	}
+	// 覆盖式：同一用户重复评分覆盖旧值
+	if err := m.UpsertUserRating("g-1", 7, 5); err != nil {
+		t.Fatalf("re-rate: %v", err)
+	}
+	if rating, err := m.GetUserRating("g-1", 7); err != nil || rating != 5 {
+		t.Fatalf("rated = %d/%v, want 5", rating, err)
+	}
+
+	s, err := m.GetRatingSummary("g-1")
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if s.Count != 2 || s.Average < 3.49 || s.Average > 3.51 {
+		t.Fatalf("summary = %+v, want count=2 average=3.5", s)
+	}
+	// 空游戏聚合
+	empty, err := m.GetRatingSummary("g-none")
+	if err != nil || empty.Count != 0 || empty.Average != 0 {
+		t.Fatalf("empty summary = %+v/%v", empty, err)
+	}
+}
+
+func TestUserReview_CreateUpdateListDelete(t *testing.T) {
+	m := newTestAdminModel(t)
+	_ = m.UpsertUserRating("g-1", 7, 5)
+
+	r, err := m.CreateUserReview(&UserReview{GameId: "g-1", UserId: 7, Content: "画面和手感都在线，值得入手"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if r.Id <= 0 {
+		t.Fatalf("id missing: %+v", r)
+	}
+	// 一游戏一评：重复插入报哨兵
+	if _, err := m.CreateUserReview(&UserReview{GameId: "g-1", UserId: 7, Content: "再来一评应当被唯一约束拒绝"}); !errors.Is(err, ErrUserReviewExists) {
+		t.Fatalf("duplicate = %v, want ErrUserReviewExists", err)
+	}
+	// 第二位玩家的评（列表 JOIN 作者评分）
+	if _, err := m.CreateUserReview(&UserReview{GameId: "g-1", UserId: 8, Content: "后期内容略肝，前期体验不错"}); err != nil {
+		t.Fatalf("create2: %v", err)
+	}
+
+	items, total, err := m.ListUserReviewsByGame("g-1", 20, 0, false)
+	if err != nil || total != 2 || len(items) != 2 {
+		t.Fatalf("list = %d/%d/%v", total, len(items), err)
+	}
+	// 新在前
+	if items[0].UserId != 8 || items[1].UserId != 7 {
+		t.Fatalf("order wrong: %+v", items)
+	}
+	// JOIN 评分：user 7 有 5 星，user 8 未评分 0
+	if items[1].Rating != 5 || items[0].Rating != 0 {
+		t.Fatalf("joined ratings = %d/%d, want 0/5", items[0].Rating, items[1].Rating)
+	}
+
+	// 改评
+	updated, err := m.UpdateUserReview(r.Id, "改评：通关后补充，剧情后半段更精彩")
+	if err != nil || updated.Content != "改评：通关后补充，剧情后半段更精彩" {
+		t.Fatalf("update = %+v/%v", updated, err)
+	}
+	// 开发者回复（覆盖式）
+	replied, err := m.UpsertDevReply(r.Id, 42, "感谢反馈，剧情优化在下一版本")
+	if err != nil || replied.DevReply == "" || replied.DevReplyBy != 42 {
+		t.Fatalf("dev reply = %+v/%v", replied, err)
+	}
+	replied2, err := m.UpsertDevReply(r.Id, 42, "补充：修复补丁已发布")
+	if err != nil || replied2.DevReply != "补充：修复补丁已发布" {
+		t.Fatalf("dev reply overwrite = %+v/%v", replied2, err)
+	}
+
+	// 不存在
+	if _, err := m.GetUserReview(99999); !errors.Is(err, ErrUserReviewNotFound) {
+		t.Fatalf("missing = %v, want ErrUserReviewNotFound", err)
+	}
+	// 删除后列表减一
+	if err := m.DeleteUserReview(r.Id); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	_, total, _ = m.ListUserReviewsByGame("g-1", 20, 0, false)
+	if total != 1 {
+		t.Fatalf("total after delete = %d, want 1", total)
+	}
+	// 软删语义：行仍在且 deleted_at 置位（内容保留供恢复/审计）
+	deleted, err := m.GetUserReview(r.Id)
+	if err != nil || deleted.DeletedAt == "" {
+		t.Fatalf("soft-deleted row = %+v err=%v, want DeletedAt set", deleted, err)
+	}
+
+	// 恢复：清软删标记、回公开列表；二次恢复不命中
+	if ok, err := m.RestoreUserReview(r.Id); err != nil || !ok {
+		t.Fatalf("restore = %v/%v, want true", ok, err)
+	}
+	restored, err := m.GetUserReview(r.Id)
+	if err != nil || restored.DeletedAt != "" {
+		t.Fatalf("restored row = %+v err=%v, want DeletedAt empty", restored, err)
+	}
+	_, total, _ = m.ListUserReviewsByGame("g-1", 20, 0, false)
+	if total != 2 {
+		t.Fatalf("total after restore = %d, want 2", total)
+	}
+	if ok, _ := m.RestoreUserReview(r.Id); ok {
+		t.Fatal("second restore must not hit (已恢复)")
+	}
+
+	// 作者重评复活：软删后同 (game,user) 再发评 → 覆盖正文并清软删标记
+	if err := m.DeleteUserReview(r.Id); err != nil {
+		t.Fatalf("re-delete: %v", err)
+	}
+	revived, err := m.CreateUserReview(&UserReview{GameId: "g-1", UserId: 7, Content: "重评：修复后重新发布的长评"})
+	if err != nil || revived.DeletedAt != "" || revived.Content != "重评：修复后重新发布的长评" || revived.Id != r.Id {
+		t.Fatalf("revive = %+v err=%v, want same id=%d with new content", revived, err, r.Id)
+	}
+	_, total, _ = m.ListUserReviewsByGame("g-1", 20, 0, false)
+	if total != 2 {
+		t.Fatalf("total after revive = %d, want 2", total)
+	}
+}
+
+func TestReviewReport_DedupAndDecide(t *testing.T) {
+	m := newTestAdminModel(t)
+	r, _ := m.CreateUserReview(&UserReview{GameId: "g-1", UserId: 7, Content: "被举报目标评价"})
+
+	rep, created, err := m.CreateReviewReport(&ReviewReport{
+		ReviewId: r.Id, GameId: "g-1", ReporterId: 8, Reason: "涉嫌抄袭",
+	})
+	if err != nil || !created || rep.Status != ReviewReportPending {
+		t.Fatalf("report = %+v created=%v err=%v", rep, created, err)
+	}
+	// 幂等：同举报人同评价返回既有
+	rep2, created2, err := m.CreateReviewReport(&ReviewReport{
+		ReviewId: r.Id, GameId: "g-1", ReporterId: 8, Reason: "重复举报",
+	})
+	if err != nil || created2 || rep2.Id != rep.Id || rep2.Reason != "涉嫌抄袭" {
+		t.Fatalf("report replay = %+v created=%v err=%v", rep2, created2, err)
+	}
+	// 不同举报人各自一条
+	if _, created3, err := m.CreateReviewReport(&ReviewReport{ReviewId: r.Id, GameId: "g-1", ReporterId: 9, Reason: "低质"}); err != nil || !created3 {
+		t.Fatalf("second reporter = %v/%v", created3, err)
+	}
+
+	pending, total, err := m.ListReviewReports(ReviewReportPending, 20, 0)
+	if err != nil || total != 2 || len(pending) != 2 {
+		t.Fatalf("pending list = %d/%d/%v", total, len(pending), err)
+	}
+
+	// 未决才可处置（TOCTOU 条件更新）
+	ok, err := m.DecideReviewReportIfPending(rep.Id, 1, ReviewReportDismissed)
+	if err != nil || !ok {
+		t.Fatalf("decide = %v/%v", ok, err)
+	}
+	// 二次处置不命中
+	if ok, _ := m.DecideReviewReportIfPending(rep.Id, 1, ReviewReportResolved); ok {
+		t.Fatal("re-decide must not hit")
+	}
+	// remove 路径：处置 + 删评价 + 同评未决结案
+	if ok, err := m.DecideReviewReportIfPending(pending[0].Id, 1, ReviewReportResolved); err != nil || !ok {
+		t.Fatalf("decide2 = %v/%v", ok, err)
+	}
+	if err := m.ResolvePendingReportsForReview(r.Id, 1); err != nil {
+		t.Fatalf("resolve siblings: %v", err)
+	}
+	_, total, _ = m.ListReviewReports(ReviewReportPending, 20, 0)
+	if total != 0 {
+		t.Fatalf("pending after resolve = %d, want 0", total)
+	}
+	if err := m.DeleteUserReview(r.Id); err != nil {
+		t.Fatalf("delete review: %v", err)
+	}
+}
+
+func TestReviewReport_PendingReportersAudience(t *testing.T) {
+	m := newTestAdminModel(t)
+	r, _ := m.CreateUserReview(&UserReview{GameId: "g-1", UserId: 7, Content: "受众测试评价"})
+	rep8, _, _ := m.CreateReviewReport(&ReviewReport{ReviewId: r.Id, GameId: "g-1", ReporterId: 8, Reason: "举报A"})
+	if _, _, err := m.CreateReviewReport(&ReviewReport{ReviewId: r.Id, GameId: "g-1", ReporterId: 9, Reason: "举报B"}); err != nil {
+		t.Fatalf("second report: %v", err)
+	}
+
+	// 未决受众 = 两名举报人（去重）
+	ids, err := m.ListPendingReportersByReview(r.Id)
+	if err != nil || len(ids) != 2 {
+		t.Fatalf("pending reporters = %v err=%v, want 2", ids, err)
+	}
+	if (ids[0] == 8 && ids[1] == 9) || (ids[0] == 9 && ids[1] == 8) {
+		// ok
+	} else {
+		t.Fatalf("pending reporters set = %v, want {8,9}", ids)
+	}
+
+	// 处置 8 的举报（dismiss）后，未决受众仅剩 9
+	if ok, _ := m.DecideReviewReportIfPending(rep8.Id, 1, ReviewReportDismissed); !ok {
+		t.Fatal("decide rep8")
+	}
+	ids, err = m.ListPendingReportersByReview(r.Id)
+	if err != nil || len(ids) != 1 || ids[0] != 9 {
+		t.Fatalf("after decide = %v err=%v, want [9]", ids, err)
+	}
+
+	// 全部结案后为空
+	if err := m.ResolvePendingReportsForReview(r.Id, 1); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if ids, err = m.ListPendingReportersByReview(r.Id); err != nil || len(ids) != 0 {
+		t.Fatalf("after resolve = %v err=%v, want empty", ids, err)
+	}
+}
+
+func TestGameFavorites_IdempotentAndAudience(t *testing.T) {
+	m := newTestAdminModel(t)
+
+	if _, created, err := m.AddFavorite("g-1", 7); err != nil || !created {
+		t.Fatalf("add = created %v err %v", created, err)
+	}
+	if _, created, err := m.AddFavorite("g-1", 7); err != nil || created {
+		t.Fatalf("replay = created %v err %v", created, err)
+	}
+	_, _, _ = m.AddFavorite("g-1", 8)
+	_, _, _ = m.AddFavorite("g-2", 7)
+
+	favs, err := m.ListMyFavorites(7, 100)
+	if err != nil || len(favs) != 2 {
+		t.Fatalf("my favorites = %d/%v", len(favs), err)
+	}
+	users, err := m.ListFavoriteUsersByGame("g-1", 10000)
+	if err != nil || len(users) != 2 || users[0] != 7 || users[1] != 8 {
+		t.Fatalf("audience = %v/%v", users, err)
+	}
+	if err := m.RemoveFavorite("g-1", 7); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if err := m.RemoveFavorite("g-1", 7); err != nil {
+		t.Fatalf("remove replay: %v", err)
+	}
+	favs, _ = m.ListMyFavorites(7, 100)
+	if len(favs) != 1 || favs[0].GameId != "g-2" {
+		t.Fatalf("after remove = %+v", favs)
+	}
+	users, _ = m.ListFavoriteUsersByGame("g-1", 10000)
+	if len(users) != 1 || users[0] != 8 {
+		t.Fatalf("audience after remove = %v", users)
+	}
+}
+
+func TestUserReview_VoteUnvoteAndSort(t *testing.T) {
+	m := newTestAdminModel(t)
+	r1, _ := m.CreateUserReview(&UserReview{GameId: "g-1", UserId: 7, Content: "第一条：画面和手感都在线，值得入手"})
+	r2, _ := m.CreateUserReview(&UserReview{GameId: "g-1", UserId: 8, Content: "第二条：后期内容略肝，前期体验不错"})
+
+	// 投：r1 得 2 票，r2 得 1 票
+	v, err := m.VoteReview("g-1", r1.Id, 7)
+	if err != nil || v != 1 {
+		t.Fatalf("vote = %d/%v, want 1", v, err)
+	}
+	if v, _ = m.VoteReview("g-1", r1.Id, 8); v != 2 {
+		t.Fatalf("vote2 = %d, want 2", v)
+	}
+	// 幂等：同人重复投不重复计数
+	if v, _ = m.VoteReview("g-1", r1.Id, 7); v != 2 {
+		t.Fatalf("vote replay = %d, want 2", v)
+	}
+	if v, _ = m.VoteReview("g-1", r2.Id, 7); v != 1 {
+		t.Fatalf("vote r2 = %d, want 1", v)
+	}
+
+	// 列表带票数：新在前默认（r2 先）
+	items, _, err := m.ListUserReviewsByGame("g-1", 20, 0, false)
+	if err != nil || len(items) != 2 {
+		t.Fatalf("list = %d/%v", len(items), err)
+	}
+	if items[0].Id != r2.Id || items[0].Votes != 1 || items[1].Id != r1.Id || items[1].Votes != 2 {
+		t.Fatalf("new-first list = %+v, want r2(1) then r1(2)", items)
+	}
+	// 按票数排序：r1(2) 先
+	items, _, _ = m.ListUserReviewsByGame("g-1", 20, 0, true)
+	if items[0].Id != r1.Id || items[0].Votes != 2 || items[1].Id != r2.Id || items[1].Votes != 1 {
+		t.Fatalf("votes-first list = %+v, want r1(2) then r2(1)", items)
+	}
+
+	// 撤：r1 减一票
+	if v, _ = m.UnvoteReview("g-1", r1.Id, 7); v != 1 {
+		t.Fatalf("unvote = %d, want 1", v)
+	}
+	// 幂等：未投过撤 0 行，票数不变
+	if v, _ = m.UnvoteReview("g-1", r1.Id, 7); v != 1 {
+		t.Fatalf("unvote replay = %d, want 1", v)
+	}
+
+	// 越权/不存在：不属该游戏、已移除、不存在均哨兵
+	if _, err := m.VoteReview("g-2", r1.Id, 9); !errors.Is(err, ErrUserReviewNotFound) {
+		t.Fatalf("vote wrong game = %v, want ErrUserReviewNotFound", err)
+	}
+	if _, err := m.VoteReview("g-1", 99999, 9); !errors.Is(err, ErrUserReviewNotFound) {
+		t.Fatalf("vote missing = %v, want ErrUserReviewNotFound", err)
+	}
+	if _, err := m.UnvoteReview("g-1", 99999, 9); !errors.Is(err, ErrUserReviewNotFound) {
+		t.Fatalf("unvote missing = %v, want ErrUserReviewNotFound", err)
+	}
+	// 软删后不可再投
+	if err := m.DeleteUserReview(r1.Id); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := m.VoteReview("g-1", r1.Id, 9); !errors.Is(err, ErrUserReviewNotFound) {
+		t.Fatalf("vote deleted = %v, want ErrUserReviewNotFound", err)
+	}
+}

@@ -36,6 +36,9 @@ func RegisterCommunityProxyRoutes(server *rest.Server, serverCtx *svc.ServiceCon
 		{Method: http.MethodDelete, Path: "/api/v1/posts/:id", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/posts/:id/like", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/posts/:id/share", Handler: h},
+		// GP-307 官方公告：公告入口公开读 + 置顶运营位（管理员语义在 community）
+		{Method: http.MethodGet, Path: "/api/v1/announcements", Handler: h},
+		{Method: http.MethodPost, Path: "/api/v1/posts/:id/pin", Handler: h},
 
 		// 帖子评论（M3 web 对等补齐）：发评/删评登录语义由 community 校验，
 		// 列表公开；删评挂帖子子资源（/api/v1/comments/:id 已属 content-service）。
@@ -65,5 +68,17 @@ func RegisterCommunityProxyRoutes(server *rest.Server, serverCtx *svc.ServiceCon
 		{Method: http.MethodPost, Path: "/api/v1/posts/:id/report", Handler: h},
 		{Method: http.MethodGet, Path: "/api/v1/moderation/reports", Handler: h},
 		{Method: http.MethodPost, Path: "/api/v1/moderation/reports/:id/handle", Handler: h},
+
+		// DESIGN-001 设计拆解：品类/列表/详情/评论列表公开读；发布/编辑/
+		// 精选/评论写端点登录与管理员语义由 community 校验
+		{Method: http.MethodGet, Path: "/api/v1/design/categories", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/design/breakdowns", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/design/breakdowns/:id", Handler: h},
+		{Method: http.MethodGet, Path: "/api/v1/design/breakdowns/:id/comments", Handler: h},
+		{Method: http.MethodPost, Path: "/api/v1/design/breakdowns", Handler: h},
+		{Method: http.MethodPut, Path: "/api/v1/design/breakdowns/:id", Handler: h},
+		{Method: http.MethodPost, Path: "/api/v1/design/breakdowns/:id/feature", Handler: h},
+		{Method: http.MethodPost, Path: "/api/v1/design/breakdowns/:id/comments", Handler: h},
+		{Method: http.MethodDelete, Path: "/api/v1/design/breakdowns/:id/comments/:cid", Handler: h},
 	})
 }

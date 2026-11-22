@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1.9
+
+FROM golang:1.26 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o /bin/promotions .
+
+# 运行时含 glibc 与 sqlite3（CGO 驱动 mattn/go-sqlite3 需要）
+FROM debian:bookworm-slim
+ENV TZ=Asia/Shanghai
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata sqlite3 && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=builder /bin/promotions /usr/local/bin/promotions
+COPY etc ./etc
+RUN mkdir -p /app/data
+ENV DATASOURCE=file:/app/data/promotions.db
+EXPOSE 8902
+ENTRYPOINT ["/usr/local/bin/promotions", "-f", "etc/promotions-api.yaml"]

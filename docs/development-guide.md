@@ -8,7 +8,8 @@
 What it covers:
 
 - Project overview and toolchain setup (Go 1.26+, goctl, protobuf).
-- Project layout: the eight Go modules and where each service lives.
+- Project layout: the twelve Go modules (eleven services plus `pkg/resilience`)
+  and where each service lives.
 - Development workflow: creating API/RPC services, updating `go.work`,
   writing handlers and RPC logic.
 - Service communication: calling an RPC service from an API service.
@@ -17,7 +18,7 @@ What it covers:
 - Configuration management: environment variables and config file locations.
 - Database integration: MySQL dependency, the SQLite/MySQL dual driver, table
   creation.
-- Service inventory with ports, monitoring and metrics (Prometheus 9091–9097).
+- Service inventory with ports, monitoring and metrics (Prometheus 9091–9099 and 9103).
 - CI and deployment: docker compose, nightly builds, release flow.
 - Client integration: web and mobile talking to the gateway.
 

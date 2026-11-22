@@ -208,28 +208,40 @@ type LikeReq struct {
 }
 
 type Post struct {
-	Id           int64    `json:"id"`
-	TopicId      int64    `json:"topic_id"` // 所属话题ID
-	AuthorId     int64    `json:"author_id"`
-	AuthorName   string   `json:"author_name,omitempty"`
-	Title        string   `json:"title"`
-	Content      string   `json:"content"`
-	Images       []string `json:"images,omitempty"` // 图片URL列表
-	Type         string   `json:"type"`             // 类型：discussion/question/share
-	Tags         []string `json:"tags,omitempty"`
-	ViewCount    int64    `json:"view_count"`
-	LikeCount    int64    `json:"like_count"`
-	CommentCount int64    `json:"comment_count"`
-	ShareCount   int64    `json:"share_count"`
-	IsPinned     bool     `json:"is_pinned"` // 是否置顶
-	IsHot        bool     `json:"is_hot"`    // 是否热门
-	Status       string   `json:"status"`    // draft/published/deleted
-	CreatedAt    string   `json:"created_at"`
-	UpdatedAt    string   `json:"updated_at"`
+	Id             int64    `json:"id"`
+	TopicId        int64    `json:"topic_id"` // 所属话题ID
+	AuthorId       int64    `json:"author_id"`
+	AuthorName     string   `json:"author_name,omitempty"`
+	Title          string   `json:"title"`
+	Content        string   `json:"content"`
+	Images         []string `json:"images,omitempty"` // 图片URL列表
+	Type           string   `json:"type"`             // 类型：discussion/question/share
+	Tags           []string `json:"tags,omitempty"`
+	ViewCount      int64    `json:"view_count"`
+	LikeCount      int64    `json:"like_count"`
+	CommentCount   int64    `json:"comment_count"`
+	ShareCount     int64    `json:"share_count"`
+	IsPinned       bool     `json:"is_pinned"`       // 是否置顶
+	IsHot          bool     `json:"is_hot"`          // 是否热门
+	AuthorOfficial bool     `json:"author_official"` // 官方身份（GP-307：管理员发言=官方帖）
+	Status         string   `json:"status"`          // draft/published/deleted
+	CreatedAt      string   `json:"created_at"`
+	UpdatedAt      string   `json:"updated_at"`
 }
 
 type PostResp struct {
 	Post Post `json:"post"`
+}
+
+// PinPostReq 置顶/取消置顶（GP-307，仅管理员；pinned=true 置顶）。
+type PinPostReq struct {
+	Id     int64 `path:"id"`
+	Pinned bool  `json:"pinned,optional"`
+}
+
+// AnnouncementsReq 官方公告列表（GP-307 公告入口，公开读）。
+type AnnouncementsReq struct {
+	Limit int64 `form:"limit,optional"`
 }
 
 type PostsResp struct {
@@ -315,4 +327,129 @@ type DMConversation struct {
 
 type DMConversationsResp struct {
 	Conversations []*DMConversation `json:"conversations"`
+}
+
+// ===== DESIGN-001 设计拆解域（策划视角游戏拆解 + 品类聚合 + 讨论区）=====
+
+// DesignBreakdown 拆解条目（列表页只回摘要字段，详情回全文）。
+type DesignBreakdown struct {
+	Id            int64  `json:"id"`
+	GameTitle     string `json:"game_title"`
+	Category      string `json:"category"`
+	Summary       string `json:"summary"`
+	CoreLoop      string `json:"core_loop,omitempty"`
+	Progression   string `json:"progression,omitempty"`
+	Economy       string `json:"economy,omitempty"`
+	Combat        string `json:"combat,omitempty"`
+	GrowthLines   string `json:"growth_lines,omitempty"`
+	Social        string `json:"social,omitempty"`
+	Monetization  string `json:"monetization,omitempty"`
+	Fairness      string `json:"fairness,omitempty"`
+	WorthStealing string `json:"worth_stealing,omitempty"`
+	Pitfalls      string `json:"pitfalls,omitempty"`
+	Sources       string `json:"sources,omitempty"`
+	AuthorId      int64  `json:"author_id"`
+	AuthorName    string `json:"author_name"`
+	Featured      bool   `json:"featured"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
+// DesignListReq 拆解列表（品类/精选筛选，分页）。
+type DesignListReq struct {
+	Category string `form:"category,optional"`
+	Featured bool   `form:"featured,optional"`
+	Limit    int64  `form:"limit,optional"`
+	Offset   int64  `form:"offset,optional"`
+}
+
+// DesignListResp 拆解列表（条目仅含列表字段：id/标题/品类/摘要/作者/精选/时间）。
+type DesignListResp struct {
+	Items []DesignBreakdown `json:"items"`
+	Total int64             `json:"total"`
+}
+
+// DesignDetailResp 拆解详情（全文）。
+type DesignDetailResp struct {
+	Breakdown DesignBreakdown `json:"breakdown"`
+}
+
+// DesignCategoriesResp 品类聚合行（品类页入口，白名单顺序）。
+type DesignCategoriesResp struct {
+	Categories []DesignCategoryRow `json:"categories"`
+}
+
+// DesignCategoryRow 品类 + 已发布拆解数。
+type DesignCategoryRow struct {
+	Category string `json:"category"`
+	Count    int64  `json:"count"`
+}
+
+// DesignCreateReq 新建拆解（登录即可发布；字段对应拆解模板分节）。
+type DesignCreateReq struct {
+	GameTitle     string `json:"game_title"`
+	Category      string `json:"category"`
+	Summary       string `json:"summary"`
+	CoreLoop      string `json:"core_loop,optional"`
+	Progression   string `json:"progression,optional"`
+	Economy       string `json:"economy,optional"`
+	Combat        string `json:"combat,optional"`
+	GrowthLines   string `json:"growth_lines,optional"`
+	Social        string `json:"social,optional"`
+	Monetization  string `json:"monetization,optional"`
+	Fairness      string `json:"fairness,optional"`
+	WorthStealing string `json:"worth_stealing,optional"`
+	Pitfalls      string `json:"pitfalls,optional"`
+	Sources       string `json:"sources,optional"`
+}
+
+// DesignUpdateReq 编辑拆解（仅作者；字段同创建）。
+type DesignUpdateReq struct {
+	Id int64 `path:"id"`
+	DesignCreateReq
+}
+
+// DesignFeatureReq 精选运营位（仅审核管理员）。
+type DesignFeatureReq struct {
+	Id       int64 `path:"id"`
+	Featured bool  `json:"featured"`
+}
+
+// DesignComment 拆解讨论区评论。
+type DesignComment struct {
+	Id          int64  `json:"id"`
+	BreakdownId int64  `json:"breakdown_id"`
+	AuthorId    int64  `json:"author_id"`
+	AuthorName  string `json:"author_name"`
+	Content     string `json:"content"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// DesignCommentCreateReq 讨论区发言。
+type DesignCommentCreateReq struct {
+	BreakdownId int64  `path:"id"`
+	Content     string `json:"content"`
+}
+
+// DesignCommentDeleteReq 删除自己的评论。
+type DesignCommentDeleteReq struct {
+	BreakdownId int64 `path:"id"`
+	CommentId   int64 `path:"cid"`
+}
+
+// DesignCommentsReq 评论列表（公开读，分页）。
+type DesignCommentsReq struct {
+	BreakdownId int64 `path:"id"`
+	Limit       int64 `form:"limit,optional"`
+	Offset      int64 `form:"offset,optional"`
+}
+
+// DesignCommentsResp 评论列表响应。
+type DesignCommentsResp struct {
+	Comments []DesignComment `json:"comments"`
+}
+
+// DesignPathReq 拆解路径参数（详情等 :id 端点）。
+type DesignPathReq struct {
+	Id int64 `path:"id"`
 }

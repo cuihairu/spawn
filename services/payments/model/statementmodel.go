@@ -1,0 +1,573 @@
+package model
+
+// GP-205 最小厂商对账单：从只读投影（order_projection 事实副本）按商户
+// 维度聚合实付/优惠承担/退款冲减，算合同分成基数与差异；先人工确认、
+// CSV 导出，**不自动打款**（F23）。
+//
+// 事实源仍是 Courier teller（设计 §3.1 交易唯一事实源），本服务不旁路
+// 契约：投影由回调/投递上报驱动（无主动拉取，可能滞后于 Courier 事实，
+// 对账走查归 GP-206）。优惠承担暂为 0（优惠券子系统未接，GP-305）；
+// 退款冲减只计 EXECUTED（执行器待 Courier 退款端点提案，接入前为 0）。
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
+)
+
+// 对账单状态（先人工确认，不自动打款）。disputed = 合作方对差异提出异议
+// （GP-404），此时运营须复核处理（/admin/statements/:id/resolve），
+// 复核通过才置 confirmed；确认后不可再改。
+const (
+	StatementStatusDraft     = "draft"
+	StatementStatusDisputed  = "disputed"
+	StatementStatusConfirmed = "confirmed"
+)
+
+// 已付状态（计入实付与订单数；含断单停 PAID，可对账）。
+const statementPaidStatuses = "('PAID','DELIVERED','CLOSED')"
+
+var ErrStatementNotFound = errors.New("vendor statement not found")
+
+// VendorStatement 对账单快照（一厂商+一商户+一周期一条；重新生成更新草稿）。
+type VendorStatement struct {
+	Id            int64  `json:"id"`
+	Vendor        string `json:"vendor"`
+	PartnerId     int64  `json:"partner_id"`
+	PeriodStart   string `json:"period_start"`
+	PeriodEnd     string `json:"period_end"`
+	PaidTotal     int64  `json:"paid_total"`
+	DiscountTotal int64  `json:"discount_total"`
+	RefundTotal   int64  `json:"refund_total"`
+	SplitBase     int64  `json:"split_base"`
+	SplitRateBp   int64  `json:"split_rate_bp"`
+	SplitAmount   int64  `json:"split_amount"`
+	Settlement    int64  `json:"settlement"`
+	Diff          int64  `json:"diff"`
+	OrderCount    int    `json:"order_count"`
+	Status        string `json:"status"`
+	ConfirmedBy   int64  `json:"confirmed_by"`
+	ConfirmedAt   string `json:"confirmed_at"`
+	// DisputeBy/DisputeAt/DisputeReason 结算差异异议（GP-404）：合作方对差异
+	// 提出异议时记录（非空表示存在未处理异议），运营复核处理后清空。
+	DisputeBy     int64  `json:"dispute_by"`
+	DisputeAt     string `json:"dispute_at"`
+	DisputeReason string `json:"dispute_reason"`
+	CreatedBy     int64  `json:"created_by"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
+// StatementPaidAggregate 实付聚合（金额 + 订单数）。
+type StatementPaidAggregate struct {
+	Amount int64
+	Count  int
+}
+
+// StatementLineItem 对账单明细行（每笔已付订单）。
+type StatementLineItem struct {
+	OrderId     string
+	GameId      string
+	AccountId   string
+	SkuId       string
+	Status      string
+	AmountCents int64
+	PaidAt      string
+}
+
+// StatementDisputeRound 异议轮次留痕（GP-404）：每次异议一条，版本化时间线。
+// 主表 dispute_reason 覆盖式只留最新一轮，本表保留全部异议轮次与其复核人，
+// 复核差异责任时可按轮次回溯「何时以何理由异议、当时差异多少、谁复核的」。
+type StatementDisputeRound struct {
+	Id            int64  `json:"id"`
+	StatementId   int64  `json:"statement_id"`
+	RoundNo       int    `json:"round"`
+	DisputeBy     int64  `json:"dispute_by"`
+	DisputeAt     string `json:"dispute_at"`
+	DisputeReason string `json:"dispute_reason"`
+	DiffAtDispute int64  `json:"diff_at_dispute"`
+	ResolvedBy    int64  `json:"resolved_by"`
+	ResolvedAt    string `json:"resolved_at"`
+	CreatedAt     string `json:"created_at"`
+}
+
+const disputeRoundColumns = "id, statement_id, round_no, dispute_by, dispute_at, dispute_reason, diff_at_dispute, resolved_by, resolved_at, created_at"
+
+func scanStatementDisputeRound(r *StatementDisputeRound) []any {
+	return []any{&r.Id, &r.StatementId, &r.RoundNo, &r.DisputeBy, &r.DisputeAt,
+		&r.DisputeReason, &r.DiffAtDispute, &r.ResolvedBy, &r.ResolvedAt, &r.CreatedAt}
+}
+
+// StatementModel 对账单数据访问。
+type StatementModel struct {
+	db *sql.DB
+}
+
+func NewStatementModel(db *sql.DB) *StatementModel {
+	return &StatementModel{db: db}
+}
+
+func (m *StatementModel) CreateTables() error {
+	tables := []struct{ sqlite, mysql string }{
+		{
+			`CREATE TABLE IF NOT EXISTS vendor_statements (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				vendor VARCHAR(64) NOT NULL,
+				partner_id INTEGER NOT NULL,
+				period_start VARCHAR(32) NOT NULL,
+				period_end VARCHAR(32) NOT NULL,
+				paid_total INTEGER NOT NULL DEFAULT 0,
+				discount_total INTEGER NOT NULL DEFAULT 0,
+				refund_total INTEGER NOT NULL DEFAULT 0,
+				split_base INTEGER NOT NULL DEFAULT 0,
+				split_rate_bp INTEGER NOT NULL DEFAULT 0,
+				split_amount INTEGER NOT NULL DEFAULT 0,
+				settlement INTEGER NOT NULL DEFAULT 0,
+				diff INTEGER NOT NULL DEFAULT 0,
+				order_count INTEGER NOT NULL DEFAULT 0,
+				status VARCHAR(16) NOT NULL DEFAULT 'draft',
+				confirmed_by INTEGER NOT NULL DEFAULT 0,
+				confirmed_at VARCHAR(32) NOT NULL DEFAULT '',
+				dispute_by INTEGER NOT NULL DEFAULT 0,
+				dispute_at VARCHAR(32) NOT NULL DEFAULT '',
+				dispute_reason VARCHAR(256) NOT NULL DEFAULT '',
+				created_by INTEGER NOT NULL DEFAULT 0,
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				UNIQUE (vendor, partner_id, period_start, period_end)
+			)`,
+			`CREATE TABLE IF NOT EXISTS vendor_statements (
+				id BIGINT PRIMARY KEY AUTO_INCREMENT,
+				vendor VARCHAR(64) NOT NULL,
+				partner_id BIGINT NOT NULL,
+				period_start VARCHAR(32) NOT NULL,
+				period_end VARCHAR(32) NOT NULL,
+				paid_total BIGINT NOT NULL DEFAULT 0,
+				discount_total BIGINT NOT NULL DEFAULT 0,
+				refund_total BIGINT NOT NULL DEFAULT 0,
+				split_base BIGINT NOT NULL DEFAULT 0,
+				split_rate_bp BIGINT NOT NULL DEFAULT 0,
+				split_amount BIGINT NOT NULL DEFAULT 0,
+				settlement BIGINT NOT NULL DEFAULT 0,
+				diff BIGINT NOT NULL DEFAULT 0,
+				order_count BIGINT NOT NULL DEFAULT 0,
+				status VARCHAR(16) NOT NULL DEFAULT 'draft',
+				confirmed_by BIGINT NOT NULL DEFAULT 0,
+				confirmed_at VARCHAR(32) NOT NULL DEFAULT '',
+				dispute_by BIGINT NOT NULL DEFAULT 0,
+				dispute_at VARCHAR(32) NOT NULL DEFAULT '',
+				dispute_reason VARCHAR(256) NOT NULL DEFAULT '',
+				created_by BIGINT NOT NULL DEFAULT 0,
+				created_at VARCHAR(32) NOT NULL,
+				updated_at VARCHAR(32) NOT NULL,
+				UNIQUE KEY uk_statement_key (vendor, partner_id, period_start, period_end),
+				KEY idx_statement_partner (partner_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+		{
+			`CREATE TABLE IF NOT EXISTS statement_dispute_history (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				statement_id INTEGER NOT NULL,
+				round_no INTEGER NOT NULL,
+				dispute_by INTEGER NOT NULL,
+				dispute_at VARCHAR(32) NOT NULL,
+				dispute_reason VARCHAR(256) NOT NULL DEFAULT '',
+				diff_at_dispute INTEGER NOT NULL DEFAULT 0,
+				resolved_by INTEGER NOT NULL DEFAULT 0,
+				resolved_at VARCHAR(32) NOT NULL DEFAULT '',
+				created_at VARCHAR(32) NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS statement_dispute_history (
+				id BIGINT PRIMARY KEY AUTO_INCREMENT,
+				statement_id BIGINT NOT NULL,
+				round_no INT NOT NULL,
+				dispute_by BIGINT NOT NULL,
+				dispute_at VARCHAR(32) NOT NULL,
+				dispute_reason VARCHAR(256) NOT NULL DEFAULT '',
+				diff_at_dispute BIGINT NOT NULL DEFAULT 0,
+				resolved_by BIGINT NOT NULL DEFAULT 0,
+				resolved_at VARCHAR(32) NOT NULL DEFAULT '',
+				created_at VARCHAR(32) NOT NULL,
+				KEY idx_statement_dispute_history (statement_id, round_no)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		},
+	}
+	for _, t := range tables {
+		if _, err := m.db.Exec(t.sqlite); err != nil {
+			if _, err2 := m.db.Exec(t.mysql); err2 != nil {
+				return errors.New("创建厂商对账单表失败（尝试了 SQLite 和 MySQL 格式）")
+			}
+		}
+	}
+	// 存量库补异议列（GP-404 结算差异处理）：CREATE TABLE IF NOT EXISTS 不会
+	// 给已有表加列，故按双方言各试一次 ALTER（列已存在视为成功，不阻断启动）。
+	return m.migrateStatementColumns()
+}
+
+// migrateStatementColumns 存量 vendor_statements 补 dispute_by/dispute_at/
+// dispute_reason 列（口径同 couponmodel.migrateCouponColumns）。
+func (m *StatementModel) migrateStatementColumns() error {
+	lastErr := error(nil)
+	for _, stmt := range []string{
+		`ALTER TABLE vendor_statements ADD COLUMN dispute_by BIGINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE vendor_statements ADD COLUMN dispute_at VARCHAR(32) NOT NULL DEFAULT ''`,
+		`ALTER TABLE vendor_statements ADD COLUMN dispute_reason VARCHAR(256) NOT NULL DEFAULT ''`,
+	} {
+		if _, err := m.db.Exec(stmt); err != nil {
+			lastErr = err
+		}
+	}
+	if lastErr == nil {
+		return nil
+	}
+	msg := lastErr.Error()
+	if strings.Contains(msg, "duplicate column") || strings.Contains(msg, "exists") ||
+		strings.Contains(msg, "already exists") || strings.Contains(msg, "duplicate") {
+		return nil // 已补过列
+	}
+	return lastErr
+}
+
+const statementColumns = "id, vendor, partner_id, period_start, period_end, paid_total, discount_total, refund_total, split_base, split_rate_bp, split_amount, settlement, diff, order_count, status, confirmed_by, confirmed_at, dispute_by, dispute_at, dispute_reason, created_by, created_at, updated_at"
+
+func scanStatement(s *VendorStatement) []any {
+	return []any{&s.Id, &s.Vendor, &s.PartnerId, &s.PeriodStart, &s.PeriodEnd,
+		&s.PaidTotal, &s.DiscountTotal, &s.RefundTotal, &s.SplitBase, &s.SplitRateBp,
+		&s.SplitAmount, &s.Settlement, &s.Diff, &s.OrderCount, &s.Status,
+		&s.ConfirmedBy, &s.ConfirmedAt, &s.DisputeBy, &s.DisputeAt, &s.DisputeReason,
+		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt}
+}
+
+// UpsertStatement 落对账单快照（同 key 更新草稿；已确认的由逻辑层拒绝）。
+func (m *StatementModel) UpsertStatement(s *VendorStatement) error {
+	now := nowUTC()
+	if s.CreatedAt == "" {
+		s.CreatedAt = now
+	}
+	s.UpdatedAt = now
+	_, err := m.db.Exec(
+		`INSERT INTO vendor_statements (vendor, partner_id, period_start, period_end, paid_total, discount_total, refund_total, split_base, split_rate_bp, split_amount, settlement, diff, order_count, status, confirmed_by, confirmed_at, dispute_by, dispute_at, dispute_reason, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(vendor, partner_id, period_start, period_end) DO UPDATE SET
+		   paid_total = excluded.paid_total, discount_total = excluded.discount_total,
+		   refund_total = excluded.refund_total, split_base = excluded.split_base,
+		   split_rate_bp = excluded.split_rate_bp, split_amount = excluded.split_amount,
+		   settlement = excluded.settlement, diff = excluded.diff,
+		   order_count = excluded.order_count, updated_at = excluded.updated_at`,
+		s.Vendor, s.PartnerId, s.PeriodStart, s.PeriodEnd, s.PaidTotal, s.DiscountTotal,
+		s.RefundTotal, s.SplitBase, s.SplitRateBp, s.SplitAmount, s.Settlement, s.Diff,
+		s.OrderCount, s.Status, s.ConfirmedBy, s.ConfirmedAt, s.DisputeBy, s.DisputeAt, s.DisputeReason,
+		s.CreatedBy, s.CreatedAt, s.UpdatedAt,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "syntax") || strings.Contains(err.Error(), "near") {
+			_, err2 := m.db.Exec(
+				`INSERT INTO vendor_statements (vendor, partner_id, period_start, period_end, paid_total, discount_total, refund_total, split_base, split_rate_bp, split_amount, settlement, diff, order_count, status, confirmed_by, confirmed_at, dispute_by, dispute_at, dispute_reason, created_by, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				 ON DUPLICATE KEY UPDATE
+				   paid_total = VALUES(paid_total), discount_total = VALUES(discount_total),
+				   refund_total = VALUES(refund_total), split_base = VALUES(split_base),
+				   split_rate_bp = VALUES(split_rate_bp), split_amount = VALUES(split_amount),
+				   settlement = VALUES(settlement), diff = VALUES(diff),
+				   order_count = VALUES(order_count), updated_at = VALUES(updated_at)`,
+				s.Vendor, s.PartnerId, s.PeriodStart, s.PeriodEnd, s.PaidTotal, s.DiscountTotal,
+				s.RefundTotal, s.SplitBase, s.SplitRateBp, s.SplitAmount, s.Settlement, s.Diff,
+				s.OrderCount, s.Status, s.ConfirmedBy, s.ConfirmedAt, s.DisputeBy, s.DisputeAt, s.DisputeReason,
+				s.CreatedBy, s.CreatedAt, s.UpdatedAt,
+			)
+			return err2
+		}
+		return err
+	}
+	return nil
+}
+
+func (m *StatementModel) Get(id int64) (*VendorStatement, error) {
+	var s VendorStatement
+	err := m.db.QueryRow(`SELECT `+statementColumns+` FROM vendor_statements WHERE id = ?`, id).Scan(scanStatement(&s)...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrStatementNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// GetByKey 按厂商+商户+周期取（重生成检测；不存在返回 ErrStatementNotFound）。
+func (m *StatementModel) GetByKey(vendor string, partnerID int64, start, end string) (*VendorStatement, error) {
+	var s VendorStatement
+	err := m.db.QueryRow(
+		`SELECT `+statementColumns+` FROM vendor_statements WHERE vendor = ? AND partner_id = ? AND period_start = ? AND period_end = ?`,
+		vendor, partnerID, start, end,
+	).Scan(scanStatement(&s)...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrStatementNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// GetForPartner 按单据 id + 合作方归属取（GP-404 合作方自助面：行级隔离，
+// 不是本人名下的单据一律视为不存在，避免跨合作方枚举）。
+func (m *StatementModel) GetForPartner(id, partnerID int64) (*VendorStatement, error) {
+	var s VendorStatement
+	err := m.db.QueryRow(`SELECT `+statementColumns+` FROM vendor_statements WHERE id = ? AND partner_id = ?`,
+		id, partnerID).Scan(scanStatement(&s)...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrStatementNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// ListStatements 对账单列表（vendor/partner/status 可筛，有界）。
+func (m *StatementModel) ListStatements(vendor string, partnerID int64, status string, limit, offset int) ([]*VendorStatement, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	q := `SELECT ` + statementColumns + ` FROM vendor_statements WHERE 1=1`
+	args := []any{}
+	if vendor != "" {
+		q += ` AND vendor = ?`
+		args = append(args, vendor)
+	}
+	if partnerID > 0 {
+		q += ` AND partner_id = ?`
+		args = append(args, partnerID)
+	}
+	if status != "" {
+		q += ` AND status = ?`
+		args = append(args, status)
+	}
+	q += fmt.Sprintf(` ORDER BY id DESC LIMIT %d OFFSET %d`, limit, offset)
+	rows, err := m.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*VendorStatement, 0, limit)
+	for rows.Next() {
+		var s VendorStatement
+		if err := rows.Scan(scanStatement(&s)...); err != nil {
+			return nil, err
+		}
+		out = append(out, &s)
+	}
+	return out, rows.Err()
+}
+
+// UpdateSettlement 人工录入渠道结算单金额并重算差异（确认后由逻辑层拒绝）。
+func (m *StatementModel) UpdateSettlement(id, settlement, diff int64) error {
+	_, err := m.db.Exec(
+		`UPDATE vendor_statements SET settlement = ?, diff = ?, updated_at = ? WHERE id = ?`,
+		settlement, diff, nowUTC(), id,
+	)
+	return err
+}
+
+// ConfirmStatement 人工确认（不自动打款；先确认后不可改结算单/重生成）。
+// 确认同时清空异议标记（运营复核处理完毕）。
+func (m *StatementModel) ConfirmStatement(id, by int64) error {
+	_, err := m.db.Exec(
+		`UPDATE vendor_statements SET status = 'confirmed', confirmed_by = ?, confirmed_at = ?,
+		   dispute_by = 0, dispute_at = '', dispute_reason = '', updated_at = ? WHERE id = ?`,
+		by, nowUTC(), nowUTC(), id,
+	)
+	return err
+}
+
+// DisputeStatement 合作方对差异提出异议（GP-404 结算差异处理）：状态转
+// disputed 并记录异议人与原因；已确认的单据不可异议（由逻辑层拒绝）。
+func (m *StatementModel) DisputeStatement(id, by int64, reason string) error {
+	_, err := m.db.Exec(
+		`UPDATE vendor_statements SET status = 'disputed', dispute_by = ?, dispute_at = ?,
+		   dispute_reason = ?, updated_at = ? WHERE id = ?`,
+		by, nowUTC(), reason, nowUTC(), id,
+	)
+	return err
+}
+
+// ClearDispute 运营复核处理异议（GP-404）：清空异议标记并回到草稿，
+// 后续由运营改结算单再确认。
+func (m *StatementModel) ClearDispute(id int64) error {
+	_, err := m.db.Exec(
+		`UPDATE vendor_statements SET status = 'draft', dispute_by = 0, dispute_at = '',
+		   dispute_reason = '', updated_at = ? WHERE id = ?`,
+		nowUTC(), id,
+	)
+	return err
+}
+
+// RecordDisputeRound 记一轮异议（GP-404 版本化留痕）：round = 该单据既有
+// 最大轮次 + 1，落异议人/理由/当时差异快照。返回本轮轮次号。
+func (m *StatementModel) RecordDisputeRound(statementID, by int64, reason string, diff int64) (int, error) {
+	now := nowUTC()
+	var last int
+	err := m.db.QueryRow(
+		`SELECT COALESCE(MAX(round_no), 0) FROM statement_dispute_history WHERE statement_id = ?`,
+		statementID).Scan(&last)
+	if err != nil {
+		return 0, err
+	}
+	round := last + 1
+	_, err = m.db.Exec(
+		`INSERT INTO statement_dispute_history (statement_id, round_no, dispute_by, dispute_at, dispute_reason, diff_at_dispute, resolved_by, resolved_at, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 0, '', ?)`,
+		statementID, round, by, now, reason, diff, now,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return round, nil
+}
+
+// ResolveLatestDisputeRound 运营复核后结案最新一轮未结异议：填复核人与
+// 复核时间。返回是否命中（无未结轮次 = false，不报错）。
+func (m *StatementModel) ResolveLatestDisputeRound(statementID, by int64) (bool, error) {
+	now := nowUTC()
+	var round int
+	err := m.db.QueryRow(
+		`SELECT COALESCE(MAX(round_no), 0) FROM statement_dispute_history WHERE statement_id = ? AND resolved_at = ''`,
+		statementID).Scan(&round)
+	if err != nil {
+		return false, err
+	}
+	if round <= 0 {
+		return false, nil
+	}
+	res, err := m.db.Exec(
+		`UPDATE statement_dispute_history SET resolved_by = ?, resolved_at = ? WHERE statement_id = ? AND round_no = ? AND resolved_at = ''`,
+		by, now, statementID, round,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// ListDisputeRounds 异议轮次时间线（管理面）：按轮次升序，含未结案轮次。
+func (m *StatementModel) ListDisputeRounds(statementID int64) ([]*StatementDisputeRound, error) {
+	rows, err := m.db.Query(
+		`SELECT `+disputeRoundColumns+` FROM statement_dispute_history WHERE statement_id = ? ORDER BY round_no ASC`,
+		statementID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*StatementDisputeRound, 0, 8)
+	for rows.Next() {
+		var r StatementDisputeRound
+		if err := rows.Scan(scanStatementDisputeRound(&r)...); err != nil {
+			return nil, err
+		}
+		out = append(out, &r)
+	}
+	return out, rows.Err()
+}
+
+// ListDifferences 结算差异清单（GP-404）：该合作方名下 diff ≠ 0 的对账单，
+// 按差异绝对值降序（先处理偏差大的周期）。vendor 过滤留空为全部厂商。
+func (m *StatementModel) ListDifferences(partnerID int64, vendor string, limit int) ([]*VendorStatement, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	q := `SELECT ` + statementColumns + ` FROM vendor_statements
+		 WHERE partner_id = ? AND diff <> 0`
+	args := []any{partnerID}
+	if vendor != "" {
+		q += ` AND vendor = ?`
+		args = append(args, vendor)
+	}
+	// ABS() 双方言一致；差异为零的周期不进入清单。
+	q += fmt.Sprintf(` ORDER BY ABS(diff) DESC, id DESC LIMIT %d`, limit)
+	rows, err := m.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*VendorStatement, 0, limit)
+	for rows.Next() {
+		var s VendorStatement
+		if err := rows.Scan(scanStatement(&s)...); err != nil {
+			return nil, err
+		}
+		out = append(out, &s)
+	}
+	return out, rows.Err()
+}
+
+// StatementPaidAggregate 周期内实付聚合（已付订单金额与单数）。
+func (m *StatementModel) StatementPaidAggregate(partnerID int64, start, end string) (*StatementPaidAggregate, error) {
+	var a StatementPaidAggregate
+	err := m.db.QueryRow(
+		`SELECT COALESCE(SUM(amount_cents), 0), COUNT(*) FROM order_projection
+		 WHERE partner_id = ? AND status IN `+statementPaidStatuses+` AND paid_at >= ? AND paid_at <= ?`,
+		partnerID, start, end,
+	).Scan(&a.Amount, &a.Count)
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// StatementDiscountAggregate 周期内优惠承担（GP-305 券折让：coupon_order_links
+// ⋈ order_projection，仅计已付订单，按 paid_at 归属周期）。
+func (m *StatementModel) StatementDiscountAggregate(partnerID int64, start, end string) (int64, error) {
+	var total int64
+	err := m.db.QueryRow(
+		`SELECT COALESCE(SUM(l.discount_cents), 0) FROM coupon_order_links l
+		 JOIN order_projection p ON p.order_id = l.order_id
+		 WHERE p.partner_id = ? AND p.status IN `+statementPaidStatuses+` AND p.paid_at >= ? AND p.paid_at <= ?`,
+		partnerID, start, end,
+	).Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+// StatementRefundAggregate 周期内已执行退款冲减（EXECUTED；执行器接入前为 0）。
+func (m *StatementModel) StatementRefundAggregate(partnerID int64, start, end string) (int64, error) {
+	var total int64
+	err := m.db.QueryRow(
+		`SELECT COALESCE(SUM(r.amount_cents), 0) FROM refund_requests r
+		 JOIN order_projection p ON p.order_id = r.order_id
+		 WHERE p.partner_id = ? AND r.status = 'EXECUTED' AND r.created_at >= ? AND r.created_at <= ?`,
+		partnerID, start, end,
+	).Scan(&total)
+	return total, err
+}
+
+// StatementLineItems 对账单明细（每笔已付订单，按实付时间升序）。
+func (m *StatementModel) StatementLineItems(partnerID int64, start, end string) ([]*StatementLineItem, error) {
+	rows, err := m.db.Query(
+		`SELECT order_id, game_id, account_id, sku_id, status, amount_cents, paid_at
+		 FROM order_projection
+		 WHERE partner_id = ? AND status IN `+statementPaidStatuses+` AND paid_at >= ? AND paid_at <= ?
+		 ORDER BY paid_at ASC`,
+		partnerID, start, end,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*StatementLineItem, 0)
+	for rows.Next() {
+		var it StatementLineItem
+		if err := rows.Scan(&it.OrderId, &it.GameId, &it.AccountId, &it.SkuId, &it.Status, &it.AmountCents, &it.PaidAt); err != nil {
+			return nil, err
+		}
+		out = append(out, &it)
+	}
+	return out, rows.Err()
+}

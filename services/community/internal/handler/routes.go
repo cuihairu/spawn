@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	comment "github.com/tappi/tappi/services/community/internal/handler/comment"
+	design "github.com/tappi/tappi/services/community/internal/handler/design"
 	follow "github.com/tappi/tappi/services/community/internal/handler/follow"
 	message "github.com/tappi/tappi/services/community/internal/handler/message"
 	moderation "github.com/tappi/tappi/services/community/internal/handler/moderation"
@@ -130,7 +131,28 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 				Path:    "/posts/search",
 				Handler: post.SearchPostsHandler(serverCtx),
 			},
+			// GP-307 公告入口：官方帖聚合（置顶优先），公开读
+			{
+				Method:  http.MethodGet,
+				Path:    "/announcements",
+				Handler: post.ListAnnouncementsHandler(serverCtx),
+			},
 		},
+		rest.WithPrefix("/api/v1"),
+	)
+
+	// GP-307 置顶运营位：仅审核管理员（POST body pinned=true/false）
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPost,
+					Path:    "/posts/:id/pin",
+					Handler: post.PinPostHandler(serverCtx),
+				},
+			}...,
+		),
 		rest.WithPrefix("/api/v1"),
 	)
 
@@ -256,4 +278,77 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		},
 		rest.WithPrefix("/api/v1"),
 	)
+
+	// DESIGN-001 设计拆解域：公开读（品类/列表/详情/评论列表）。
+	server.AddRoutes(
+		[]rest.Route{
+			{
+				Method:  http.MethodGet,
+				Path:    "/design/categories",
+				Handler: design.ListCategoriesHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/design/breakdowns",
+				Handler: design.ListBreakdownsHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/design/breakdowns/:id",
+				Handler: design.GetBreakdownHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/design/breakdowns/:id/comments",
+				Handler: design.ListDesignCommentsHandler(serverCtx),
+			},
+		},
+		rest.WithPrefix("/api/v1"),
+	)
+
+	// DESIGN-001 设计拆解域：登录写（发布/编辑/精选/评论/删评论），
+	// 作者与审核管理员判定在 logic 层。
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPost,
+					Path:    "/design/breakdowns",
+					Handler: design.CreateBreakdownHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/design/breakdowns/:id",
+					Handler: design.UpdateBreakdownHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/design/breakdowns/:id/feature",
+					Handler: design.FeatureBreakdownHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/design/breakdowns/:id/comments",
+					Handler: design.CreateDesignCommentHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodDelete,
+					Path:    "/design/breakdowns/:id/comments/:cid",
+					Handler: design.DeleteDesignCommentHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/api/v1"),
+	)
+
+	// GP-306 内部通知端点（S2S 专用不进网关）：X-Internal-Token 校验在
+	// handler 内先于 body 解析；令牌未配置恒 403。
+	server.AddRoutes([]rest.Route{
+		{
+			Method:  http.MethodPost,
+			Path:    "/internal/notifications",
+			Handler: InternalNotificationsHandler(serverCtx),
+		},
+	})
 }

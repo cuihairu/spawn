@@ -5,8 +5,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
+	"github.com/tappi/tappi/services/game-catalog/internal/notify"
 	"github.com/tappi/tappi/services/game-catalog/internal/store"
 	"github.com/tappi/tappi/services/game-catalog/internal/svc"
 	"github.com/tappi/tappi/services/game-catalog/internal/types"
@@ -252,4 +254,161 @@ func (l *PartnerLogic) ListVersions(gameID string) (*types.VersionListResponse, 
 		out = append(out, *toVersion(v))
 	}
 	return &types.VersionListResponse{Versions: out}, nil
+}
+
+// ---- GP-201 区服目录/充值目标 ----
+
+func validServerStatus(status string) bool {
+	switch status {
+	case model.ServerStatusOpen, model.ServerStatusMaintenance, model.ServerStatusClosed:
+		return true
+	}
+	return false
+}
+
+// CreateServer 合作方为自有游戏新建区服（充值目标）。
+func (l *PartnerLogic) CreateServer(req *types.CreateServerRequest) (*types.GameServer, error) {
+	partnerID := l.partnerID()
+	if partnerID <= 0 {
+		return nil, newAPIError(http.StatusForbidden, "当前账号未绑定合作方")
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return nil, newAPIError(http.StatusBadRequest, "区服名不能为空")
+	}
+	if req.Status != "" && !validServerStatus(req.Status) {
+		return nil, newAPIError(http.StatusBadRequest, "非法区服状态")
+	}
+	if err := l.ownGame(partnerID, req.Id); err != nil {
+		return nil, err
+	}
+	s, err := l.svcCtx.AdminRepository.CreateGameServer(req.Id, &model.GameServer{
+		Name: strings.TrimSpace(req.Name), Region: req.Region, Status: req.Status, Sort: req.Sort,
+		PlannedOpenAt: req.PlannedOpenAt,
+	})
+	if err != nil {
+		l.Errorf("create game server failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "创建区服失败")
+	}
+	l.audit("game_server_create", "game_server", strconvFormatInt(s.Id), "", toJSON(toTypesServer(s)))
+	return toTypesServer(s), nil
+}
+
+// UpdateServer 合作方更新区服（改名/迁移/状态变更）；空字段保持原值。
+func (l *PartnerLogic) UpdateServer(req *types.UpdateServerRequest) (*types.GameServer, error) {
+	partnerID := l.partnerID()
+	if partnerID <= 0 {
+		return nil, newAPIError(http.StatusForbidden, "当前账号未绑定合作方")
+	}
+	if err := l.ownGame(partnerID, req.Id); err != nil {
+		return nil, err
+	}
+	current, err := l.svcCtx.AdminRepository.GetGameServer(req.ServerId)
+	if errors.Is(err, model.ErrServerNotFound) || (err == nil && current.GameId != req.Id) {
+		return nil, newAPIError(http.StatusNotFound, "区服不存在")
+	}
+	if err != nil {
+		l.Errorf("get game server failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询区服失败")
+	}
+	beforeStatus := current.Status
+	if req.Status != "" {
+		if !validServerStatus(req.Status) {
+			return nil, newAPIError(http.StatusBadRequest, "非法区服状态")
+		}
+		current.Status = req.Status
+	}
+	if strings.TrimSpace(req.Name) != "" {
+		current.Name = strings.TrimSpace(req.Name)
+	}
+	if strings.TrimSpace(req.Region) != "" {
+		current.Region = req.Region
+	}
+	if req.Sort > 0 {
+		current.Sort = req.Sort
+	}
+	if strings.TrimSpace(req.PlannedOpenAt) != "" {
+		current.PlannedOpenAt = strings.TrimSpace(req.PlannedOpenAt)
+	}
+	updated, err := l.svcCtx.AdminRepository.UpdateGameServer(current)
+	if errors.Is(err, model.ErrServerNotFound) {
+		return nil, newAPIError(http.StatusNotFound, "区服不存在")
+	}
+	if err != nil {
+		l.Errorf("update game server failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "更新区服失败")
+	}
+	// GP-306 开服提醒：非 open → open 过渡触发预约人群通知（只发一次，
+	// notified_at 置位）；通知失败仅记日志，不影响状态变更本身。
+	if beforeStatus != model.ServerStatusOpen && updated.Status == model.ServerStatusOpen {
+		NotifyServerOpen(l, l.svcCtx, updated)
+	}
+	l.audit("game_server_update", "game_server", strconvFormatInt(updated.Id), toJSON(toTypesServer(current)), toJSON(toTypesServer(updated)))
+	return toTypesServer(updated), nil
+}
+
+// NotifyServerOpen GP-306 开服提醒：拉该服未提醒预约 → community 扇出
+// （站内信 + realtime-hub 远程推送）→ 置已提醒。community 未配置时跳过。
+// 手动 PATCH 与排期到点扫描两条开服路径共用（notified_at 保证只发一次）。
+func NotifyServerOpen(l logx.Logger, svcCtx *svc.ServiceContext, s *model.GameServer) {
+	if !svcCtx.Notify.Enabled() {
+		return
+	}
+	reservations, err := svcCtx.AdminRepository.ListUnnotifiedReservations(s.Id)
+	if err != nil {
+		l.Errorf("list reservations for server %d failed: %v", s.Id, err)
+		return
+	}
+	if len(reservations) == 0 {
+		return
+	}
+	ids := make([]int64, 0, len(reservations))
+	for _, r := range reservations {
+		ids = append(ids, r.UserId)
+	}
+	svcCtx.Notify.Publish(notify.Notification{
+		UserIds: ids, Type: "server_open", TargetId: s.Id,
+		Content: "您预约的区服「" + s.Name + "」已开服，欢迎进入游戏",
+	})
+	if err := svcCtx.AdminRepository.MarkReservationsNotified(s.Id); err != nil {
+		l.Errorf("mark reservations notified server %d failed: %v", s.Id, err)
+	}
+}
+
+// AuditServerAutoOpen 记到点自动开服审计（无操作人：actor=0 / role=system，
+// 与手动 PATCH 的 game_server_update 区分，可追溯哪次开服来自排期调度）。
+func AuditServerAutoOpen(l logx.Logger, svcCtx *svc.ServiceContext, serverID int64) {
+	before := toJSON(map[string]any{"status": model.ServerStatusClosed})
+	after := toJSON(map[string]any{"status": model.ServerStatusOpen})
+	if err := svcCtx.AdminRepository.WriteAudit(&model.AuditLog{
+		ActorId: 0, ActorRole: "system", Action: "game_server_auto_open",
+		ResourceType: "game_server", ResourceId: strconvFormatInt(serverID),
+		BeforeJson: before, AfterJson: after,
+	}); err != nil {
+		l.Errorf("write audit failed: %v", err)
+	}
+}
+
+// ListPartnerServers 合作方视角区服列表：全部状态可见（closed 保留对账）。
+func (l *PartnerLogic) ListPartnerServers(gameID string) (*types.ServerListResponse, error) {
+	partnerID := l.partnerID()
+	if partnerID <= 0 {
+		return nil, newAPIError(http.StatusForbidden, "当前账号未绑定合作方")
+	}
+	if err := l.ownGame(partnerID, gameID); err != nil {
+		return nil, err
+	}
+	servers, err := l.svcCtx.AdminRepository.ListGameServers(gameID, true)
+	if err != nil {
+		l.Errorf("list game servers failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询区服失败")
+	}
+	items := make([]types.GameServer, 0, len(servers))
+	for _, s := range servers {
+		items = append(items, *toTypesServer(s))
+	}
+	return &types.ServerListResponse{Items: items}, nil
+}
+
+func strconvFormatInt(v int64) string {
+	return strconv.FormatInt(v, 10)
 }

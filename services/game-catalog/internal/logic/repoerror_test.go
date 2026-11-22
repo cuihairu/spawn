@@ -13,8 +13,24 @@ import (
 // 触达 logic 层「查询/创建失败 → 500」分支。
 type failingGameStore struct {
 	model.GameStore
-	getErr    error
-	createErr error
+	getErr       error
+	createErr    error
+	setStatusErr error
+	setTagsErr   error
+}
+
+func (f *failingGameStore) SetStatus(id, status, reason string) (*model.Game, error) {
+	if f.setStatusErr != nil {
+		return nil, f.setStatusErr
+	}
+	return f.GameStore.SetStatus(id, status, reason)
+}
+
+func (f *failingGameStore) SetTags(id string, tags []string) (*model.Game, error) {
+	if f.setTagsErr != nil {
+		return nil, f.setTagsErr
+	}
+	return f.GameStore.SetTags(id, tags)
 }
 
 func (f *failingGameStore) Get(id string) (*model.Game, error) {

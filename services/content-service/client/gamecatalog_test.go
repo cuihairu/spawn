@@ -45,7 +45,7 @@ func recordingOptions() (clientOptions, func() []time.Duration) {
 func fakeClockBreaker(maxFailures int, cooldown time.Duration) (*Breaker, func(time.Duration)) {
 	now := time.Now()
 	b := NewBreaker(maxFailures, cooldown)
-	b.now = func() time.Time { return now }
+	b.SetNow(func() time.Time { return now })
 	return b, func(d time.Duration) { now = now.Add(d) }
 }
 
@@ -236,7 +236,7 @@ func TestGetGameById_RetriesTransientWithBackoff(t *testing.T) {
 
 	hits := 0
 	opts, delays := recordingOptions()
-	opts.retry = retryConfig{maxAttempts: 3, baseDelay: 10 * time.Millisecond, maxDelay: time.Second}
+	opts.retry = retryConfig{MaxAttempts: 3, BaseDelay: 10 * time.Millisecond, MaxDelay: time.Second}
 
 	cl := newTestServerWithOptions(t, func(w http.ResponseWriter, r *http.Request) {
 		hits++
@@ -270,7 +270,7 @@ func TestGetGameById_RetriesExhausted(t *testing.T) {
 
 	hits := 0
 	opts, delays := recordingOptions()
-	opts.retry = retryConfig{maxAttempts: 4, baseDelay: time.Millisecond, maxDelay: 3 * time.Millisecond}
+	opts.retry = retryConfig{MaxAttempts: 4, BaseDelay: time.Millisecond, MaxDelay: 3 * time.Millisecond}
 
 	cl := newTestServerWithOptions(t, func(w http.ResponseWriter, r *http.Request) {
 		hits++
@@ -297,7 +297,7 @@ func TestGetGameById_BackoffCappedAtMaxDelay(t *testing.T) {
 	t.Parallel()
 
 	opts, delays := recordingOptions()
-	opts.retry = retryConfig{maxAttempts: 6, baseDelay: time.Millisecond, maxDelay: 3 * time.Millisecond}
+	opts.retry = retryConfig{MaxAttempts: 6, BaseDelay: time.Millisecond, MaxDelay: 3 * time.Millisecond}
 
 	cl := newTestServerWithOptions(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -324,7 +324,7 @@ func TestGetGameById_NoRetryOnClientError(t *testing.T) {
 
 	hits := 0
 	opts, delays := recordingOptions()
-	opts.retry = retryConfig{maxAttempts: 5, baseDelay: time.Millisecond, maxDelay: 0}
+	opts.retry = retryConfig{MaxAttempts: 5, BaseDelay: time.Millisecond, MaxDelay: 0}
 
 	cl := newTestServerWithOptions(t, func(w http.ResponseWriter, r *http.Request) {
 		hits++
@@ -348,7 +348,7 @@ func TestGetGameById_NoRetryOnCanceledContext(t *testing.T) {
 
 	hits := 0
 	opts, _ := recordingOptions()
-	opts.retry = retryConfig{maxAttempts: 5, baseDelay: time.Millisecond, maxDelay: 0}
+	opts.retry = retryConfig{MaxAttempts: 5, BaseDelay: time.Millisecond, MaxDelay: 0}
 
 	cl := newTestServerWithOptions(t, func(w http.ResponseWriter, r *http.Request) {
 		hits++
@@ -371,7 +371,7 @@ func TestGetGameById_NoRetryOnContractViolation(t *testing.T) {
 
 	hits := 0
 	opts, delays := recordingOptions()
-	opts.retry = retryConfig{maxAttempts: 5, baseDelay: time.Millisecond, maxDelay: 0}
+	opts.retry = retryConfig{MaxAttempts: 5, BaseDelay: time.Millisecond, MaxDelay: 0}
 
 	cl := newTestServerWithOptions(t, func(w http.ResponseWriter, r *http.Request) {
 		hits++
@@ -397,7 +397,7 @@ func TestGetGameById_BreakerOpensAndFastFails(t *testing.T) {
 	hits := 0
 	opts, _ := recordingOptions()
 	// 阈值 2：一次请求内的 2 次连续失败即可熔断。
-	opts.retry = retryConfig{maxAttempts: 3, baseDelay: time.Millisecond, maxDelay: 0}
+	opts.retry = retryConfig{MaxAttempts: 3, BaseDelay: time.Millisecond, MaxDelay: 0}
 	opts.breaker = NewBreaker(2, time.Minute)
 
 	cl := newTestServerWithOptions(t, func(w http.ResponseWriter, r *http.Request) {
@@ -427,7 +427,7 @@ func TestGetGameById_BreakerOpensAndFastFails(t *testing.T) {
 	if hits != 2 {
 		t.Fatalf("expected no network request while open, got %d hits", hits)
 	}
-	if got := cl.breaker.stateValue(); got != stateOpen {
+	if got := cl.breaker.State(); got != stateOpen {
 		t.Fatalf("expected breaker open, got %v", got)
 	}
 }
@@ -441,7 +441,7 @@ func TestGetGameById_NoNetworkWhenBreakerPreOpened(t *testing.T) {
 
 	opts := defaultClientOptions()
 	opts.breaker = b
-	opts.retry = retryConfig{maxAttempts: 3, baseDelay: time.Millisecond, maxDelay: 0}
+	opts.retry = retryConfig{MaxAttempts: 3, BaseDelay: time.Millisecond, MaxDelay: 0}
 	opts.sleep = func(d time.Duration) {}
 
 	cl := newTestServerWithOptions(t, func(w http.ResponseWriter, r *http.Request) {
@@ -466,7 +466,7 @@ func TestGetGameById_HalfOpenProbeSuccessRecovers(t *testing.T) {
 
 	opts := defaultClientOptions()
 	opts.breaker = b
-	opts.retry = retryConfig{maxAttempts: 1, baseDelay: 0, maxDelay: 0}
+	opts.retry = retryConfig{MaxAttempts: 1, BaseDelay: 0, MaxDelay: 0}
 	opts.sleep = func(d time.Duration) {}
 
 	cl := newTestServerWithOptions(t, func(w http.ResponseWriter, r *http.Request) {
@@ -484,7 +484,7 @@ func TestGetGameById_HalfOpenProbeSuccessRecovers(t *testing.T) {
 			t.Fatalf("call %d: expected error while failing", i+1)
 		}
 	}
-	if hits != 2 || b.stateValue() != stateOpen {
+	if hits != 2 || b.State() != stateOpen {
 		t.Fatalf("expected breaker open after 2 failures (hits=%d)", hits)
 	}
 
@@ -507,8 +507,8 @@ func TestGetGameById_HalfOpenProbeSuccessRecovers(t *testing.T) {
 	if hits != 3 {
 		t.Fatalf("expected exactly 1 probe request, got %d hits", hits)
 	}
-	if b.stateValue() != stateClosed {
-		t.Fatalf("expected breaker closed after probe success, got %v", b.stateValue())
+	if b.State() != stateClosed {
+		t.Fatalf("expected breaker closed after probe success, got %v", b.State())
 	}
 
 	// 恢复后请求正常放行。
@@ -528,7 +528,7 @@ func TestGetGameById_HalfOpenProbeFailureReopens(t *testing.T) {
 
 	opts := defaultClientOptions()
 	opts.breaker = b
-	opts.retry = retryConfig{maxAttempts: 1, baseDelay: 0, maxDelay: 0}
+	opts.retry = retryConfig{MaxAttempts: 1, BaseDelay: 0, MaxDelay: 0}
 	opts.sleep = func(d time.Duration) {}
 
 	cl := newTestServerWithOptions(t, func(w http.ResponseWriter, r *http.Request) {
@@ -547,8 +547,8 @@ func TestGetGameById_HalfOpenProbeFailureReopens(t *testing.T) {
 	if _, err := cl.GetGameById(context.Background(), "g1"); err == nil {
 		t.Fatal("expected probe failure")
 	}
-	if b.stateValue() != stateOpen {
-		t.Fatalf("expected breaker re-opened after failed probe, got %v", b.stateValue())
+	if b.State() != stateOpen {
+		t.Fatalf("expected breaker re-opened after failed probe, got %v", b.State())
 	}
 	if hits != 3 {
 		t.Fatalf("expected exactly 1 failed probe, got %d hits", hits)
@@ -572,7 +572,7 @@ func TestGetGameById_HalfOpenProbeClientErrorRecovers(t *testing.T) {
 
 	opts := defaultClientOptions()
 	opts.breaker = b
-	opts.retry = retryConfig{maxAttempts: 1, baseDelay: 0, maxDelay: 0}
+	opts.retry = retryConfig{MaxAttempts: 1, BaseDelay: 0, MaxDelay: 0}
 	opts.sleep = func(d time.Duration) {}
 
 	cl := newTestServerWithOptions(t, func(w http.ResponseWriter, r *http.Request) {
@@ -597,8 +597,8 @@ func TestGetGameById_HalfOpenProbeClientErrorRecovers(t *testing.T) {
 	if _, err := cl.GetGameById(context.Background(), "g1"); err == nil {
 		t.Fatal("expected 404 error")
 	}
-	if b.stateValue() != stateClosed {
-		t.Fatalf("expected breaker closed after 4xx probe, got %v", b.stateValue())
+	if b.State() != stateClosed {
+		t.Fatalf("expected breaker closed after 4xx probe, got %v", b.State())
 	}
 
 	// 恢复后请求正常放行（可达网络）：2 次失败 + 1 次探测 + 1 次恢复后请求。
@@ -621,19 +621,19 @@ func TestRetryConfig_BackoffDelay(t *testing.T) {
 		failedAttempts int
 		want           time.Duration
 	}{
-		{"first failure", retryConfig{baseDelay: 10 * time.Millisecond, maxDelay: time.Second}, 1, 10 * time.Millisecond},
-		{"second failure", retryConfig{baseDelay: 10 * time.Millisecond, maxDelay: time.Second}, 2, 20 * time.Millisecond},
-		{"third failure", retryConfig{baseDelay: 10 * time.Millisecond, maxDelay: time.Second}, 3, 40 * time.Millisecond},
-		{"capped at max", retryConfig{baseDelay: 10 * time.Millisecond, maxDelay: 30 * time.Millisecond}, 3, 30 * time.Millisecond},
-		{"max cap exceeded", retryConfig{baseDelay: 10 * time.Millisecond, maxDelay: 30 * time.Millisecond}, 4, 30 * time.Millisecond},
-		{"no cap", retryConfig{baseDelay: 10 * time.Millisecond, maxDelay: 0}, 5, 160 * time.Millisecond},
-		{"zero base", retryConfig{baseDelay: 0, maxDelay: time.Second}, 3, 0},
-		{"zero attempts", retryConfig{baseDelay: 10 * time.Millisecond, maxDelay: time.Second}, 0, 0},
+		{"first failure", retryConfig{BaseDelay: 10 * time.Millisecond, MaxDelay: time.Second}, 1, 10 * time.Millisecond},
+		{"second failure", retryConfig{BaseDelay: 10 * time.Millisecond, MaxDelay: time.Second}, 2, 20 * time.Millisecond},
+		{"third failure", retryConfig{BaseDelay: 10 * time.Millisecond, MaxDelay: time.Second}, 3, 40 * time.Millisecond},
+		{"capped at max", retryConfig{BaseDelay: 10 * time.Millisecond, MaxDelay: 30 * time.Millisecond}, 3, 30 * time.Millisecond},
+		{"max cap exceeded", retryConfig{BaseDelay: 10 * time.Millisecond, MaxDelay: 30 * time.Millisecond}, 4, 30 * time.Millisecond},
+		{"no cap", retryConfig{BaseDelay: 10 * time.Millisecond, MaxDelay: 0}, 5, 160 * time.Millisecond},
+		{"zero base", retryConfig{BaseDelay: 0, MaxDelay: time.Second}, 3, 0},
+		{"zero attempts", retryConfig{BaseDelay: 10 * time.Millisecond, MaxDelay: time.Second}, 0, 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.retry.backoffDelay(tt.failedAttempts); got != tt.want {
+			if got := backoffDelay(tt.retry, tt.failedAttempts); got != tt.want {
 				t.Fatalf("backoffDelay(%d) = %v, want %v", tt.failedAttempts, got, tt.want)
 			}
 		})

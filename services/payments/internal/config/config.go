@@ -1,0 +1,99 @@
+package config
+
+import "github.com/zeromicro/go-zero/rest"
+
+type Config struct {
+	rest.RestConf
+
+	// 数据库配置（DSN 含 file:/.db 走 SQLite，否则 MySQL，与 game-catalog 同款探测）
+	MySQL struct {
+		DataSource string `json:",env=DATASOURCE"`
+	}
+
+	// 平台 JWT 校验密钥（与 user-service 共享）
+	Auth struct {
+		JWTSecret string `json:",env=JWT_SECRET"`
+	}
+
+	// Courier 支付网关（契约 Frozen payment v1.1，只读不 fork）
+	Courier struct {
+		BaseURL string `json:",default=http://localhost:8080,env=COURIER_GATEWAY_URL"`
+		Timeout int64  `json:",default=5000,env=COURIER_TIMEOUT"`
+	}
+
+	// GameCatalog 角色权威（/me）：商品配置等管理面按平台角色放行
+	GameCatalog struct {
+		BaseURL string `json:",default=http://localhost:8890,env=GAMECATALOG_BASE_URL"`
+		Timeout int64  `json:",default=5000,env=GAMECATALOG_TIMEOUT"`
+	}
+
+	// Channel 渠道适配：Sandbox 为开发/沙箱专用（HMAC-SHA256 回调），
+	// 真实渠道需实现 ChannelAdapter 并以环境变量注入密钥，不得用沙箱 HMAC
+	// 冒充支付机构验签（payment.md v1.1 安全边界 2）。
+	Channel struct {
+		SandboxSecret string `json:",env=PAYMENTS_SANDBOX_SECRET"`
+	}
+
+	// Delivery 发货接缝（GP-203）：teller Deliver 钩子（进程内）的生产落地
+	// 面为签名 webhook。Secret 未配置 = 分发 fail-closed 全部 403（与
+	// teller 空 ChannelSecret 同语义），生产必须注入。
+	Delivery struct {
+		Secret               string `json:",env=PAYMENTS_DELIVERY_SECRET"`
+		RetryIntervalSeconds int64  `json:",default=60,env=PAYMENTS_DELIVERY_RETRY_SECONDS"`
+		TimeoutMs            int64  `json:",default=5000,env=PAYMENTS_DELIVERY_TIMEOUT"`
+	}
+
+	// Promotions 活动/促销服务（GP-302）：订单 PAID 后推送订单事实做倍率
+	// 赠送评估。BaseURL 未配置 = 不入队不分发（部署面未带促销服务时行为
+	// 不变）；Secret 与 promotions 侧 PROMOTIONS_REWARD_SECRET 同值。
+	Promotions struct {
+		BaseURL  string `json:",env=PROMOTIONS_URL,optional"`
+		Secret   string `json:",env=PROMOTIONS_REWARD_SECRET,optional"`
+		Timeout  int64  `json:",default=5000,env=PROMOTIONS_TIMEOUT"`
+		Interval int64  `json:",default=60,env=PROMOTIONS_EVAL_INTERVAL_SECONDS"`
+	}
+
+	// Coupon 优惠券域（GP-305）：锁券 TTL 与超时释放扫描间隔。下单后久未
+	// PAID 的锁券（locked_at 早于 now-TTL）由释放扫描退回 claimed，避免券
+	// 永久卡死；释放为幂等条件 UPDATE，进程重启恢复不重复释放。
+	Coupon struct {
+		LockTtlSeconds         int64 `json:",default=3600,env=PAYMENTS_COUPON_LOCK_TTL_SECONDS"`
+		ReleaseIntervalSeconds int64 `json:",default=300,env=PAYMENTS_COUPON_RELEASE_INTERVAL_SECONDS"`
+	}
+
+	// Analytics 数据面板经营分析（GP-402/F24）：PAID/退款请求事实事件
+	// 投递（data-panel /internal/events，X-Internal-Token 与 data-panel 侧
+	// INTERNAL_TOKEN 同值）。同步首投失败先落本地 outbox，由定时 Relay 重投
+	// （data-panel 摄入按 event_id 幂等）。BaseURL 未配置 = no-op，部署面
+	// 未带数据面板时行为不变。
+	Analytics struct {
+		BaseURL               string `json:",env=DATA_PANEL_URL,optional"`
+		Token                 string `json:",env=DATA_PANEL_INTERNAL_TOKEN,optional"`
+		Timeout               int64  `json:",default=3000,env=DATA_PANEL_TIMEOUT"`
+		OutboxIntervalSeconds int64  `json:",default=30,env=DATA_PANEL_OUTBOX_INTERVAL_SECONDS"`
+		OutboxMaxAttempts     int64  `json:",default=10,env=DATA_PANEL_OUTBOX_MAX_ATTEMPTS"`
+		OutboxRetentionHours  int64  `json:",default=168,env=DATA_PANEL_OUTBOX_RETENTION_HOURS"`
+	}
+
+	// Internal S2S 订单事实查询守卫（GP-307 售后工单 orderId 归属强校验）：
+	// GET /internal/orders/:orderId 供 courier-adapter 验证订单属于当前用户/
+	// 游戏。Token 空 = 恒 403（fail-closed）；S2S 专用不进网关反代。
+	Internal struct {
+		Token string `json:",env=INTERNAL_TOKEN,optional"`
+	}
+
+	// Notify 站内通知（GP-404 结算差异异议复核结果回流合作方）：
+	// community /internal/notifications，X-Internal-Token 与 community 侧
+	// INTERNAL_TOKEN 同值。BaseURL 未配置 = no-op（community 未部署零行为）。
+	Notify struct {
+		BaseURL string `json:",env=COMMUNITY_URL,optional"`
+		Token   string `json:",env=COMMUNITY_INTERNAL_TOKEN,optional"`
+		Timeout int64  `json:",default=3000,env=COMMUNITY_TIMEOUT"`
+		// OutboxIntervalSeconds 重投扫描周期（默认 30s）。
+		OutboxIntervalSeconds int64 `json:",default=30,env=COMMUNITY_NOTIFY_OUTBOX_INTERVAL_SECONDS"`
+		// OutboxMaxAttempts 重试上限（默认 10，超出置 dropped 留痕）。
+		OutboxMaxAttempts int64 `json:",default=10,env=COMMUNITY_NOTIFY_OUTBOX_MAX_ATTEMPTS"`
+		// OutboxRetentionHours 已终态行保留窗口（默认 168h=7 天）。
+		OutboxRetentionHours int64 `json:",default=168,env=COMMUNITY_NOTIFY_OUTBOX_RETENTION_HOURS"`
+	}
+}

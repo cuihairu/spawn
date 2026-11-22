@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
-import { fetchDMUnreadCount, fetchMe, fetchUnreadNotificationCount, type MeInfo, type UserInfo } from './api/client'
+import {
+  fetchDMUnreadCount,
+  fetchMe,
+  fetchUnreadNotificationCount,
+  recordPromoClick,
+  PROMO_CLICK_STORAGE_KEY,
+  type MeInfo,
+  type UserInfo,
+} from './api/client'
 import { connectNotificationStream } from './lib/realtime'
 import HomePage from './pages/HomePage'
 import DiscoverPage from './pages/DiscoverPage'
@@ -8,6 +16,8 @@ import CommunityPage from './pages/CommunityPage'
 import GuidesPage from './pages/GuidesPage'
 import GuideDetailPage from './pages/GuideDetailPage'
 import GuideEditorPage from './pages/GuideEditorPage'
+import DesignHubPage from './pages/DesignHubPage'
+import DesignBreakdownPage from './pages/DesignBreakdownPage'
 import GamesPage from './pages/GamesPage'
 import GameDetailPage from './pages/GameDetailPage'
 import NotificationsPage from './pages/NotificationsPage'
@@ -35,6 +45,18 @@ function App() {
       return null
     }
   })
+
+  // GP-403 落地页渠道归因：外部推广链接 ?channel=<code>&click_id=<id> 进入时
+  // 登记一次点击（best-effort，渠道无效/停用静默），click_id 缓存到注册时携带。
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const channel = params.get('channel')
+    const clickId = params.get('click_id')
+    if (!channel || !clickId) return
+    localStorage.setItem(PROMO_CLICK_STORAGE_KEY, clickId)
+    const gameMatch = window.location.pathname.match(/^\/games\/([^/]+)/)
+    recordPromoClick(channel, clickId, gameMatch?.[1]).catch(() => {})
+  }, [])
 
   // 站内通知未读数：登录后拉取 + 30s 轮询驱动导航铃铛徽标；登出在回调里清零。
   const [unreadNotifications, setUnreadNotifications] = useState(0)
@@ -142,6 +164,9 @@ function App() {
               <Link to="/guides" className="nav-link">
                 攻略
               </Link>
+              <Link to="/design" className="nav-link">
+                设计拆解
+              </Link>
               {auth ? (
                 <>
                   <Link to="/notifications" className="nav-bell" aria-label={`未读通知 ${unreadNotifications} 条`}>
@@ -186,8 +211,11 @@ function App() {
           <Routes>
             <Route path="/" element={<HomePage auth={auth} onAuthChange={handleAuthChange} />} />
             <Route path="/discover" element={<DiscoverPage />} />
+            {/* DESIGN-001 设计拆解：品类聚合入口 + 拆解详情（讨论区登录态透传） */}
+            <Route path="/design" element={<DesignHubPage />} />
+            <Route path="/design/:id" element={<DesignBreakdownPage auth={auth} />} />
             <Route path="/games" element={<GamesPage />} />
-            <Route path="/games/:id" element={<GameDetailPage token={auth?.token} />} />
+            <Route path="/games/:id" element={<GameDetailPage token={auth?.token} userId={auth?.user?.id} />} />
             <Route
               path="/stats"
               element={

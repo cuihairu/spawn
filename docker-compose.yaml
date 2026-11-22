@@ -3,7 +3,9 @@ version: "3.9"
 services:
   api-gateway:
     build:
-      context: ./services/api-gateway
+      # 根上下文：go.mod replace ../../pkg/resilience 需要仓库布局（见 Dockerfile）
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
     environment:
       USER_SERVICE_URL: http://user-service:8888
       GAME_SERVICE_URL: http://game-catalog:8890
@@ -16,6 +18,12 @@ services:
       JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
       # realtime-hub WS 隧道：/ws 原始透传（未配置则网关不注册 /ws）。
       REALTIME_HUB_URL: http://realtime-hub:8893
+      # GP-201 Courier 适配服务（游戏会话票据/绑定/映射管理面）
+      COURIER_ADAPTER_URL: http://courier-adapter:8897
+      # GP-202 支付接入服务（商品配置/下单/订单查询/回调验签接缝）
+      PAYMENTS_URL: http://payments:8898
+      # GP-301 活动/促销配置服务（活动状态机/版本快照管理面）
+      PROMOTIONS_URL: http://promotions:8902
     volumes:
       - uploads:/app/uploads
     depends_on:
@@ -25,6 +33,9 @@ services:
       - community
       - data-panel
       - realtime-hub
+      - courier-adapter
+      - payments
+      - promotions
     ports:
       - "8800:8800"
       - "9095:9095" # /metrics（deploy/ 观测栈抓取）
@@ -37,6 +48,21 @@ services:
       # GP-105 包体托管目录：持久卷，受控下载/合作方上传共用；
       # 生产纳入备份（接入设计 §4）。
       PACKAGE_DIR: /app/data/packages
+      # GP-005 沙箱引导管理员：user-service 账号 id 启动期幂等写为
+      # platform_admin（运营后台首个入口）。逗号分隔可多个（如 "1,2"）；
+      # 沙箱取 1 = 首个注册用户；生产必须改为真实运营账号 id（或留空禁用引导）。
+      ADMIN_USER_IDS: "${ADMIN_USER_IDS:-1}"
+      # GP-403 渠道归因 S2S 守卫（/internal/promo/clicks/:id/resolve）：
+      # 与 user-service 的 GAMECATALOG_INTERNAL_TOKEN 同值；空 = 恒 403。
+      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
+      # GP-306/401 通知扇出目标（community /internal/notifications）；未配置时
+      # 通知通路 no-op（开服提醒/版本通知/上线通知/举报处置结果都不落库）。
+      COMMUNITY_URL: http://community:8892
+      # GP-402 经营分析事实投递：download 事实 → data-panel /internal/events。
+      # 本地 outbox 补偿（DATA_PANEL_URL 未配置 = no-op）；令牌与 data-panel
+      # 侧 INTERNAL_TOKEN 同值。
+      DATA_PANEL_URL: http://data-panel:8896
+      DATA_PANEL_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
     volumes:
       - game-packages:/app/data/packages
     ports:
@@ -46,7 +72,9 @@ services:
 
   content-service:
     build:
-      context: ./services/content-service
+      # 根上下文：go.mod replace ../../pkg/resilience 需要仓库布局（见 Dockerfile）
+      context: .
+      dockerfile: services/content-service/Dockerfile
     environment:
       JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
       GAMECATALOG_BASE_URL: http://game-catalog:8890
@@ -58,11 +86,20 @@ services:
 
   user-service:
     build:
-      context: ./services/user-service
+      # 根上下文：go.mod replace ../../pkg/resilience 需要仓库布局（见 Dockerfile）
+      context: .
+      dockerfile: services/user-service/Dockerfile
     environment:
       DATASOURCE: file:/app/data/users.db
       GAMECATALOG_BASE_URL: http://game-catalog:8890
       GAMECATALOG_TIMEOUT: "5000"
+      # GP-403 渠道归因 S2S 令牌（与 game-catalog INTERNAL_TOKEN 同值）。
+      GAMECATALOG_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
+      # GP-402 经营分析事实投递：register/login 事实 → data-panel
+      # /internal/events。本地 outbox 补偿（DATA_PANEL_URL 未配置 = no-op）；
+      # 令牌与 data-panel 侧 INTERNAL_TOKEN 同值。
+      DATA_PANEL_URL: http://data-panel:8896
+      DATA_PANEL_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
       JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
     depends_on:
       - game-catalog
@@ -79,6 +116,10 @@ services:
       # realtime-hub 未就绪时 community 启动不受影响（发布失败仅记日志）。
       REALTIME_HUB_URL: http://realtime-hub:8893
       REALTIME_INTERNAL_TOKEN: "${REALTIME_INTERNAL_TOKEN:-tappi-realtime-internal-token-2024}"
+      # 站内通知 S2S 守卫（/internal/notifications，X-Internal-Token）：与各调用
+      # 方（game-catalog/payments）的 notify 令牌同值；未配置时通知一律 403，
+      # 通知通路整体失效。
+      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
     depends_on:
       - realtime-hub
     ports:
@@ -92,6 +133,14 @@ services:
     environment:
       # 与 user-service 的 Auth.JWTSecret 同值：战绩摄入 Bearer 校验。
       JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
+      # GP-402 经营分析查询名单（逗号分隔 user-service 用户 id，默认演示管理员 1）。
+      ADMIN_USER_IDS: "${ADMIN_USER_IDS:-1}"
+      # GP-402 经营分析 S2S 摄入守卫（/internal/events）：未配置恒 403
+      # （fail-closed）。与各产生方 DATA_PANEL_INTERNAL_TOKEN 同值。
+      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
+      # GP-404 合作方自助数据面：game-catalog 为角色权威（/me 判角色与归属）。
+      # 容器内须用 compose DNS 名，etc yaml 的 localhost 默认只适用于裸机本地开发。
+      GAMECATALOG_BASE_URL: "http://game-catalog:8890"
     ports:
       - "8896:8896"
       - "9097:9097" # /metrics（deploy/ 观测栈抓取）
@@ -107,6 +156,96 @@ services:
       REALTIME_INTERNAL_TOKEN: "${REALTIME_INTERNAL_TOKEN:-tappi-realtime-internal-token-2024}"
     ports:
       - "8893:8893"
+    restart: unless-stopped
+
+  # GP-201 Courier 适配服务：平台账号 ↔ Courier 游戏会话（绑定/代登录/
+  # 启动票据/注销同步）+ courier_game_mapping 管理面。Courier 网关本身
+  # 属另一仓（GP-005 联合沙箱接线），未就绪时本服务可启动，游戏会话端点
+  # 以 502 呈现上游不可达。
+  courier-adapter:
+    build:
+      context: ./services/courier-adapter
+    environment:
+      # 与 user-service 的 Auth.JWTSecret 同值：平台 JWT 校验。
+      JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
+      # 代登录随机密码加密密钥：生产必须覆盖（内置演示值启动期大声告警）。
+      CREDENTIAL_KEY: "${CREDENTIAL_KEY:-tappi-courier-adapter-credential-key-2026}"
+      COURIER_GATEWAY_URL: "${COURIER_GATEWAY_URL:-http://courier-gateway:8080}"
+      GAMECATALOG_BASE_URL: http://game-catalog:8890
+      USER_SERVICE_URL: http://user-service:8888
+      # GP-307 售后工单 orderId 归属强校验：订单事实权威在 payments。
+      # 令牌与 payments 侧 INTERNAL_TOKEN 同值；未配置 = 校验跳过（fail-open）。
+      PAYMENTS_URL: http://payments:8898
+      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-}"
+    depends_on:
+      - user-service
+      - game-catalog
+    ports:
+      - "8897:8897"
+      - "9098:9098" # /metrics（deploy/ 观测栈抓取）
+    restart: unless-stopped
+
+  # GP-202 支付接入服务：商品配置（服务端定价）/下单/订单查询/渠道回调验签
+  # 接缝。订单事实源在 Courier teller（冻结契约只读），本服务不复制状态机；
+  # 沙箱渠道为开发/沙箱专用，真实渠道需 ChannelAdapter + 渠道密钥注入。
+  payments:
+    build:
+      context: ./services/payments
+    environment:
+      JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
+      COURIER_GATEWAY_URL: "${COURIER_GATEWAY_URL:-http://courier-gateway:8080}"
+      GAMECATALOG_BASE_URL: http://game-catalog:8890
+      # GP-404 异议复核结果回流合作方（站内信经 community /internal/notifications）；
+      # COMMUNITY_URL 留空 = no-op。令牌与 community 侧 INTERNAL_TOKEN 同值。
+      COMMUNITY_URL: http://community:8892
+      COMMUNITY_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
+      # 沙箱渠道 HMAC 密钥（仅开发/沙箱；真实渠道不得使用且须覆盖）
+      PAYMENTS_SANDBOX_SECRET: "${PAYMENTS_SANDBOX_SECRET:-tappi-payments-sandbox-channel-secret-2026}"
+      # GP-203 发货接缝密钥：teller Deliver 钩子（进程内）的签名 webhook
+      # 落地面。未配置 = 分发 fail-closed（全部 403）；生产必须注入。
+      PAYMENTS_DELIVERY_SECRET: "${PAYMENTS_DELIVERY_SECRET:-}"
+      # GP-302 活动奖励评估：PAID 订单事实推送 promotions（倍率赠送）。
+      # SECRET 与 promotions 侧同值；未配置 URL = 不入队不分发。
+      PROMOTIONS_URL: http://promotions:8902
+      PROMOTIONS_REWARD_SECRET: "${PROMOTIONS_REWARD_SECRET:-tappi-promotions-reward-secret-2026}"
+      # GP-402 经营分析事实投递：PAID/退款事实 → data-panel /internal/events。
+      # 本地 outbox 补偿（DATA_PANEL_URL 未配置 = no-op）；令牌与 data-panel
+      # 侧 INTERNAL_TOKEN 同值。
+      DATA_PANEL_URL: http://data-panel:8896
+      DATA_PANEL_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
+      # GP-307 S2S 订单事实查询（courier-adapter 售后工单归属校验的事实源）。
+      # 未配置 = 恒 403（fail-closed）；与 courier-adapter 侧同值。
+      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-}"
+    depends_on:
+      - user-service
+      - game-catalog
+    ports:
+      - "8898:8898"
+      - "9099:9099" # /metrics（deploy/ 观测栈抓取）
+    restart: unless-stopped
+
+  # GP-301 活动/促销配置服务：活动状态机 draft→published→disabled→revise、
+  # 起止时间/时区/区服/渠道/人群、触发/限次/预算/叠加/奖励配置；发布生成
+  # 不可变版本快照。奖励/优惠的运行时计算归 GP-302/303/305。
+  promotions:
+    build:
+      context: ./services/promotions
+    environment:
+      JWT_SECRET: "${JWT_SECRET:-tappi-user-service-jwt-secret-key-2024}"
+      GAMECATALOG_BASE_URL: http://game-catalog:8890
+      # GP-302 S2S 评估签名密钥（与 payments 侧同值；生产必须覆盖默认值）
+      PROMOTIONS_REWARD_SECRET: "${PROMOTIONS_REWARD_SECRET:-tappi-promotions-reward-secret-2026}"
+      # GP-402 经营分析事实投递：reward_granted 事实 → data-panel
+      # /internal/events。本地 outbox 补偿（DATA_PANEL_URL 未配置 = no-op）；
+      # 令牌与 data-panel 侧 INTERNAL_TOKEN 同值。
+      DATA_PANEL_URL: http://data-panel:8896
+      DATA_PANEL_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
+    depends_on:
+      - user-service
+      - game-catalog
+    ports:
+      - "8902:8902"
+      - "9103:9103" # /metrics（deploy/ 观测栈抓取）
     restart: unless-stopped
 
   web-client:

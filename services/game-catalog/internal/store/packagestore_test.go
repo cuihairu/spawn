@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -94,4 +96,56 @@ func (zeroReader) Read(p []byte) (int, error) {
 		p[i] = 0
 	}
 	return len(p), nil
+}
+
+// NewLocalPackageStore 失败臂：空目录、父路径不可用（MkdirAll 失败）。
+func TestLocalPackageStore_NewErrors(t *testing.T) {
+	if _, err := NewLocalPackageStore(""); err == nil {
+		t.Fatal("NewLocalPackageStore('') = nil error, want error")
+	}
+	if _, err := NewLocalPackageStore("/dev/null/x"); err == nil {
+		t.Fatal("NewLocalPackageStore under file path = nil error, want error")
+	}
+}
+
+// Save 失败臂：CreateTemp 目录不存在、Rename 目标目录不存在（versionID 含分隔符）。
+func TestLocalPackageStore_SaveErrors(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewLocalPackageStore(dir)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	missing := &LocalPackageStore{dir: filepath.Join(dir, "nope"), maxBytes: 1024}
+	if _, _, _, err := missing.Save("v", "f.apk", bytes.NewReader([]byte("x"))); err == nil {
+		t.Fatal("Save on missing dir = nil error, want CreateTemp error")
+	}
+	if _, _, _, err := s.Save("sub/v", "f.apk", bytes.NewReader([]byte("x"))); err == nil {
+		t.Fatal("Save with slash versionID = nil error, want rename error")
+	}
+}
+
+// Open 失败臂：非法 versionID 拒绝；悬空链接 → ENOENT → ErrPackageNotFound；
+// 符号链接环 → ELOOP → 通用错误（非 ErrPackageNotFound）。
+func TestLocalPackageStore_OpenErrors(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewLocalPackageStore(dir)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	if _, _, err := s.Open("bad/id"); !errors.Is(err, ErrPackageNotFound) {
+		t.Fatalf("Open(bad/id) = %v, want ErrPackageNotFound", err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "gone"), filepath.Join(dir, "v1.bin")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	if _, _, err := s.Open("v1"); !errors.Is(err, ErrPackageNotFound) {
+		t.Fatalf("Open(dangling symlink) = %v, want ErrPackageNotFound", err)
+	}
+	loop := filepath.Join(dir, "v2.bin")
+	if err := os.Symlink(loop, loop); err != nil {
+		t.Fatalf("symlink loop: %v", err)
+	}
+	if _, _, err := s.Open("v2"); err == nil || errors.Is(err, ErrPackageNotFound) {
+		t.Fatalf("Open(symlink loop) = %v, want generic error", err)
+	}
 }

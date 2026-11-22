@@ -26,6 +26,8 @@ spawn 的客户端与服务端现状一览。规划中的端只列状态，不�
   通知中心（点赞/评论/回复/关注四类，未读圆点，全部已读；点赞/评论/回复点进原帖）。
 - 私信（已落地）：`/messages` 页——会话列表 + 按对方线程（未读标记），经 realtime-hub
   WebSocket 通道收发。
+- 设计拆解库（2026-11-14 落地）：`/design` 品类聚合入口（同类游戏集中 chips + 拆解列表），
+  `/design/:id` 拆解详情带讨论区；经网关 `/api/v1/design/**` 反代到 community。
 - 常用脚本：`pnpm --dir apps/web-client run dev`（开发）、`build`（tsc + vite 打包）、`lint`。
 
 ## 移动端（mobile-app）
@@ -37,9 +39,11 @@ spawn 的客户端与服务端现状一览。规划中的端只列状态，不�
 - 私信（已落地）：`/messages` 屏——会话列表 + 按对方线程，经 realtime-hub WebSocket 通道收发。
 - 攻略创作与编辑（2026-10-10 落地）：`/guide-compose` 写攻略（纯文本/Markdown，创建即发布）；详情页作者本人可编辑（PUT 部分更新，游戏不可改）。
 - Android 出包：`pnpm --dir apps/mobile-app run prebuild:android` 生成原生工程，`build:android:release` 走 gradle assembleRelease。
+- 设计拆解（2026-11-14 落地）：社区 Tab 入口进 `/design`（品类 chips + 拆解列表）与
+  `/design/[id]`（详情 + 讨论区），同走网关 `/api/v1/design/**` 路由。
 - 真机回归项（本地推送、深链分享卡、通知中心）尚待设备验证，进度见[移动端计划](/zh/mobile_plan)。
 
-## 服务端（七个 go-zero 微服务 + 一个实时中枢）
+## 服务端（十个 go-zero 微服务 + 一个实时中枢）
 
 | 服务 | 目录 | 职责 | 存储 |
 | --- | --- | --- | --- |
@@ -49,6 +53,9 @@ spawn 的客户端与服务端现状一览。规划中的端只列状态，不�
 | content-service | `services/content-service` | 攻略、评论、发布流、收藏 | SQLite / MySQL 双驱动 + 进程内读缓存 |
 | community | `services/community` | 帖子、话题、关注、点赞、关注流、站内通知、私信、举报审核 | SQLite / MySQL 双驱动 |
 | data-panel | `services/data-panel` | 战绩摄入（单调增量）与玩家战绩查询 | SQLite / MySQL 双驱动 + TTL/LRU 缓存 |
+| courier-adapter | `services/courier-adapter` | Courier 游戏服适配：账号绑定/代登录/验票/角色映射、会话、兑换、注销同步、售后工单与 FAQ（GP-201/307） | SQLite / MySQL 双驱动 |
+| payments | `services/payments` | 支付接入：商品配置、订单、退款、发货配置与补单、厂商对账单、合作方自助对账、优惠券、渠道回调 | SQLite / MySQL 双驱动 |
+| promotions | `services/promotions` | 活动与礼包：版本化活动快照、倍率赠送运行时、首充/累充规则、礼包码与领取、活动消息 | SQLite / MySQL 双驱动 |
 | user-service-rpc | `services/user-service-rpc` | 用户域 gRPC 内部接口（zrpc + etcd，当前仅 Ping 探活 stub，尚无存储） | — |
 | realtime-hub | `services/realtime-hub` | WebSocket 推送/在线状态/语音信令（8893，无 /metrics） | —（内存注册表，可选 Redis pub/sub 中继） |
 

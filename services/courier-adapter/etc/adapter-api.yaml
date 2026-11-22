@@ -1,0 +1,44 @@
+Name: courier-adapter-api
+Host: 0.0.0.0
+Port: 8897
+
+# 适配域数据库：DSN 含 file:/.db 走 SQLite（默认本地文件，零配置），
+# 生产用 MySQL 连接串 + DATASOURCE 环境变量覆盖。
+MySQL:
+  DataSource: "file:data/adapter.db"
+
+# 平台 JWT 校验密钥（与 user-service 共享；生产环境用 JWT_SECRET 覆盖）
+Auth:
+  JWTSecret: "tappi-user-service-jwt-secret-key-2024"
+
+# Courier 网关（契约 Frozen：scope v1 / auth v1.1；GP-005 联合沙箱接线）
+Courier:
+  BaseURL: "http://localhost:8080"
+  Timeout: 5000
+
+# 绑定凭据加密密钥：代登录随机密码 AES-GCM 加密落库，不存明文。
+# 生产必须以 CREDENTIAL_KEY 覆盖（内置演示值启动期大声告警）。
+Credential:
+  Key: "tappi-courier-adapter-credential-key-2026"
+
+# 平台角色权威与用户资料（读 /me、/users/:id）
+GameCatalog:
+  BaseURL: "http://localhost:8890"
+  Timeout: 5000
+UserService:
+  BaseURL: "http://localhost:8888"
+  Timeout: 5000
+
+# 启动票据 TTL（秒）：短期、一次性；重启即失效（不落盘）
+Ticket:
+  TTLSeconds: 120
+
+Prometheus:
+  Host: 0.0.0.0
+  Port: 9098
+
+Log:
+  ServiceName: courier-adapter-api
+  Mode: console
+  Encoding: json
+  Level: info

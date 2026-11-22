@@ -15,7 +15,7 @@
   无 Hijack。M1/M2 客户端直连 hub；**M3 已补 `/ws` 原始字节透传隧道**
   （Hijack + 双向 splice，`internal/realtime`），客户端默认走网关，
   直连（`VITE_REALTIME_HUB_URL`）保留。
-- 端口：8893（hub WS/HTTP）；9091-9097 已被各服务 /metrics 占用，hub
+- 端口：8893（hub WS/HTTP）；9091-9099 与 9103 已被各服务 /metrics 占用，hub
   指标面 M1 不开。
 - 鉴权：与各服务同款 HS256 JWT（共享 `JWT_SECRET`，claims 结构同
   `utils.JWTClaims`）。浏览器 WS 无法带自定义 header，握手 token 走

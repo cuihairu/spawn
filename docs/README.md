@@ -3,14 +3,17 @@
 
 Landed documentation:
 
-- `development-guide.md`: English stub — the complete eight-service development
+- `development-guide.md`: English stub — the complete eleven-service development
   guide (environment / config / database / auth / monitoring / CI / deploy)
   lives at `zh/development-guide.md`.
 - `mobile_plan.md`: mobile plan with milestone progress notes.
-- `architecture/`: `overview.md` (vision level) and `topology.md` (current
-  topology: service boundaries / gateway route surface / auth data flow).
+- `architecture/`: `overview.md` (vision level), `topology.md` (current
+  topology: service boundaries / gateway route surface / auth data flow),
+  `glossary.md` (terms) and `layer-analysis.md` (layering and call surface).
 - `guide/getting-started.md`: local setup, compose / per-service startup,
   web and mobile dev servers.
+- `guide/config-effects.md`: config-switch effect gifs (before/after records
+  per switch, pipeline and guide).
 - `clients.md`: client surface and Android packaging flow.
 - `backlog.md`: decision record and cleared/deferred table.
 - `realtime-hub.md`: realtime channel profile (M1–M3 record).

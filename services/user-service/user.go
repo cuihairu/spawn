@@ -4,10 +4,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/tappi/tappi/services/user-service/internal/config"
 	"github.com/tappi/tappi/services/user-service/internal/handler"
@@ -54,6 +57,22 @@ func run() error {
 			middleware.AuthMiddleware(ctx)(next).ServeHTTP(w, r)
 		}
 	})
+
+	// GP-402 经营分析 outbox 重投：data-panel 短时不可达时补偿投递（本地
+	// 持久化，重启续扫），ctx 取进程信号面；DATA_PANEL_URL 未配置时
+	// NewRelay 返回 nil，不启动。
+	bgCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if ctx.AnalyticsRelay != nil {
+		go ctx.AnalyticsRelay.Run(bgCtx)
+	}
+
+	// GP-403 渠道归因 outbox 重投：game-catalog 短时不可达时补偿解析（本地
+	// 持久化，重启续扫），ctx 取进程信号面；客户端 nil 时 NewRelay 返回 nil，
+	// 不启动。
+	if ctx.PromoAttrRelay != nil {
+		go ctx.PromoAttrRelay.Run(bgCtx)
+	}
 
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()

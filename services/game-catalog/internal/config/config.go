@@ -25,8 +25,66 @@ type Config struct {
 	Auth struct {
 		JWTSecret string `json:",env=JWT_SECRET"`
 
-		// AdminUserIds 引导管理员账号（逗号分隔的 user-service 用户 id），
-		// 启动时写入 platform_roles 作为 platform_admin（幂等；首个管理员引导）。
-		AdminUserIds []string `json:",env=ADMIN_USER_IDS,optional"`
+		// AdminUserIds 引导管理员账号（逗号分隔的 user-service 用户 id，如
+		// "1" 或 "1,2"），启动时写入 platform_roles 作为 platform_admin
+		// （幂等；首个管理员引导）。用 string 而非 []string：go-zero 对无 yaml
+		// 同名字段的 []string 解析 env 会报 type mismatch（expect slice,
+		// actual number），单值 "1" 直接起不来。
+		AdminUserIds string `json:",env=ADMIN_USER_IDS,optional"`
+	}
+
+	// GP-306 开服提醒/版本通知：经 community /internal/notifications 扇出
+	//（站内信 + realtime-hub 远程推送）。Url 空则 no-op（通知不落库不推送，
+	// 主操作不受影响）；Token 须与 community INTERNAL_TOKEN 一致。Outbox*
+	// 为本地补偿重投节奏（community 短时不可达时落 outbox 重投）。
+	Notify struct {
+		Url   string `json:",env=COMMUNITY_URL,optional"`
+		Token string `json:",env=INTERNAL_TOKEN,optional"`
+		// OutboxIntervalSeconds 重投扫描周期（默认 30s）。
+		OutboxIntervalSeconds int64 `json:",default=30,env=COMMUNITY_OUTBOX_INTERVAL_SECONDS"`
+		// OutboxMaxAttempts 重试上限（默认 10，超出置 dropped 留痕）。
+		OutboxMaxAttempts int64 `json:",default=10,env=COMMUNITY_OUTBOX_MAX_ATTEMPTS"`
+		// OutboxRetentionHours 已终态行保留窗口（默认 168h=7 天）。
+		OutboxRetentionHours int64 `json:",default=168,env=COMMUNITY_OUTBOX_RETENTION_HOURS"`
+	}
+
+	// GP-306 开服排期到点自动开服：定时扫描 planned_open_at 已到点且仍为
+	// closed 的区服，置 open 并触发预约提醒（此前排期只是展示字段，需合作方
+	// 手动 PATCH 才开服）。间隔默认 60 秒。
+	OpenScan struct {
+		IntervalSeconds int64 `json:",default=60,env=OPEN_SCAN_INTERVAL_SECONDS"`
+	}
+
+	// Internal 本服务 S2S 端点守卫（/internal/games/:id/reservation-users，
+	// 供 promotions 拉活动通知受众）；Token 空 = 恒 403（fail-closed）。
+	Internal struct {
+		Token string `json:",env=INTERNAL_TOKEN,optional"`
+	}
+
+	// GP-402 经营分析事实投递（F24）：download 事实事件 → data-panel
+	// /internal/events（X-Internal-Token）。BaseURL 未配置 = no-op，
+	// 部署面未带数据面板时行为不变；fire-and-forget 不影响下载主流程。
+	// Outbox* 为本地补偿重投节奏（data-panel 短时不可达时落 outbox 重投）。
+	Analytics struct {
+		BaseURL string `json:",env=DATA_PANEL_URL,optional"`
+		Token   string `json:",env=DATA_PANEL_INTERNAL_TOKEN,optional"`
+		Timeout int64  `json:",default=3000,env=DATA_PANEL_TIMEOUT"`
+		// OutboxIntervalSeconds 重投扫描周期（默认 30s）。
+		OutboxIntervalSeconds int64 `json:",default=30,env=DATA_PANEL_OUTBOX_INTERVAL_SECONDS"`
+		// OutboxMaxAttempts 重试上限（默认 10，超出置 dropped 留痕）。
+		OutboxMaxAttempts int64 `json:",default=10,env=DATA_PANEL_OUTBOX_MAX_ATTEMPTS"`
+		// OutboxRetentionHours 已终态行保留窗口（默认 168h=7 天）。
+		OutboxRetentionHours int64 `json:",default=168,env=DATA_PANEL_OUTBOX_RETENTION_HOURS"`
+	}
+
+	// GP-403 渠道点击归档：promo_clicks 长期追加（点击/下载各一条），无清理
+	// 会无限膨胀。按时间窗口删除过期点击（归因只依赖窗口内的点击，过期者对
+	// 业绩统计已无意义），并以容量上限兜底极端流量（超出按最早发生者裁剪）。
+	// PruneRetentionDays 取 0 关闭时间清理；PruneMaxRows 取 0 关闭容量裁剪。
+	Promo struct {
+		PruneRetentionDays int64 `json:",default=180,env=PROMO_PRUNE_RETENTION_DAYS"`
+		PruneMaxRows       int64 `json:",default=1000000,env=PROMO_PRUNE_MAX_ROWS"`
+		// PruneIntervalHours 清理扫描周期（默认 6h；清理非实时诉求）。
+		PruneIntervalHours int64 `json:",default=6,env=PROMO_PRUNE_INTERVAL_HOURS"`
 	}
 }

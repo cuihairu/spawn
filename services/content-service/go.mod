@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/mattn/go-sqlite3 v1.14.52
+	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/prometheus/client_golang v1.25.0
 	github.com/zeromicro/go-zero v1.10.3
 )
@@ -34,6 +34,7 @@ require (
 	github.com/prometheus/common v0.72.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
+	github.com/tappi/tappi/pkg/resilience v0.0.0
 	github.com/titanous/json5 v1.0.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.47.0 // indirect
@@ -57,3 +58,5 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
+
+replace github.com/tappi/tappi/pkg/resilience => ../../pkg/resilience

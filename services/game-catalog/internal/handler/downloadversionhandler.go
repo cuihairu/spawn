@@ -22,7 +22,7 @@ func DownloadVersionHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
-		res, err := logic.NewDownloadVersionLogic(withClientIP(r), svcCtx).Download(req.Id, req.VersionId)
+		res, err := logic.NewDownloadVersionLogic(withClientIP(r), svcCtx).Download(req.Id, req.VersionId, req.Channel)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return

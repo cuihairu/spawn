@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,6 +93,143 @@ func TestGameProxyRoutesPassthrough(t *testing.T) {
 	last = hits[len(hits)-1]
 	if last.method != http.MethodPatch || last.path != "/games/g-1/tags" {
 		t.Fatalf("PATCH tags hit = %+v", last)
+	}
+}
+
+// TestGameProxyRoutesGP401Passthrough GP-401 评价/收藏路由透传：
+// 评分/长评/举报/开发者回复/举报处置/收藏与我的收藏，方法与路径原样到达上游。
+func TestGameProxyRoutesGP401Passthrough(t *testing.T) {
+	type hit struct{ method, path, raw string }
+	var hits []hit
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, hit{r.Method, r.URL.Path, r.URL.RawQuery})
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(upstream.Close)
+
+	var cfg config.Config
+	cfg.Upstreams.GameCatalog.BaseURL = upstream.URL
+	cfg.Upstreams.GameCatalog.Timeout = 2000
+	serverCtx := &svc.ServiceContext{Config: cfg}
+	l := startTestServer(t, serverCtx)
+
+	routes := []struct{ method, path, body string }{
+		{http.MethodGet, "/games/g-1/reviews?limit=10&offset=0", ""},
+		{http.MethodGet, "/games/g-1/reviews?limit=10&offset=0&sort=votes", ""},
+		{http.MethodPost, "/games/g-1/rating", `{"rating":5}`},
+		{http.MethodPost, "/games/g-1/reviews", `{"content":"内容不少于十个字，验证透传。"}`},
+		{http.MethodPut, "/games/g-1/reviews/7", `{"content":"作者改评的正文内容。"}`},
+		{http.MethodPost, "/games/g-1/reviews/7/vote", ""},
+		{http.MethodDelete, "/games/g-1/reviews/7/vote", ""},
+		{http.MethodPost, "/games/g-1/reviews/7/report", `{"reason":"疑似抄袭"}`},
+		{http.MethodPost, "/partner/games/g-1/reviews/7/reply", `{"content":"感谢反馈，下一版本优化。"}`},
+		{http.MethodGet, "/admin/review-reports?status=pending", ""},
+		{http.MethodPost, "/admin/review-reports/9/handle", `{"action":"dismiss"}`},
+		{http.MethodPost, "/admin/reviews/9/restore", ""},
+		{http.MethodPost, "/games/g-1/favorite", ""},
+		{http.MethodDelete, "/games/g-1/favorite", ""},
+		{http.MethodGet, "/me/favorites", ""},
+	}
+	for _, rc := range routes {
+		var req *http.Request
+		if rc.body == "" {
+			req, _ = http.NewRequest(rc.method, l+rc.path, nil)
+		} else {
+			req, _ = http.NewRequest(rc.method, l+rc.path, strings.NewReader(rc.body))
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", rc.method, rc.path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s %s status=%d", rc.method, rc.path, resp.StatusCode)
+		}
+		last := hits[len(hits)-1]
+		// r.URL.Path 不含 query：期望路径在 ? 处截断后对比
+		wantPath := rc.path
+		if i := strings.IndexByte(wantPath, '?'); i >= 0 {
+			wantPath = wantPath[:i]
+		}
+		if last.method != rc.method || last.path != wantPath {
+			t.Fatalf("%s %s hit = %+v", rc.method, rc.path, last)
+		}
+		// 长评排序参数原样透传（sort=votes 到上游）
+		if strings.Contains(rc.path, "sort=votes") && !strings.Contains(last.raw, "sort=votes") {
+			t.Fatalf("%s %s query = %q, want sort=votes", rc.method, rc.path, last.raw)
+		}
+	}
+}
+
+// TestGameProxyRoutesGP403Passthrough GP-403 单层渠道推广路由透传：
+// 推广链接落地/渠道包下载（公开）与渠道登记/变更/启停/效果计数（管理面）
+// 方法与路径原样到达 game-catalog；S2S 归因解析故意不进网关。
+func TestGameProxyRoutesGP403Passthrough(t *testing.T) {
+	type hit struct{ method, path string }
+	var hits []hit
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, hit{r.Method, r.URL.Path})
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(upstream.Close)
+
+	var cfg config.Config
+	cfg.Upstreams.GameCatalog.BaseURL = upstream.URL
+	cfg.Upstreams.GameCatalog.Timeout = 2000
+	serverCtx := &svc.ServiceContext{Config: cfg}
+	l := startTestServer(t, serverCtx)
+
+	routes := []struct{ method, path, body string }{
+		{http.MethodGet, "/promo/resolve?channel=kol-li&click_id=c-1", ""},
+		{http.MethodPost, "/promo/download-click?channel=kol-li&game_id=g-1", ""},
+		{http.MethodPost, "/admin/promo/channels", `{"code":"kol-li","name":"主播李"}`},
+		{http.MethodGet, "/admin/promo/channels?limit=10", ""},
+		{http.MethodPatch, "/admin/promo/channels/3", `{"name":"新名字","window_hours":120}`},
+		{http.MethodPost, "/admin/promo/channels/3/status", `{"status":"disabled"}`},
+		{http.MethodGet, "/admin/promo/channels/kol-li/stats", ""},
+	}
+	for _, rc := range routes {
+		var req *http.Request
+		if rc.body == "" {
+			req, _ = http.NewRequest(rc.method, l+rc.path, nil)
+		} else {
+			req, _ = http.NewRequest(rc.method, l+rc.path, strings.NewReader(rc.body))
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", rc.method, rc.path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s %s status=%d", rc.method, rc.path, resp.StatusCode)
+		}
+		last := hits[len(hits)-1]
+		wantPath := rc.path
+		if i := strings.IndexByte(wantPath, '?'); i >= 0 {
+			wantPath = wantPath[:i]
+		}
+		if last.method != rc.method || last.path != wantPath {
+			t.Fatalf("%s %s hit = %+v", rc.method, rc.path, last)
+		}
+	}
+
+	// S2S 归因解析走内部令牌守卫，不经网关暴露：404 且上游未收到
+	before := len(hits)
+	resp, err := http.Post(l+"/internal/promo/clicks/c-1/resolve", "application/json",
+		strings.NewReader(`{"registered_at":"2026-11-12T10:00:00Z","user_id":7}`))
+	if err != nil {
+		t.Fatalf("internal resolve via gateway: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("internal promo resolve must not be proxied (status=200)")
+	}
+	if len(hits) != before {
+		t.Fatalf("internal promo resolve reached upstream: hits=%+v", hits[before:])
 	}
 }
 

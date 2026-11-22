@@ -10,8 +10,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/tappi/tappi/services/game-catalog/internal/analytics"
 	"github.com/tappi/tappi/services/game-catalog/internal/config"
+	"github.com/tappi/tappi/services/game-catalog/internal/notify"
 	"github.com/tappi/tappi/services/game-catalog/internal/store"
 	"github.com/tappi/tappi/services/game-catalog/model"
 	"github.com/tappi/tappi/services/game-catalog/utils"
@@ -27,6 +30,22 @@ type ServiceContext struct {
 	AdminRepository model.AdminStore
 	PackageStore    *store.LocalPackageStore
 	Auth            *utils.Auth
+	// Notify GP-306 业务通知发布口（community /internal/notifications）；
+	// COMMUNITY_URL 未配置时为 no-op。
+	Notify notify.Publisher
+	// AnalyticsSvc GP-402 经营分析事实投递口（data-panel /internal/events）；
+	// DATA_PANEL_URL 未配置时为 no-op。
+	AnalyticsSvc analytics.Client
+	// AnalyticsRelay GP-402 outbox 重投循环；nil = DATA_PANEL_URL 未配置
+	// （no-op，不启动）。
+	AnalyticsRelay *analytics.Relay
+	// AnalyticsOutbox GP-402 事实事件本地补偿队列（始终建表；未启用时不写行）。
+	AnalyticsOutbox *model.AnalyticsOutboxModel
+	// NotifyRelay GP-306/401 业务通知 outbox 重投循环；nil = COMMUNITY_URL
+	// 未配置（no-op，不启动）。
+	NotifyRelay *notify.Relay
+	// NotifyOutbox GP-306/401 业务通知本地补偿队列（始终建表；未启用时不写行）。
+	NotifyOutbox *model.NotifyOutboxModel
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -48,6 +67,11 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if strings.Contains(dataSource, "file:") || strings.Contains(dataSource, ".db") {
 		dataSource = ensureSQLiteDir(dataSource)
 		db, err = sql.Open("sqlite3", dataSource)
+		// SQLite 单写者：限制单连接串行化全部访问，防并发写触发
+		// SQLITE_BUSY（P1-3 修复）；MySQL 由连接池并发（InnoDB 行锁）。
+		if err == nil {
+			db.SetMaxOpenConns(1)
+		}
 	} else {
 		db, err = sql.Open("mysql", dataSource)
 	}
@@ -74,8 +98,8 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if err := adminModel.CreateAdminTables(); err != nil {
 		panic(fmt.Sprintf("创建运营后台表失败: %v", err))
 	}
-	// 引导管理员：配置的账号 id 幂等写为 platform_admin
-	for _, raw := range c.Auth.AdminUserIds {
+	// 引导管理员：配置的账号 id（逗号分隔）幂等写为 platform_admin
+	for _, raw := range strings.Split(c.Auth.AdminUserIds, ",") {
 		uid, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
 		if err != nil || uid <= 0 {
 			continue
@@ -96,12 +120,46 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		packageStore = ps
 	}
 
+	// GP-402 经营分析事实投递（DATA_PANEL_URL 未配置 = no-op）：失败先落
+	// outbox（幂等持久化），由 Relay 定时重投；outbox 表始终建（后续部署
+	// 补数据面板时免迁移），未启用时不写行。
+	analyticsOutbox := model.NewAnalyticsOutboxModel(db)
+	if err := analyticsOutbox.CreateTables(); err != nil {
+		panic(fmt.Sprintf("create analytics outbox tables: %v", err))
+	}
+	analyticsClient := analytics.NewClient(c.Analytics.BaseURL, c.Analytics.Token, c.Analytics.Timeout,
+		analyticsOutbox)
+	analyticsRelay := analytics.NewRelay(analyticsOutbox, analyticsClient,
+		time.Second*time.Duration(c.Analytics.OutboxIntervalSeconds),
+		int(c.Analytics.OutboxMaxAttempts),
+		time.Hour*time.Duration(c.Analytics.OutboxRetentionHours))
+
+	// GP-306/401 业务通知投递（COMMUNITY_URL 未配置 = no-op）：失败先落
+	// outbox（幂等持久化），由 Relay 定时重投；outbox 表始终建（后续部署
+	// 补 community 时免迁移），未启用时不写行。重投安全由 community 侧
+	// UNIQUE(user_id, actor_id, type, target_id) 去重保证。
+	notifyOutbox := model.NewNotifyOutboxModel(db)
+	if err := notifyOutbox.CreateTables(); err != nil {
+		panic(fmt.Sprintf("create notify outbox tables: %v", err))
+	}
+	notifyPublisher := notify.NewPublisher(c.Notify.Url, c.Notify.Token, notifyOutbox)
+	notifyRelay := notify.NewRelay(notifyOutbox, notifyPublisher,
+		time.Second*time.Duration(c.Notify.OutboxIntervalSeconds),
+		int(c.Notify.OutboxMaxAttempts),
+		time.Hour*time.Duration(c.Notify.OutboxRetentionHours))
+
 	return &ServiceContext{
 		Config:          c,
 		GameRepository:  gameModel,
 		AdminRepository: adminModel,
 		PackageStore:    packageStore,
 		Auth:            utils.NewAuth(c.Auth.JWTSecret),
+		Notify:          notifyPublisher,
+		AnalyticsSvc:    analyticsClient,
+		AnalyticsRelay:  analyticsRelay,
+		AnalyticsOutbox: analyticsOutbox,
+		NotifyRelay:     notifyRelay,
+		NotifyOutbox:    notifyOutbox,
 	}
 }
 

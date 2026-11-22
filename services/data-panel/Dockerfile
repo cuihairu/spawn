@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1.9
 
 FROM golang:1.26 AS builder
+# 模块代理可用 --build-arg GOPROXY=... 覆盖（默认官方，不改默认行为）
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=$GOPROXY
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

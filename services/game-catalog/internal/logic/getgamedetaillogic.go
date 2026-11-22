@@ -41,7 +41,41 @@ func (l *GetGameDetailLogic) GetGameDetail(req *types.GetGameDetailRequest) (*ty
 		return nil, newAPIError(http.StatusNotFound, "游戏不存在")
 	}
 
+	// GP-401 玩家评分聚合（与运营编辑分 score 分离，F04）
+	summary, err := l.svcCtx.AdminRepository.GetRatingSummary(req.Id)
+	if err != nil {
+		l.Errorf("query rating summary failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询评分失败")
+	}
+
 	return &types.GameDetailResponse{
-		Game: toTypesGame(game),
+		Game:   toTypesGame(game),
+		Rating: types.RatingSummaryView{Average: summary.Average, Count: summary.Count},
 	}, nil
+}
+
+// ListServers 公开区服列表（GP-201 充值目标）：与详情同口径只对已上架
+// 游戏开放；closed 区服不外露（下线区服的充值对账只在合作方后台可见）。
+func (l *GetGameDetailLogic) ListServers(req *types.GetGameDetailRequest) (*types.ServerListResponse, error) {
+	game, err := l.svcCtx.GameRepository.Get(req.Id)
+	if err != nil {
+		if errors.Is(err, model.ErrGameNotFound) {
+			return nil, newAPIError(http.StatusNotFound, "游戏不存在")
+		}
+		l.Errorf("query game failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询失败")
+	}
+	if game.Status != model.GameStatusApproved {
+		return nil, newAPIError(http.StatusNotFound, "游戏不存在")
+	}
+	servers, err := l.svcCtx.AdminRepository.ListGameServers(req.Id, false)
+	if err != nil {
+		l.Errorf("list game servers failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询区服失败")
+	}
+	items := make([]types.GameServer, 0, len(servers))
+	for _, s := range servers {
+		items = append(items, *toTypesServer(s))
+	}
+	return &types.ServerListResponse{Items: items}, nil
 }

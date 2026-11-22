@@ -45,6 +45,46 @@ func RegisterGameProxyRoutes(server *rest.Server, serverCtx *svc.ServiceContext)
 		{Method: http.MethodPost, Path: "/partner/games/:id/submit", Handler: h},
 		{Method: http.MethodPost, Path: "/partner/games/:id/versions", Handler: h},
 		{Method: http.MethodGet, Path: "/partner/games/:id/versions", Handler: h},
+		// GP-201 区服目录/充值目标：公开读 + 合作方维护（鉴权在 game-catalog 侧）
+		{Method: http.MethodGet, Path: "/games/:id/servers", Handler: h},
+		{Method: http.MethodPost, Path: "/partner/games/:id/servers", Handler: h},
+		{Method: http.MethodGet, Path: "/partner/games/:id/servers", Handler: h},
+		{Method: http.MethodPatch, Path: "/partner/games/:id/servers/:serverId", Handler: h},
+		// GP-306 开服预约：玩家预约/取消/我的预约（Authorization 头透传，
+		// 登录与角色在 game-catalog 侧；S2S /internal/* 不经网关暴露）
+		{Method: http.MethodPost, Path: "/games/:id/servers/:serverId/reserve", Handler: h},
+		{Method: http.MethodDelete, Path: "/games/:id/servers/:serverId/reserve", Handler: h},
+		{Method: http.MethodGet, Path: "/games/:id/reservations/me", Handler: h},
+		// GP-401 游戏评价（F04）：长评公开读 + 评分/发评/改评/举报；
+		// 开发者回复与举报处置在合作方/管理路由，鉴权均在 game-catalog 侧
+		// GP-403 单层渠道推广（F22）：推广链接落地解析与渠道包下载登记公开
+		// 免登录（落地页通常在登录前打开）；渠道登记/变更/启停与效果计数在
+		// 管理路由（Authorization 头透传，角色鉴权在 game-catalog 侧）。
+		// S2S /internal/promo/* 不经网关暴露（内部令牌守卫，仅服务间直连）。
+		{Method: http.MethodGet, Path: "/promo/resolve", Handler: h},
+		{Method: http.MethodPost, Path: "/promo/download-click", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/promo/channels", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/promo/channels", Handler: h},
+		{Method: http.MethodPatch, Path: "/admin/promo/channels/:id", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/promo/channels/:id/status", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/promo/channels/:code/stats", Handler: h},
+		{Method: http.MethodGet, Path: "/games/:id/reviews", Handler: h},
+		{Method: http.MethodPost, Path: "/games/:id/rating", Handler: h},
+		{Method: http.MethodPost, Path: "/games/:id/reviews", Handler: h},
+		{Method: http.MethodPut, Path: "/games/:id/reviews/:reviewId", Handler: h},
+		// GP-401 长评有用票（POST 投 / DELETE 撤，鉴权在 game-catalog 侧）
+		{Method: http.MethodPost, Path: "/games/:id/reviews/:reviewId/vote", Handler: h},
+		{Method: http.MethodDelete, Path: "/games/:id/reviews/:reviewId/vote", Handler: h},
+		{Method: http.MethodPost, Path: "/games/:id/reviews/:reviewId/report", Handler: h},
+		{Method: http.MethodPost, Path: "/partner/games/:id/reviews/:reviewId/reply", Handler: h},
+		{Method: http.MethodGet, Path: "/admin/review-reports", Handler: h},
+		{Method: http.MethodPost, Path: "/admin/review-reports/:id/handle", Handler: h},
+		// GP-401 被移除评价恢复（管理面，鉴权在 game-catalog 侧）
+		{Method: http.MethodPost, Path: "/admin/reviews/:id/restore", Handler: h},
+		// GP-401 收藏游戏（F05）：收藏/取消幂等 + 我的收藏
+		{Method: http.MethodPost, Path: "/games/:id/favorite", Handler: h},
+		{Method: http.MethodDelete, Path: "/games/:id/favorite", Handler: h},
+		{Method: http.MethodGet, Path: "/me/favorites", Handler: h},
 	})
 
 	// GP-105 包体通道：latest 元数据是小 JSON，走普通反代；上传/下载为

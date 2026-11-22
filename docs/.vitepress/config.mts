@@ -36,7 +36,9 @@ export default defineConfig({
         ],
         sidebar: {
           '/guide/': [
-            { text: 'Getting Started', link: '/guide/getting-started' }
+            { text: 'Getting Started', link: '/guide/getting-started' },
+            { text: 'Config Switch Effects', link: '/guide/config-effects' },
+            { text: 'Joint Sandbox & Acceptance', link: '/guide/sandbox-acceptance' }
           ],
           '/architecture/': [
             {
@@ -128,7 +130,9 @@ export default defineConfig({
         ],
         sidebar: {
           '/zh/guide/': [
-            { text: '快速上手', link: '/zh/guide/getting-started' }
+            { text: '快速上手', link: '/zh/guide/getting-started' },
+            { text: '配置开关效果', link: '/zh/guide/config-effects' },
+            { text: '联合沙箱与验收', link: '/zh/guide/sandbox-acceptance' }
           ],
           '/zh/architecture/': [
             {
