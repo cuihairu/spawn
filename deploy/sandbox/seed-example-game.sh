@@ -123,7 +123,7 @@ auth() {
     echo "       邮箱须以 .com/.cn 结尾（user-service 校验口径），默认取 \$user@sandbox.com" >&2
     exit 1
   fi
-  jq -r '.token' <<<"$resp"
+  jq -r '.data.token' <<<"$resp"
 }
 
 # --- 1. 管理员与角色 --------------------------------------------------------------
@@ -142,7 +142,7 @@ PARTNER_ID="$(call POST "$CATALOG/admin/partners" "$ADMIN_TOKEN" \
 PARTNER_TOKEN="$(auth "$PARTNER_USER")"
 # auth() 只回传 token；partner 的 user id 由登录响应回读
 PARTNER_ID_USER="$(curl -sS -m 20 -X POST "$USER_URL/auth/login" -H 'Content-Type: application/json' \
-  -d "{\"username\":\"$PARTNER_USER\",\"password\":\"$PASSWORD\"}" | jq -r '.user_info.id')"
+  -d "{\"username\":\"$PARTNER_USER\",\"password\":\"$PASSWORD\"}" | jq -r '.data.user_info.id')"
 PARTNER_ROLE="$(call POST "$CATALOG/admin/roles" "$ADMIN_TOKEN" \
   "{\"user_id\":$PARTNER_ID_USER,\"role\":\"partner\",\"partner_id\":$PARTNER_ID}" \
   | assert '合作方角色' '.role')"

@@ -64,17 +64,37 @@ ADMIN_USER_IDS=<id> docker compose --env-file sandbox.env up -d game-catalog
 
 ## Courier 接线（外部冻结仓）
 
-Courier 网关（croupier）不在本仓，镜像 `ghcr.io/cuihairu/croupier-server:main`，
-gRPC 网关契约冻结。接线方式：
+承载 Spawn 依赖的冻结 `/v1/*` 契约（identity/payments/cdk/support）的是
+**`github.com/cuihairu/courier` 的 gateway 二进制**（模块 `.../courier/gateway`，
+入口 `gateway/cmd/gateway`；默认路由表 identity→account、payments→teller、
+support→croupier、cdk→voucher，可经 `COURIER_GATEWAY_CONFIG` 换主实现）。
+监听 `COURIER_GATEWAY_ADDR`（缺省 `:8080`）；teller 渠道回调密钥
+`COURIER_PAYMENTS_CHANNEL_SECRET`、订单状态快照 `COURIER_PAYMENTS_STATE`
+（缺省纯内存）。
 
-1. 起 croupier 实例（自备/自行编排），加入 Spawn 的 compose 网络：
-   `docker network connect spawn_default <croupier容器>`。
-2. `sandbox.env` 中设 `COURIER_GATEWAY_URL=http://courier-gateway:8080`
-   （compose 默认值，croupier 侧容器名需对齐）。
+注意：`ghcr.io/cuihairu/croupier-server:main` **不是**该网关——它是
+`/api/v1/*` 的运维平台（incidents/cicd/hotpatches/dbmon 等 661 条路由），
+不提供 identity/payments/cdk 契约域，接它无法通过 Spawn 侧契约调用。
+
+接线方式（compose 默认 `COURIER_GATEWAY_URL=http://courier-gateway:8080`，
+故容器名须为 `courier-gateway` 且监听 8080）：
+
+1. 构建 gateway：`cd <courier>/gateway && CGO_ENABLED=0 go build -o /tmp/courier-gateway ./cmd/gateway`
+   （go.mod 要求 1.27.4，本机 GOTOOLCHAIN=auto 自动取）。
+2. 打成最小镜像（alpine 基 + 二进制）并起名为 `courier-gateway` 的容器接入网络：
+   `docker run -d --name courier-gateway --network spawn_default \
+     -e COURIER_PAYMENTS_CHANNEL_SECRET=... -e COURIER_PAYMENTS_STATE=/tmp/state.json \
+     <image>`。
 3. 映射与能力声明走 courier-adapter 管理面（引导脚本已覆盖）：
    `PUT /admin/games/:id/mapping {courierGameId, env, partnerId, capabilities}`。
 
-未接 croupier 时沙箱照常可用：courier-adapter/payments 能启动，游戏会话票据/
+**env 注册表**：gateway 的 env 注册表缺省仅 `{dev,staging,prod}`，`sandbox`
+未注册（scope 中间件对未注册 env 返 `COMMON_INVALID_ARGUMENT`）。引导脚本
+映射钉的是 `env=sandbox`，直接对接活网关会被拒；活走查须先把映射 env 改为
+`dev`/`staging`/`prod`，或按注册表制在接入方启动期注册 `sandbox`
+（属 Courier 侧扩展口径，不在本沙箱改动）。
+
+未接 courier gateway 时沙箱照常可用：courier-adapter/payments 能启动，游戏会话票据/
 代登录/下单等触达 Courier 的端点以 502 呈现上游不可达；映射/商品/礼包/活动等
 本地管理面与玩家冒烟不受影响。
 
