@@ -187,6 +187,9 @@ func newDeliveryServer(t *testing.T) *testDeliveryEnv {
 	}))
 	t.Cleanup(courier.Close)
 
+	// GP-202 映射存根：spawn_game_id → courier scope（下单/查询前解析）。
+	mapping := newMappingStub(t)
+
 	// 游戏服发货接口存根
 	game := &deliveryGameStub{secret: "gs-secret"}
 	game.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -253,6 +256,8 @@ func newDeliveryServer(t *testing.T) *testDeliveryEnv {
 	c.Auth.JWTSecret = testJWTSecret
 	c.Courier.BaseURL = courier.URL
 	c.GameCatalog.BaseURL = catalog.URL
+	c.CourierAdapter.BaseURL = mapping.URL
+	c.Internal.Token = testInternalToken
 	c.Channel.SandboxSecret = testSandboxSecret
 	c.Delivery.Secret = testDeliverySecret
 	c.Promotions.BaseURL = promo.srv.URL

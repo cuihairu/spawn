@@ -27,6 +27,16 @@ type Config struct {
 		Timeout int64  `json:",default=5000,env=GAMECATALOG_TIMEOUT"`
 	}
 
+	// CourierAdapter spawn→courier scope 解析源（GP-202 集成缺口）：下单/查询
+	// 前经 courier-adapter 内部端点取 courier_game_id+env（令牌绑定 scope），
+	// 绝不把 spawn 游戏 id 当 Courier scope。BaseURL 未配置 = 恒失败（订单面
+	// fail-closed，不静默回退 spawn id 透传）；X-Internal-Token 与
+	// courier-adapter 侧 INTERNAL_TOKEN 同值。
+	CourierAdapter struct {
+		BaseURL string `json:",env=COURIER_ADAPTER_URL,optional"`
+		Timeout int64  `json:",default=3000,env=COURIER_ADAPTER_TIMEOUT"`
+	}
+
 	// Channel 渠道适配：Sandbox 为开发/沙箱专用（HMAC-SHA256 回调），
 	// 真实渠道需实现 ChannelAdapter 并以环境变量注入密钥，不得用沙箱 HMAC
 	// 冒充支付机构验签（payment.md v1.1 安全边界 2）。

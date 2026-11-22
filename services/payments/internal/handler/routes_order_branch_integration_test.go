@@ -47,13 +47,17 @@ func TestRoutes_OrderCourierAuthForwarding(t *testing.T) {
 		`{"product_id":"fwd","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"game-a"}`)
 
 	// 1. 带 Courier 令牌（Bearer 前缀）→ 200，且 Courier 存根收到的是
-	//    Courier 令牌而非平台 JWT。
+	//    Courier 令牌而非平台 JWT；scope 头是映射后的 courier_game_id+env
+	//    （GP-202 scope 缺口回归：绝不用 spawn 游戏 id）。
 	code, body := do(t, http.MethodPost, env.base+"/games/game-a/orders", player, `{"sku_id":"sku-fwd"}`)
 	if code != http.StatusOK {
 		t.Fatalf("create order = %d body=%s", code, body)
 	}
 	if len(env.courierAuthSeen) != 1 || env.courierAuthSeen[0] != "Bearer "+testCourierToken {
 		t.Fatalf("courier auth seen = %v, want [Bearer %s]", env.courierAuthSeen, testCourierToken)
+	}
+	if len(env.courierScopeSeen) != 1 || env.courierScopeSeen[0] != testCourierGameEnv {
+		t.Fatalf("courier scope seen = %v, want [%s]", env.courierScopeSeen, testCourierGameEnv)
 	}
 
 	// 2. 裸 token（无 Bearer 前缀）→ 200，courierAuthFrom 自动补前缀
@@ -70,6 +74,13 @@ func TestRoutes_OrderCourierAuthForwarding(t *testing.T) {
 	code, body = doNoCourier(t, http.MethodPost, env.base+"/games/game-a/orders", player, `{"sku_id":"sku-fwd"}`)
 	if code != http.StatusUnauthorized {
 		t.Fatalf("create order no courier token = %d body=%s, want 401", code, body)
+	}
+	// 3b. 游戏无 Courier 映射 → 502（不静默用 spawn id 透传 scope）
+	do(t, http.MethodPost, env.base+"/admin/products/sku-nomap", admin,
+		`{"product_id":"nomap","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"nomap-game"}`)
+	code, body = do(t, http.MethodPost, env.base+"/games/nomap-game/orders", player, `{"sku_id":"sku-nomap"}`)
+	if code != http.StatusBadGateway {
+		t.Fatalf("create order unmapped game = %d body=%s, want 502", code, body)
 	}
 	// 4. 订单查询/我的订单同样 fail-closed
 	if code, _ := doNoCourier(t, http.MethodGet, env.base+"/games/game-a/orders/o1", player, ""); code != http.StatusUnauthorized {

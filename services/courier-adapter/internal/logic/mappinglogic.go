@@ -93,6 +93,30 @@ func (l *AdminLogic) GetMapping(spawnGameID, authHeader string) (*types.MappingR
 	}, nil
 }
 
+// GetMappingInternal 映射只读查询（S2S，供 payments 解析 spawn_game_id →
+// courier scope；免角色判定，凭 X-Internal-Token 访问，GP-202 集成缺口）。
+func (l *AdminLogic) GetMappingInternal(spawnGameID string) (*types.MappingResponse, error) {
+	m, err := l.svcCtx.Mappings.Get(spawnGameID)
+	if err != nil {
+		if errors.Is(err, model.ErrMappingNotFound) {
+			return nil, newAPIError(http.StatusNotFound, "游戏未接入 Courier")
+		}
+		return nil, newAPIError(http.StatusInternalServerError, "查询映射失败")
+	}
+	return &types.MappingResponse{
+		SpawnGameId:   m.SpawnGameId,
+		CourierGameId: m.CourierGameId,
+		Env:           m.Env,
+		PartnerId:     m.PartnerId,
+		Capabilities: types.Capabilities{
+			Login:    m.Capabilities.Login,
+			Payment:  m.Capabilities.Payment,
+			Download: m.Capabilities.Download,
+			Support:  m.Capabilities.Support,
+		},
+	}, nil
+}
+
 // ListAudit 最近审计（operator/platform_admin）。
 func (l *AdminLogic) ListAudit(authHeader string) (*types.ListAuditResponse, error) {
 	if err := requireAdminRole(l.ctx, l.svcCtx, authHeader); err != nil {

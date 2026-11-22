@@ -415,3 +415,78 @@ func TestRoutes_CourierAdapterFlow(t *testing.T) {
 		t.Fatalf("scope transport violations: %v", env.courier.violations)
 	}
 }
+
+// doInternalGET 发 S2S 请求（X-Internal-Token 头，不带平台 JWT）。
+func doInternalGET(t *testing.T, url, internalToken string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if internalToken != "" {
+		req.Header.Set("X-Internal-Token", internalToken)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return resp.StatusCode, string(b)
+}
+
+// TestRoutes_InternalMapping GP-202 scope 解析的适配器侧回归：S2S 端点
+// GET /internal/games/:id/mapping 凭 X-Internal-Token 放行（免平台 JWT），
+// 令牌未配置/不匹配恒 403 fail-closed；返回映射后的 courier_game_id+env，
+// 供 payments 作 X-Courier-Game-Id/Env 头（与客户端令牌绑定 scope 一致）。
+func TestRoutes_InternalMapping(t *testing.T) {
+	const internalToken = "adapter-internal-token"
+	env := newTestEnvCfg(t, func(c *config.Config) {
+		c.Internal.Token = internalToken
+	})
+	base := env.base
+	operator := signToken(t, 42, "ops")
+
+	// 预置 g1 映射（管理面写入，与 §1 同款）
+	if code, body := doJSON(t, http.MethodPut, base+"/admin/games/g1/mapping", operator,
+		`{"courierGameId":"cg1","env":"prod","partnerId":1,"capabilities":{"login":true}}`); code != http.StatusOK {
+		t.Fatalf("upsert mapping status = %d body=%s", code, body)
+	}
+
+	// 1. 守卫：缺头 / 错令牌 / 未配置 → 403 fail-closed（先于 body 解析）
+	if code, _ := doInternalGET(t, base+"/internal/games/g1/mapping", ""); code != http.StatusForbidden {
+		t.Fatalf("internal mapping missing token = %d, want 403", code)
+	}
+	if code, _ := doInternalGET(t, base+"/internal/games/g1/mapping", "wrong-token"); code != http.StatusForbidden {
+		t.Fatalf("internal mapping wrong token = %d, want 403", code)
+	}
+	noTokenEnv := newTestEnvCfg(t, nil) // Internal.Token 未配置
+	if code, _ := doInternalGET(t, noTokenEnv.base+"/internal/games/g1/mapping", internalToken); code != http.StatusForbidden {
+		t.Fatalf("internal mapping unconfigured = %d, want 403 (fail-closed)", code)
+	}
+
+	// 2. 正确令牌 → 200，回包是映射后的 courier scope
+	code, body := doInternalGET(t, base+"/internal/games/g1/mapping", internalToken)
+	if code != http.StatusOK {
+		t.Fatalf("internal mapping status = %d body=%s", code, body)
+	}
+	var mapping struct {
+		SpawnGameId   string `json:"spawnGameId"`
+		CourierGameId string `json:"courierGameId"`
+		Env           string `json:"env"`
+	}
+	if err := json.Unmarshal([]byte(body), &mapping); err != nil {
+		t.Fatalf("decode mapping: %v body=%s", err, body)
+	}
+	if mapping.SpawnGameId != "g1" || mapping.CourierGameId != "cg1" || mapping.Env != "prod" {
+		t.Fatalf("internal mapping mismatch: %+v", mapping)
+	}
+
+	// 3. 未接入的游戏 → 404
+	if code, body := doInternalGET(t, base+"/internal/games/g9/mapping", internalToken); code != http.StatusNotFound {
+		t.Fatalf("internal mapping unknown game = %d body=%s, want 404", code, body)
+	}
+}

@@ -100,6 +100,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_mapping_scope ON courier_game_mapping (cour
 - **Spawn 不复制订单状态机**。Spawn 后台经管理适配只读投影（订单 id 为键的事实副本，如经营分析/账单输入），或直接经 Provider 接缝读取；不维护第二套可独立推进的状态机。
 - **管理面归属 Courier**。现 Reconcile 是进程内方法，无 SKU 管理/补单/退款/全局订单查询/结算的 HTTP 管理 API（调研 §4 边界 6）。**管理适配作为 Courier 提案**（Provider 接口扩展或独立管理 Provider），Spawn 经受权限保护的管理适配读取，不旁路契约。若确需在 Spawn 建只读投影，仅存事实副本。
 - **玩家下单/订单查询转发 Courier 用客户端 Courier 令牌（2026-11-23 决策）**。客户端经 GP-201 代登录/票据兑换取得该 game_id+env 的 Courier 会话令牌后，在请求头 `X-Courier-Authorization`（值形如 `Bearer <courier accessToken>`，裸 token 自动补前缀）携带，Spawn 经 payments 原样转发给 Courier 作为 Bearer；平台 JWT 仅用于 Spawn 侧身份/角色判定，**绝不透传 Courier**（平台 token 无 scope，Courier RequireAuth 只认自签 opaque token，透传必 502）。缺失该头时 payments 对玩家下单/订单查询 fail-closed 401，不静默回退平台 JWT。该令牌为客户端侧会话凭证，Spawn 不落 Courier token 明文（§1 红线），scope 仍仅经 X-Courier-Game-Id/Env 头传递。
+- **scope 以 GP-002 映射为权威，绝不透传 spawn 游戏 id（2026-11-23 决策）**。客户端经 GP-201 取得的 Courier 令牌绑定的是 courier 侧 scope（`courier_game_id+env`）；payments 调 Courier 时 `X-Courier-Game-Id/Env` 必须取映射后的值，透传 spawn 游戏 id 必 502「token scope mismatch」（活走查实测）。修复：courier-adapter 新增 S2S `GET /internal/games/:id/mapping`（`X-Internal-Token` 守卫，缺/错令牌恒 403 fail-closed），payments 下单/订单查询/我的订单前经 `resolveCourierScope` 解析（`courierscope` 客户端）；无映射 → 502、解析失败 → 502，均 fail-closed，不静默回退 spawn id 透传。客户端提交的 `env` 不参与 scope 头（映射权威）。
 
 ### 3.2 多游戏隔离用例清单（写清边界，由 GP-206 联合沙箱执行）
 

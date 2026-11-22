@@ -43,6 +43,14 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodPost, Path: "/session/redeem", Handler: RedeemHandler(svcCtx)},
 	})
 
+	// S2S：payments 解析 spawn_game_id → courier scope（GP-202 集成缺口：
+	// payments 调 Courier 的 X-Courier-Game-Id/Env 必须是映射后的
+	// courier_game_id+env，与客户端令牌绑定 scope 一致）。X-Internal-Token
+	// 校验在 handler 内先于 body 解析；S2S 专用不进网关反代。
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/internal/games/:id/mapping", Handler: InternalGetMappingHandler(svcCtx)},
+	})
+
 	adminRoutes := []rest.Route{
 		{Method: http.MethodGet, Path: "/admin/games/:id/mapping", Handler: GetMappingHandler(svcCtx)},
 		{Method: http.MethodPut, Path: "/admin/games/:id/mapping", Handler: UpsertMappingHandler(svcCtx)},
@@ -189,6 +197,31 @@ func GetMappingHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 		resp, err := logic.NewAdminLogic(r.Context(), svcCtx).GetMapping(req.Id, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// InternalGetMappingHandler GET /internal/games/:id/mapping（S2S，payments 用）：
+// X-Internal-Token 校验先于 body 解析；令牌未配置恒 403（fail-closed）。返回
+// courier_game_id + env，供 payments 调 Courier 时作 X-Courier-Game-Id/Env
+// 头（与客户端令牌绑定 scope 一致，GP-202 集成缺口）。
+func InternalGetMappingHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if svcCtx.Config.Internal.Token == "" || r.Header.Get("X-Internal-Token") != svcCtx.Config.Internal.Token {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"code":403,"message":"forbidden"}`))
+			return
+		}
+		var req types.GameSessionRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewAdminLogic(r.Context(), svcCtx).GetMappingInternal(req.Id)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return

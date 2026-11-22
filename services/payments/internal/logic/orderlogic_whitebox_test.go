@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/tappi/tappi/services/payments/courier"
+	"github.com/tappi/tappi/services/payments/internal/courierscope"
 	"github.com/tappi/tappi/services/payments/internal/svc"
 	"github.com/tappi/tappi/services/payments/internal/types"
 	"github.com/tappi/tappi/services/payments/model"
@@ -49,11 +50,24 @@ func wbCtx() context.Context {
 	return context.WithValue(context.Background(), "user_id", int64(7))
 }
 
+// newWhiteboxScope 映射解析存根（GP-202 scope 解析）：任意 spawn 游戏 id
+// → courier-game-a + dev。白盒测试注入使 resolveCourierScope 成功，
+// 以命中后续 Courier 调用臂。
+func newWhiteboxScope(t *testing.T) *courierscope.Client {
+	t.Helper()
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"courierGameId":"courier-game-a","env":"dev"}`))
+	}))
+	t.Cleanup(stub.Close)
+	return courierscope.NewClient(stub.URL, "tok", time.Second)
+}
+
 // CreateOrder：区服目录不可达 → 502（ServerId>0 触发 catalogServerOpen）。
 func TestCreateOrder_CatalogUnreachable(t *testing.T) {
 	sc := &svc.ServiceContext{}
 	sc.ProductDB = newWhiteboxProductDB(t)
 	sc.Config.GameCatalog.BaseURL = "http://127.0.0.1:1" // 连接拒绝
+	sc.ScopeRes = newWhiteboxScope(t)
 	sc.Courier = courier.NewClient("http://127.0.0.1:1", time.Second)
 	if _, err := sc.ProductDB.Create(&model.Product{
 		Id: "sku-cat", ProductId: "p", Form: model.FormDirectPurchase,
@@ -74,6 +88,7 @@ func TestCreateOrder_CatalogUnreachable(t *testing.T) {
 func TestCreateOrder_CourierError(t *testing.T) {
 	sc := &svc.ServiceContext{}
 	sc.ProductDB = newWhiteboxProductDB(t)
+	sc.ScopeRes = newWhiteboxScope(t)
 	sc.Courier = courier.NewClient("http://127.0.0.1:1", time.Second) // 下单必败
 	if _, err := sc.ProductDB.Create(&model.Product{
 		Id: "sku-courier", ProductId: "p", Form: model.FormDirectPurchase,
@@ -96,7 +111,7 @@ func TestGetOrder_BothArms(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":{"id":"o1","status":"PAID","amountCents":100,"currency":"CNY"}}`))
 	}))
 	t.Cleanup(okStub.Close)
-	sc := &svc.ServiceContext{Courier: courier.NewClient(okStub.URL, time.Second)}
+	sc := &svc.ServiceContext{Courier: courier.NewClient(okStub.URL, time.Second), ScopeRes: newWhiteboxScope(t)}
 	resp, err := NewOrderLogic(wbCtx(), sc).GetOrder(&types.OrderQueryRequest{GameId: "game-a", OrderId: "o1"}, "Bearer t")
 	if err != nil || resp.Order.Id != "o1" || resp.Order.Status != "PAID" {
 		t.Fatalf("get ok = %+v err=%v", resp, err)
@@ -106,7 +121,7 @@ func TestGetOrder_BothArms(t *testing.T) {
 		_, _ = w.Write([]byte(`not-json`))
 	}))
 	t.Cleanup(badStub.Close)
-	sc2 := &svc.ServiceContext{Courier: courier.NewClient(badStub.URL, time.Second)}
+	sc2 := &svc.ServiceContext{Courier: courier.NewClient(badStub.URL, time.Second), ScopeRes: newWhiteboxScope(t)}
 	if _, err := NewOrderLogic(wbCtx(), sc2).GetOrder(&types.OrderQueryRequest{GameId: "game-a", OrderId: "o1"}, "Bearer t"); err == nil {
 		t.Fatal("get fail = nil error, want error")
 	}
@@ -119,7 +134,7 @@ func TestListMyOrders_CourierError(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":{"code":"COMMON_UNAUTHORIZED","message":"no"}}`))
 	}))
 	t.Cleanup(stub.Close)
-	sc := &svc.ServiceContext{Courier: courier.NewClient(stub.URL, time.Second)}
+	sc := &svc.ServiceContext{Courier: courier.NewClient(stub.URL, time.Second), ScopeRes: newWhiteboxScope(t)}
 	if _, err := NewOrderLogic(wbCtx(), sc).ListMyOrders("game-a", "", "Bearer bad"); err == nil {
 		t.Fatal("list my orders = nil error, want error")
 	}

@@ -34,6 +34,12 @@ const (
 	// testCourierToken 模拟客户端经 GP-201 代登录/票据兑换取得的 Courier
 	// scope-bound accessToken（X-Courier-Authorization 头携带，见 GP-202 缺口）。
 	testCourierToken = "payments-courier-session-token"
+	// testInternalToken courier-adapter 映射存根的 X-Internal-Token（GP-202
+	// scope 解析：payments 下单/查询前经 /internal/games/:id/mapping 取
+	// courier_game_id+env，绝不用 spawn 游戏 id 当 Courier scope）。
+	testInternalToken = "payments-mapping-s2s-token"
+	// testCourierGameEnv 映射存根返回的 courier 侧 scope（spawn game-a → 该值）。
+	testCourierGameEnv = "courier-game-a|dev"
 )
 
 type testEnv struct {
@@ -47,6 +53,9 @@ type testEnv struct {
 	// courierAuthSeen 记录 Courier 存根在 /v1/payments/orders 收到的
 	// Authorization 头（GP-202 断言：必须是 Courier 令牌，非平台 JWT）。
 	courierAuthSeen []string
+	// courierScopeSeen 记录 Courier 存根收到的 X-Courier-Game-Id/Env
+	// （GP-202 scope 断言：必须是映射后的 courier_game_id+env，非 spawn id）。
+	courierScopeSeen []string
 	// analyticsSeen GP-402 经营分析事实投递记录（data-panel /internal/events
 	// 存根收到的批次与令牌），analyticsBase 为空时投递客户端为 no-op。
 	// analyticsDown 置位 = data-panel 存根返回 503（模拟下游短时不可达）。
@@ -74,11 +83,18 @@ func newPaymentsServer(t *testing.T) *testEnv {
 	}))
 	t.Cleanup(catalog.Close)
 
+	// courier-adapter 映射存根（GP-202 scope 解析）：/internal/games/:id/mapping
+	// 校验 X-Internal-Token，返回映射后的 courier scope（spawn game-a →
+	// courier-game-a + dev）。payments 下单/查询前调用它，绝不用 spawn id。
+	mapping := newMappingStub(t)
+
 	// Courier 存根：下单返回订单快照；回调校验 HMAC
 	courier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/payments/orders":
 			env.courierAuthSeen = append(env.courierAuthSeen, r.Header.Get("Authorization"))
+			env.courierScopeSeen = append(env.courierScopeSeen,
+				r.Header.Get("X-Courier-Game-Id")+"|"+r.Header.Get("X-Courier-Env"))
 			var body struct {
 				SkuId string `json:"skuId"`
 			}
@@ -143,6 +159,8 @@ func newPaymentsServer(t *testing.T) *testEnv {
 	c.Auth.JWTSecret = testJWTSecret
 	c.Courier.BaseURL = courier.URL
 	c.GameCatalog.BaseURL = catalog.URL
+	c.CourierAdapter.BaseURL = mapping.URL
+	c.Internal.Token = testInternalToken
 	c.Channel.SandboxSecret = testSandboxSecret
 	c.Analytics.BaseURL = datapanel.URL
 	c.Analytics.Token = "gp402-payments-token"
@@ -181,6 +199,34 @@ func newPaymentsServer(t *testing.T) *testEnv {
 		return signed
 	}
 	return env
+}
+
+// newMappingStub courier-adapter 映射存根（GP-202 scope 解析）：
+// /internal/games/:id/mapping 校验 X-Internal-Token（testInternalToken），
+// 返回映射后的 courier scope（spawn <id> → courier-<id> + dev）；id 前缀
+// nomap 返 404（无映射）。payments 下单/查询前调用它，绝不用 spawn id 当
+// Courier scope。
+func newMappingStub(t *testing.T) *httptest.Server {
+	t.Helper()
+	mapping := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Internal-Token") != testInternalToken {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"code":403,"message":"forbidden"}`))
+			return
+		}
+		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/internal/games/"), "/")
+		id := parts[0]
+		if strings.HasPrefix(id, "nomap") {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code":404,"message":"游戏未接入 Courier"}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"courierGameId": "courier-" + id, "env": "dev",
+		})
+	}))
+	t.Cleanup(mapping.Close)
+	return mapping
 }
 
 func decodeJWT(authHeader string) (*utils.JWTClaims, bool) {

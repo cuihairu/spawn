@@ -180,7 +180,11 @@ services:
       # promotions /internal/player-activity（X-Internal-Token 同令牌）。
       # 未配置 = 上报不发起（no-op），游戏会话主流程不受影响。
       PROMOTIONS_URL: http://promotions:8902
-      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-}"
+      # 共享 S2S 令牌：GP-307 售后工单订单归属查询（调 payments /internal/orders）
+      # 与 GP-202 映射解析守卫（/internal/games/:id/mapping，payments 调用，缺/
+      # 错令牌恒 403 fail-closed）。与 payments/game-catalog 侧同值；未配置 =
+      # 映射端点恒 403（fail-closed），GP-307 校验跳过（fail-open 设计）。
+      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
     depends_on:
       - user-service
       - game-catalog
@@ -219,7 +223,11 @@ services:
       DATA_PANEL_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
       # GP-307 S2S 订单事实查询（courier-adapter 售后工单归属校验的事实源）。
       # 未配置 = 恒 403（fail-closed）；与 courier-adapter 侧同值。
-      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-}"
+      INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
+      # GP-202 映射解析：下单/订单查询前把 spawn 游戏 id 解析为 courier 侧
+      # scope（courier_adapter /internal/games/:id/mapping，X-Internal-Token）。
+      # 未配置 = 解析失败 → 502 fail-closed（绝不透传 spawn id 当 Courier scope）。
+      COURIER_ADAPTER_URL: http://courier-adapter:8897
     depends_on:
       - user-service
       - game-catalog

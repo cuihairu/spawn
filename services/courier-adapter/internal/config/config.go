@@ -66,4 +66,11 @@ type Config struct {
 		OutboxMaxAttempts     int64  `json:",default=10,env=PROMOTIONS_OUTBOX_MAX_ATTEMPTS"`
 		OutboxRetentionHours  int64  `json:",default=168,env=PROMOTIONS_OUTBOX_RETENTION_HOURS"`
 	}
+
+	// Internal 本服务 S2S 端点守卫（GET /internal/games/:id/mapping，供
+	// payments 解析 spawn_game_id → courier scope，GP-202 集成缺口）。
+	// 令牌与各调用方 INTERNAL_TOKEN 同值；空 = 恒 403（fail-closed）。
+	Internal struct {
+		Token string `json:",env=INTERNAL_TOKEN,optional"`
+	}
 }

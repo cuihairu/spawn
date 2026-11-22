@@ -6,6 +6,7 @@ import (
 
 	"github.com/tappi/tappi/services/payments/courier"
 	"github.com/tappi/tappi/services/payments/internal/analytics"
+	"github.com/tappi/tappi/services/payments/internal/courierscope"
 	"github.com/tappi/tappi/services/payments/internal/channel"
 	"github.com/tappi/tappi/services/payments/internal/config"
 	"github.com/tappi/tappi/services/payments/internal/delivery"
@@ -27,6 +28,9 @@ type ServiceContext struct {
 	EvalDB       *model.PromotionEvalModel
 	CouponDB     *model.CouponModel
 	Courier      *courier.Client
+	// ScopeRes GP-202 集成缺口：spawn_game_id → courier scope 解析客户端
+	//（courier-adapter /internal/games/:id/mapping，X-Internal-Token）。
+	ScopeRes *courierscope.Client
 	Sandbox      *channel.SandboxHMAC
 	// Real 真实渠道适配注册表（按渠道名选择原生验签适配器，GP-202）。
 	Real            *channel.RealAdapter
@@ -122,6 +126,10 @@ func NewServiceContext(c config.Config) *ServiceContext {
 
 	timeout := time.Millisecond * time.Duration(c.Courier.Timeout)
 	courierClient := courier.NewClient(c.Courier.BaseURL, timeout)
+	// GP-202 集成缺口：spawn_game_id → courier scope 解析（courier-adapter
+	// 内部端点）；BaseURL 未配置 = 订单面 fail-closed（不静默回退 spawn id）。
+	scopeClient := courierscope.NewClient(c.CourierAdapter.BaseURL, c.Internal.Token,
+		time.Millisecond*time.Duration(c.CourierAdapter.Timeout))
 	// 投递成功 → 订单投影 DELIVERED（只读事实副本，状态值来自投递面）
 	dispatcher := delivery.NewDispatcher(deliveryDB, productDB, c.Delivery.TimeoutMs,
 		time.Second*time.Duration(c.Delivery.RetryIntervalSeconds),
@@ -137,6 +145,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		EvalDB:       evalDB,
 		CouponDB:     couponDB,
 		Courier:      courierClient,
+		ScopeRes:     scopeClient,
 		Sandbox:      &channel.SandboxHMAC{Secret: []byte(c.Channel.SandboxSecret)},
 		// 真实渠道适配注册表（GP-202）：已注入验签材料的渠道可原生验签，
 		// 未配置/未知渠道回退 501 占位（RealChannel）。

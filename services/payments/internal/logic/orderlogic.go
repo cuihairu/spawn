@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/tappi/tappi/services/payments/courier"
+	"github.com/tappi/tappi/services/payments/internal/courierscope"
 	"github.com/tappi/tappi/services/payments/internal/svc"
 	"github.com/tappi/tappi/services/payments/internal/types"
 	"github.com/tappi/tappi/services/payments/model"
@@ -78,6 +79,23 @@ func requireCourierSession(courierAuth string) error {
 	return nil
 }
 
+// resolveCourierScope 把 spawn 游戏 id 解析为调 Courier 的 scope 头值
+// （X-Courier-Game-Id / X-Courier-Env = courier_game_id + env，GP-002 映射）。
+// 客户端经 GP-201 取得的 Courier 令牌绑定的是 courier 侧 scope，透传 spawn
+// 游戏 id 必 502「token scope mismatch」（活走查实测）；解析失败 fail-closed，
+// 不静默回退 spawn id 透传。
+func (l *OrderLogic) resolveCourierScope(spawnGameID string) (string, string, error) {
+	scope, err := l.svcCtx.ScopeRes.Resolve(spawnGameID)
+	if err != nil {
+		if errors.Is(err, courierscope.ErrMappingNotFound) {
+			return "", "", newAPIError(http.StatusBadGateway, "该游戏未接入 Courier 支付（无映射）")
+		}
+		l.Errorf("resolve courier scope for game %s failed: %v", spawnGameID, err)
+		return "", "", newAPIError(http.StatusBadGateway, "支付接线解析失败")
+	}
+	return scope.CourierGameId, scope.Env, nil
+}
+
 // CreateOrder 玩家下单：scope=path gameId，先核验商品归属（商品必须属于该
 // 游戏且启用——跨游戏越权 404，不泄露存在性），再转发 Courier 下单，最后
 // 核验返回订单的金额/币种与服务端配置一致（防配置漂移/客户端报价）。
@@ -113,8 +131,13 @@ func (l *OrderLogic) CreateOrder(req *types.CreateOrderRequest, bearer string) (
 			return nil, newAPIError(http.StatusNotFound, "区服不存在或未开放")
 		}
 	}
-	env := envOr(req.Env)
-	order, err := l.svcCtx.Courier.CreateOrder(product.GameId, env, bearer, req.SkuId)
+	// scope 以映射为准（客户端令牌绑定 courier 侧 scope）；req.Env 不参与
+	// scope 头，客户端不可指定 scope（GP-002 映射权威）。
+	courierGameID, courierEnv, err := l.resolveCourierScope(product.GameId)
+	if err != nil {
+		return nil, err
+	}
+	order, err := l.svcCtx.Courier.CreateOrder(courierGameID, courierEnv, bearer, req.SkuId)
 	if err != nil {
 		return nil, courierError(err)
 	}
@@ -190,7 +213,7 @@ func (l *OrderLogic) releaseOrderCoupons(orderID string, couponIDs []int64) {
 	}
 }
 
-// GetOrder 玩家查询订单（scope=path gameId；Courier 归属校验：非本人 404）。
+// GetOrder 玩家查询订单（scope=映射 courier scope；Courier 归属校验：非本人 404）。
 func (l *OrderLogic) GetOrder(req *types.OrderQueryRequest, bearer string) (*types.OrderResponse, error) {
 	userID, _ := l.ctx.Value("user_id").(int64)
 	if userID <= 0 {
@@ -199,7 +222,11 @@ func (l *OrderLogic) GetOrder(req *types.OrderQueryRequest, bearer string) (*typ
 	if err := requireCourierSession(bearer); err != nil {
 		return nil, err
 	}
-	order, err := l.svcCtx.Courier.GetOrder(req.GameId, envOr(req.Env), bearer, req.OrderId)
+	courierGameID, courierEnv, err := l.resolveCourierScope(req.GameId)
+	if err != nil {
+		return nil, err
+	}
+	order, err := l.svcCtx.Courier.GetOrder(courierGameID, courierEnv, bearer, req.OrderId)
 	if err != nil {
 		return nil, courierError(err)
 	}
@@ -215,7 +242,11 @@ func (l *OrderLogic) ListMyOrders(gameID, env, bearer string) (*types.OrderListR
 	if err := requireCourierSession(bearer); err != nil {
 		return nil, err
 	}
-	orders, err := l.svcCtx.Courier.ListOrders(gameID, envOr(env), bearer)
+	courierGameID, courierEnv, err := l.resolveCourierScope(gameID)
+	if err != nil {
+		return nil, err
+	}
+	orders, err := l.svcCtx.Courier.ListOrders(courierGameID, courierEnv, bearer)
 	if err != nil {
 		return nil, courierError(err)
 	}
