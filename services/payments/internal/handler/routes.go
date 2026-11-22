@@ -158,6 +158,25 @@ func authHeaderFrom(r *http.Request) string {
 	return ""
 }
 
+// courierAuthFrom 提取客户端携带的 Courier 会话令牌（GP-202 决策：客户端带
+// Courier token）。客户端经 GP-201 代登录/票据兑换取得 scope-bound Courier
+// accessToken 后，把它放在 X-Courier-Authorization 头随下单/订单请求传入；
+// 本服务原样透传给 Courier，绝不透传平台 JWT——平台 token 无 scope、Courier
+// RequireAuth 只认自签 opaque token，透传平台 JWT 必 502「auth: invalid
+// credentials」，违反接入设计 §1 红线「不假设 JWT 互通。Spawn 只代登录」。
+// 值形如 "Bearer <courier accessToken>"；裸 token 自动补前缀（宽容），缺失
+// 返回空串由逻辑层 fail-closed 拒绝。
+func courierAuthFrom(r *http.Request) string {
+	v := strings.TrimSpace(r.Header.Get("X-Courier-Authorization"))
+	if v == "" {
+		return ""
+	}
+	if !strings.HasPrefix(strings.ToLower(v), "bearer ") {
+		return "Bearer " + v
+	}
+	return v
+}
+
 func HealthHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -172,7 +191,7 @@ func CreateOrderHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
-		resp, err := logic.NewOrderLogic(r.Context(), svcCtx).CreateOrder(&req, authHeaderFrom(r))
+		resp, err := logic.NewOrderLogic(r.Context(), svcCtx).CreateOrder(&req, courierAuthFrom(r))
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
@@ -188,7 +207,7 @@ func GetOrderHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
-		resp, err := logic.NewOrderLogic(r.Context(), svcCtx).GetOrder(&req, authHeaderFrom(r))
+		resp, err := logic.NewOrderLogic(r.Context(), svcCtx).GetOrder(&req, courierAuthFrom(r))
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
@@ -449,7 +468,7 @@ func ListMyOrdersHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
-		resp, err := logic.NewOrderLogic(r.Context(), svcCtx).ListMyOrders(req.GameId, req.Env, authHeaderFrom(r))
+		resp, err := logic.NewOrderLogic(r.Context(), svcCtx).ListMyOrders(req.GameId, req.Env, courierAuthFrom(r))
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return

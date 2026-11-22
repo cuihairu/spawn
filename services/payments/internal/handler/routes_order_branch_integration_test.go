@@ -35,6 +35,51 @@ func TestRoutes_OrderUnauthorizedArms(t *testing.T) {
 	}
 }
 
+// TestRoutes_OrderCourierAuthForwarding GP-202 缺口回归：玩家订单面转发
+// Courier 时必须用客户端携带的 Courier 会话令牌（X-Courier-Authorization），
+// 绝不透传平台 JWT——平台 token 无 scope、Courier RequireAuth 只认自签
+// opaque token，透传平台 JWT 必 502「auth: invalid credentials」。
+func TestRoutes_OrderCourierAuthForwarding(t *testing.T) {
+	env := newPaymentsServer(t)
+	admin := env.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
+	player := env.sign(utils.JWTClaims{UserId: 7, Username: "bob"})
+	do(t, http.MethodPost, env.base+"/admin/products/sku-fwd", admin,
+		`{"product_id":"fwd","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"game-a"}`)
+
+	// 1. 带 Courier 令牌（Bearer 前缀）→ 200，且 Courier 存根收到的是
+	//    Courier 令牌而非平台 JWT。
+	code, body := do(t, http.MethodPost, env.base+"/games/game-a/orders", player, `{"sku_id":"sku-fwd"}`)
+	if code != http.StatusOK {
+		t.Fatalf("create order = %d body=%s", code, body)
+	}
+	if len(env.courierAuthSeen) != 1 || env.courierAuthSeen[0] != "Bearer "+testCourierToken {
+		t.Fatalf("courier auth seen = %v, want [Bearer %s]", env.courierAuthSeen, testCourierToken)
+	}
+
+	// 2. 裸 token（无 Bearer 前缀）→ 200，courierAuthFrom 自动补前缀
+	env.courierAmounts["sku-fwd"] = 1000
+	code, body = doWithCourier(t, http.MethodPost, env.base+"/games/game-a/orders", player, testCourierToken, `{"sku_id":"sku-fwd"}`)
+	if code != http.StatusOK {
+		t.Fatalf("create order bare token = %d body=%s", code, body)
+	}
+	if len(env.courierAuthSeen) != 2 || env.courierAuthSeen[1] != "Bearer "+testCourierToken {
+		t.Fatalf("courier auth seen = %v, want normalized bearer", env.courierAuthSeen)
+	}
+
+	// 3. 缺 Courier 令牌 → 401 fail-closed（不静默回退平台 JWT）
+	code, body = doNoCourier(t, http.MethodPost, env.base+"/games/game-a/orders", player, `{"sku_id":"sku-fwd"}`)
+	if code != http.StatusUnauthorized {
+		t.Fatalf("create order no courier token = %d body=%s, want 401", code, body)
+	}
+	// 4. 订单查询/我的订单同样 fail-closed
+	if code, _ := doNoCourier(t, http.MethodGet, env.base+"/games/game-a/orders/o1", player, ""); code != http.StatusUnauthorized {
+		t.Fatalf("get order no courier token = %d, want 401", code)
+	}
+	if code, _ := doNoCourier(t, http.MethodGet, env.base+"/games/game-a/orders", player, ""); code != http.StatusUnauthorized {
+		t.Fatalf("list my orders no courier token = %d, want 401", code)
+	}
+}
+
 func TestRoutes_OrderProductNotFound(t *testing.T) {
 	env := newPaymentsServer(t)
 	player := env.sign(utils.JWTClaims{UserId: 7, Username: "bob"})

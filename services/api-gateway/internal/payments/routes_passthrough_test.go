@@ -108,3 +108,74 @@ func TestRegisterPaymentsRoutesGP404Passthrough(t *testing.T) {
 		t.Fatalf("internal deliveries reached upstream: hits=%+v", hits[before:])
 	}
 }
+
+// TestRegisterPaymentsRoutesCourierAuthHeaderPassthrough GP-202 客户端带
+// Courier token 决策：玩家下单请求的 X-Courier-Authorization（客户端经
+// GP-201 代登录/票据兑换取得的 Courier 会话令牌）必须原样穿网关到达
+// payments 上游——payments 以它为转发 Courier 的 Bearer，绝不用平台 JWT。
+func TestRegisterPaymentsRoutesCourierAuthHeaderPassthrough(t *testing.T) {
+	var gotAuth, gotCourier string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotCourier = r.Header.Get("X-Courier-Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(upstream.Close)
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("grab port: %v", err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close()
+
+	var cfg config.Config
+	cfg.Upstreams.Payments.BaseURL = upstream.URL
+	cfg.Upstreams.Payments.Timeout = 2000
+
+	var conf rest.RestConf
+	conf.Port = port
+	server := rest.MustNewServer(conf)
+	RegisterPaymentsRoutes(server, &svc.ServiceContext{Config: cfg})
+	go server.Start()
+	t.Cleanup(server.Stop)
+
+	base := "http://127.0.0.1:" + strconv.Itoa(port)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		resp, err := http.Get(base + "/healthz")
+		if err == nil {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("payments proxy server not ready")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, base+"/games/game-a/orders", strings.NewReader(`{"sku_id":"sku-1"}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer platform-jwt")
+	req.Header.Set("X-Courier-Authorization", "Bearer courier-session-token")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("post order: %v", err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("post order status=%d", resp.StatusCode)
+	}
+	if gotCourier != "Bearer courier-session-token" {
+		t.Fatalf("X-Courier-Authorization passthrough = %q", gotCourier)
+	}
+	if gotAuth != "Bearer platform-jwt" {
+		t.Fatalf("Authorization passthrough = %q", gotAuth)
+	}
+}

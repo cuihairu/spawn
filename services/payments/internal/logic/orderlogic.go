@@ -17,6 +17,11 @@ import (
 
 // OrderLogic 订单接入：事实源在 Courier（teller），本服务不复制状态机，
 // 只做下单转发 + 金额/币种/商户归属核验 + 回调验签接缝。
+//
+// 鉴权红线（接入设计 §1）：不假设 JWT 互通——平台 token 无 scope、不能作
+// Courier 游戏会话。玩家下单/订单查询转发 Courier 时，Bearer 必须是客户端
+// 携带的 Courier 会话令牌（X-Courier-Authorization，GP-201 代登录/兑换
+// 所得），平台 JWT 绝不透传；缺失即 fail-closed 401，不静默回退平台 JWT。
 type OrderLogic struct {
 	logx.Logger
 	ctx    context.Context
@@ -62,6 +67,17 @@ func courierError(err error) error {
 	}
 }
 
+// requireCourierSession 校验客户端携带的 Courier 会话令牌（X-Courier-
+// Authorization，经 handler 层提取）。缺失即 fail-closed 401：不静默回退
+// 平台 JWT（接入设计 §1 红线）。
+func requireCourierSession(courierAuth string) error {
+	if strings.TrimSpace(courierAuth) == "" {
+		return newAPIError(http.StatusUnauthorized,
+			"缺少 Courier 会话令牌，请先进入游戏获取会话（X-Courier-Authorization）")
+	}
+	return nil
+}
+
 // CreateOrder 玩家下单：scope=path gameId，先核验商品归属（商品必须属于该
 // 游戏且启用——跨游戏越权 404，不泄露存在性），再转发 Courier 下单，最后
 // 核验返回订单的金额/币种与服务端配置一致（防配置漂移/客户端报价）。
@@ -71,6 +87,9 @@ func (l *OrderLogic) CreateOrder(req *types.CreateOrderRequest, bearer string) (
 	userID, _ := l.ctx.Value("user_id").(int64)
 	if userID <= 0 {
 		return nil, newAPIError(http.StatusUnauthorized, "未登录")
+	}
+	if err := requireCourierSession(bearer); err != nil {
+		return nil, err
 	}
 	product, err := l.svcCtx.ProductDB.Get(req.SkuId)
 	if err == model.ErrProductNotFound {
@@ -177,6 +196,9 @@ func (l *OrderLogic) GetOrder(req *types.OrderQueryRequest, bearer string) (*typ
 	if userID <= 0 {
 		return nil, newAPIError(http.StatusUnauthorized, "未登录")
 	}
+	if err := requireCourierSession(bearer); err != nil {
+		return nil, err
+	}
 	order, err := l.svcCtx.Courier.GetOrder(req.GameId, envOr(req.Env), bearer, req.OrderId)
 	if err != nil {
 		return nil, courierError(err)
@@ -189,6 +211,9 @@ func (l *OrderLogic) ListMyOrders(gameID, env, bearer string) (*types.OrderListR
 	userID, _ := l.ctx.Value("user_id").(int64)
 	if userID <= 0 {
 		return nil, newAPIError(http.StatusUnauthorized, "未登录")
+	}
+	if err := requireCourierSession(bearer); err != nil {
+		return nil, err
 	}
 	orders, err := l.svcCtx.Courier.ListOrders(gameID, envOr(env), bearer)
 	if err != nil {

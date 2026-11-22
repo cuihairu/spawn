@@ -31,6 +31,9 @@ const (
 	testJWTSecret     = "payments-integration-secret"
 	testSandboxSecret = "payments-sandbox-test"
 	testNotifyToken   = "payments-notify-test-token"
+	// testCourierToken 模拟客户端经 GP-201 代登录/票据兑换取得的 Courier
+	// scope-bound accessToken（X-Courier-Authorization 头携带，见 GP-202 缺口）。
+	testCourierToken = "payments-courier-session-token"
 )
 
 type testEnv struct {
@@ -41,6 +44,9 @@ type testEnv struct {
 	// courierAmounts 供 Courier 存根按 skuId 返回金额（默认 1000）
 	courierAmounts map[string]int64
 	callbackSeen   int
+	// courierAuthSeen 记录 Courier 存根在 /v1/payments/orders 收到的
+	// Authorization 头（GP-202 断言：必须是 Courier 令牌，非平台 JWT）。
+	courierAuthSeen []string
 	// analyticsSeen GP-402 经营分析事实投递记录（data-panel /internal/events
 	// 存根收到的批次与令牌），analyticsBase 为空时投递客户端为 no-op。
 	// analyticsDown 置位 = data-panel 存根返回 503（模拟下游短时不可达）。
@@ -72,6 +78,7 @@ func newPaymentsServer(t *testing.T) *testEnv {
 	courier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/payments/orders":
+			env.courierAuthSeen = append(env.courierAuthSeen, r.Header.Get("Authorization"))
 			var body struct {
 				SkuId string `json:"skuId"`
 			}
@@ -195,7 +202,22 @@ func decodeJWT(authHeader string) (*utils.JWTClaims, bool) {
 	return &claims, true
 }
 
+// do 发请求并携带平台 JWT（Authorization）+ 客户端 Courier 会话令牌
+// （X-Courier-Authorization，GP-202 客户端带 Courier token 决策）两个头。
+// 玩家订单/查询面需后者（Courier 归属/验权），管理/券/账单面忽略它。
 func do(t *testing.T, method, url, token, body string) (int, string) {
+	t.Helper()
+	return doWithCourier(t, method, url, token, "Bearer "+testCourierToken, body)
+}
+
+// doNoCourier 发请求仅带平台 JWT、不带 Courier 会话令牌——用于断言玩家
+// 订单面缺失 Courier token 时 fail-closed 401（不静默回退平台 JWT）。
+func doNoCourier(t *testing.T, method, url, token, body string) (int, string) {
+	t.Helper()
+	return doWithCourier(t, method, url, token, "", body)
+}
+
+func doWithCourier(t *testing.T, method, url, token, courierAuth, body string) (int, string) {
 	t.Helper()
 	var req *http.Request
 	if body == "" {
@@ -206,6 +228,9 @@ func do(t *testing.T, method, url, token, body string) (int, string) {
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if courierAuth != "" {
+		req.Header.Set("X-Courier-Authorization", courierAuth)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

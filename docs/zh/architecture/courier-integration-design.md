@@ -99,6 +99,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_mapping_scope ON courier_game_mapping (cour
 - 交易唯一事实源 = **teller（或接的真实渠道适配）**。teller 持有 sku/order 事实：服务端定价（客户端请求体只有 `skuId`）、回调 `X-Payment-Signature` HMAC-SHA256 验签先于解析、同订单重复回调幂等 200、非本人订单 404、发货失败停 `PAID` 可对账（payment.md v1.1 安全边界 1–6）。状态机 `CREATED → PAID → DELIVERED`（→ `CLOSED`）由 Courier 维护。
 - **Spawn 不复制订单状态机**。Spawn 后台经管理适配只读投影（订单 id 为键的事实副本，如经营分析/账单输入），或直接经 Provider 接缝读取；不维护第二套可独立推进的状态机。
 - **管理面归属 Courier**。现 Reconcile 是进程内方法，无 SKU 管理/补单/退款/全局订单查询/结算的 HTTP 管理 API（调研 §4 边界 6）。**管理适配作为 Courier 提案**（Provider 接口扩展或独立管理 Provider），Spawn 经受权限保护的管理适配读取，不旁路契约。若确需在 Spawn 建只读投影，仅存事实副本。
+- **玩家下单/订单查询转发 Courier 用客户端 Courier 令牌（2026-11-23 决策）**。客户端经 GP-201 代登录/票据兑换取得该 game_id+env 的 Courier 会话令牌后，在请求头 `X-Courier-Authorization`（值形如 `Bearer <courier accessToken>`，裸 token 自动补前缀）携带，Spawn 经 payments 原样转发给 Courier 作为 Bearer；平台 JWT 仅用于 Spawn 侧身份/角色判定，**绝不透传 Courier**（平台 token 无 scope，Courier RequireAuth 只认自签 opaque token，透传必 502）。缺失该头时 payments 对玩家下单/订单查询 fail-closed 401，不静默回退平台 JWT。该令牌为客户端侧会话凭证，Spawn 不落 Courier token 明文（§1 红线），scope 仍仅经 X-Courier-Game-Id/Env 头传递。
 
 ### 3.2 多游戏隔离用例清单（写清边界，由 GP-206 联合沙箱执行）
 
