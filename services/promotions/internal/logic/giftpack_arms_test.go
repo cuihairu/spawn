@@ -306,13 +306,19 @@ func TestGiftPack_RoleArms(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{"update", func() error { _, e := l.Update(&types.UpdateGiftPackRequest{Id: id, GiftPackConfig: validPackCfg()}, auth); return e }},
+		{"update", func() error {
+			_, e := l.Update(&types.UpdateGiftPackRequest{Id: id, GiftPackConfig: validPackCfg()}, auth)
+			return e
+		}},
 		{"publish", func() error { _, e := l.Publish(&types.GiftPackPathRequest{Id: id}, auth); return e }},
 		{"disable", func() error { _, e := l.Disable(&types.GiftPackPathRequest{Id: id}, auth); return e }},
 		{"revise", func() error { _, e := l.Revise(&types.GiftPackPathRequest{Id: id}, auth); return e }},
 		{"list", func() error { _, e := l.List(&types.GiftPackListRequest{}, auth); return e }},
 		{"get", func() error { _, e := l.Get(&types.GiftPackPathRequest{Id: id}, auth); return e }},
-		{"import", func() error { _, e := l.ImportCodes(&types.ImportCodesRequest{Id: id, Codes: []string{"C"}}, auth); return e }},
+		{"import", func() error {
+			_, e := l.ImportCodes(&types.ImportCodesRequest{Id: id, Codes: []string{"C"}}, auth)
+			return e
+		}},
 		{"listCodes", func() error { _, e := l.ListCodes(&types.CodeListRequest{Id: id}, auth); return e }},
 		{"listClaims", func() error { _, e := l.ListClaims(&types.ClaimListAdminRequest{}, auth); return e }},
 	}
