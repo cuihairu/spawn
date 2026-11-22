@@ -6,6 +6,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/tappi/tappi/services/game-catalog/internal/config"
@@ -48,20 +49,33 @@ func TestRoutes_LogicErrors(t *testing.T) {
 	}
 }
 
-// InternalResolveClick：配置 Internal.Token 后，空 click_id（路径 %20）→ 400，
-// 覆盖 S2S 守卫通过与 logic 校验错误两侧。
+// InternalResolveClick：配置 Internal.Token 后，S2S 守卫通过与两类 400：
+// 坏 JSON（Parse 臂）与空白 click_id（logic 校验臂）。
 func TestRoutes_InternalResolveLogicError(t *testing.T) {
 	base, _ := newAuthedTestServerConfig(t, func(c *config.Config) {
 		c.Internal.Token = "s2s-token"
 	})
-	req, _ := http.NewRequest(http.MethodPost, base+"/internal/promo/clicks/%20/resolve", nil)
-	req.Header.Set("X-Internal-Token", "s2s-token")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("internal resolve: %v", err)
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"parse error", `{`},
+		{"empty click id", `{"click_id":"  ","registered_at":"2026-01-01T00:00:00Z"}`},
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("internal resolve empty click_id = %d, want 400", resp.StatusCode)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req, _ := http.NewRequest(http.MethodPost, base+"/internal/promo/clicks/x/resolve",
+				strings.NewReader(c.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Internal-Token", "s2s-token")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("internal resolve: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("internal resolve %s = %d, want 400", c.name, resp.StatusCode)
+			}
+		})
 	}
 }
