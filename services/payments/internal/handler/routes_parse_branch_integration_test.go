@@ -67,6 +67,7 @@ func TestRoutes_ParseErrorArms(t *testing.T) {
 		method, url string
 	}{
 		{http.MethodPost, "/games/game-a/orders"},
+		{http.MethodGet, "/games/game-a/orders"},
 		{http.MethodGet, "/games/game-a/orders/o1"},
 		{http.MethodGet, "/games/game-a/skus"},
 		{http.MethodPost, "/admin/products/x"},
