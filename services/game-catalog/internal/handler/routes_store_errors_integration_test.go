@@ -28,6 +28,8 @@ type failingAdminStore struct {
 	listPromoErr      error
 	channelStatsErr   error
 	getPromoClickErr  error
+	listMyReservErr   error
+	listResUsersErr   error
 }
 
 var _ model.AdminStore = (*failingAdminStore)(nil)
@@ -107,6 +109,20 @@ func (s *failingAdminStore) GetPromoClick(clickId string) (*model.PromoClick, er
 		return nil, s.getPromoClickErr
 	}
 	return s.AdminStore.GetPromoClick(clickId)
+}
+
+func (s *failingAdminStore) ListMyReservations(userId int64, limit int) ([]*model.ServerReservation, error) {
+	if s.listMyReservErr != nil {
+		return nil, s.listMyReservErr
+	}
+	return s.AdminStore.ListMyReservations(userId, limit)
+}
+
+func (s *failingAdminStore) ListReservationUsersByGame(gameId string, limit int) ([]int64, error) {
+	if s.listResUsersErr != nil {
+		return nil, s.listResUsersErr
+	}
+	return s.AdminStore.ListReservationUsersByGame(gameId, limit)
 }
 
 // failingGameStore 内嵌真实 GameStore，仅 Get 可注入失败（visibleGame 路径）。
