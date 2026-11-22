@@ -45,6 +45,18 @@ func TestTicketExpiry(t *testing.T) {
 	}
 }
 
+func TestNewStoreDefaultTTL(t *testing.T) {
+	// NewStore(0) → ttl<=0 走默认 120s：签发的票据应可用（未过期）。
+	s := NewStore(0)
+	tk, err := s.Issue(5, "cg", "dev", &courier.Session{})
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if got, err := s.Redeem(tk.Token); err != nil || got.SpawnUserID != 5 {
+		t.Fatalf("redeem = %+v/%v, want user 5", got, err)
+	}
+}
+
 func TestIssueSweepsExpired(t *testing.T) {
 	// P1-1 回归：过期未兑票据在下次签发时被清扫（原实现永久驻留 map）。
 	s := NewStore(10 * time.Millisecond)
