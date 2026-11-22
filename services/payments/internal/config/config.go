@@ -32,6 +32,11 @@ type Config struct {
 	// 冒充支付机构验签（payment.md v1.1 安全边界 2）。
 	Channel struct {
 		SandboxSecret string `json:",env=PAYMENTS_SANDBOX_SECRET"`
+		// GP-202 真实渠道原生验签材料（渠道下发的**公开**材料，无商户私钥）：
+		// 微信 v3 平台证书（CERTIFICATE 载体）、支付宝公钥（PUBLIC KEY 载体）。
+		// 任一为空 = 该渠道未接入，验签恒失败并回 501（绝不回退沙箱 HMAC）。
+		WechatPlatformCert string `json:",env=PAYMENTS_WECHAT_PLATFORM_CERT,optional"`
+		AlipayPublicKey    string `json:",env=PAYMENTS_ALIPAY_PUBLIC_KEY,optional"`
 	}
 
 	// Delivery 发货接缝（GP-203）：teller Deliver 钩子（进程内）的生产落地

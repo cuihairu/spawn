@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/tappi/tappi/services/payments/internal/channel"
 	"github.com/tappi/tappi/services/payments/internal/logic"
 	"github.com/tappi/tappi/services/payments/internal/svc"
 	"github.com/tappi/tappi/services/payments/internal/types"
@@ -277,14 +278,13 @@ func CallbackHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
-		signature := r.Header.Get("X-Payment-Signature")
-		if signature == "" {
+		signature, meta := channelNativeSignature(r)
+		if signature == "" && req.Channel != channel.AlipayName {
+			// 支付宝异步通知的签名是表单字段 sign（适配器内解析 rawBody），
+			// 其余渠道必须携带签名头（sandbox X-Payment-Signature / 微信
+			// Wechatpay-Signature）。
 			httpx.ErrorCtx(r.Context(), w, logic.NewAPIError(http.StatusForbidden, "回调签名缺失"))
 			return
-		}
-		meta := map[string]string{
-			"timestamp": r.Header.Get("X-Payment-Timestamp"),
-			"nonce":     r.Header.Get("X-Payment-Nonce"),
 		}
 		if err := logic.NewCallbackLogic(r.Context(), svcCtx).Handle(req.Channel, rawBody, signature, meta); err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
@@ -292,6 +292,28 @@ func CallbackHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		}
 		httpx.OkJsonCtx(r.Context(), w, struct{}{})
 	}
+}
+
+// channelNativeSignature 提取渠道原生签名与验签元数据（GP-202）。
+// 微信 v3 走 Wechatpay-Signature/-Timestamp/-Nonce/-Serial 头（适配器需
+// platform-serial 选平台证书）；支付宝签名是表单字段（适配器内解析 body，
+// 此处返回空 signature 由调用方按渠道放行）；其余渠道沿用 X-Payment-* 头。
+func channelNativeSignature(r *http.Request) (string, map[string]string) {
+	meta := map[string]string{
+		"timestamp": r.Header.Get("X-Payment-Timestamp"),
+		"nonce":     r.Header.Get("X-Payment-Nonce"),
+	}
+	if wechatSig := r.Header.Get("Wechatpay-Signature"); wechatSig != "" {
+		meta["platform-serial"] = r.Header.Get("Wechatpay-Serial")
+		if ts := r.Header.Get("Wechatpay-Timestamp"); ts != "" {
+			meta["timestamp"] = ts
+		}
+		if n := r.Header.Get("Wechatpay-Nonce"); n != "" {
+			meta["nonce"] = n
+		}
+		return wechatSig, meta
+	}
+	return r.Header.Get("X-Payment-Signature"), meta
 }
 
 // DispatchHandler 发货分发 webhook（GP-203）：验签先于 body 解析，签名

@@ -18,17 +18,18 @@ import (
 )
 
 type ServiceContext struct {
-	Config          config.Config
-	Auth            *utils.Auth
-	ProductDB       *model.ProductModel
-	DeliveryDB      *model.DeliveryModel
-	ProjectionDB    *model.OrderProjectionModel
-	StatementDB     *model.StatementModel
-	EvalDB          *model.PromotionEvalModel
-	CouponDB        *model.CouponModel
-	Courier         *courier.Client
-	Sandbox         *channel.SandboxHMAC
-	Real            *channel.RealChannel
+	Config       config.Config
+	Auth         *utils.Auth
+	ProductDB    *model.ProductModel
+	DeliveryDB   *model.DeliveryModel
+	ProjectionDB *model.OrderProjectionModel
+	StatementDB  *model.StatementModel
+	EvalDB       *model.PromotionEvalModel
+	CouponDB     *model.CouponModel
+	Courier      *courier.Client
+	Sandbox      *channel.SandboxHMAC
+	// Real 真实渠道适配注册表（按渠道名选择原生验签适配器，GP-202）。
+	Real            *channel.RealAdapter
 	Dispatcher      *delivery.Dispatcher
 	PromotionBridge *promotion.Bridge
 	AnalyticsSvc    analytics.Client
@@ -127,17 +128,22 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		func(orderID string) { _ = projectionDB.MarkDelivered(orderID, time.Now().UTC().Format(time.RFC3339)) })
 
 	return &ServiceContext{
-		Config:          c,
-		Auth:            utils.NewAuth(c.Auth.JWTSecret),
-		ProductDB:       productDB,
-		DeliveryDB:      deliveryDB,
-		ProjectionDB:    projectionDB,
-		StatementDB:     statementDB,
-		EvalDB:          evalDB,
-		CouponDB:        couponDB,
-		Courier:         courierClient,
-		Sandbox:         &channel.SandboxHMAC{Secret: []byte(c.Channel.SandboxSecret)},
-		Real:            channel.NewRealChannel("real-channel"),
+		Config:       c,
+		Auth:         utils.NewAuth(c.Auth.JWTSecret),
+		ProductDB:    productDB,
+		DeliveryDB:   deliveryDB,
+		ProjectionDB: projectionDB,
+		StatementDB:  statementDB,
+		EvalDB:       evalDB,
+		CouponDB:     couponDB,
+		Courier:      courierClient,
+		Sandbox:      &channel.SandboxHMAC{Secret: []byte(c.Channel.SandboxSecret)},
+		// 真实渠道适配注册表（GP-202）：已注入验签材料的渠道可原生验签，
+		// 未配置/未知渠道回退 501 占位（RealChannel）。
+		Real: channel.NewRealAdapter(channel.RealConfig{
+			WechatPlatformCert: c.Channel.WechatPlatformCert,
+			AlipayPublicKey:    c.Channel.AlipayPublicKey,
+		}),
 		Dispatcher:      dispatcher,
 		PromotionBridge: bridge,
 		AnalyticsSvc:    analyticsClient,

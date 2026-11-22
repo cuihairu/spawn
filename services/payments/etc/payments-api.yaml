@@ -25,8 +25,12 @@ GameCatalog:
 # 渠道适配：Sandbox 为开发/沙箱专用（HMAC-SHA256 回调，非真实渠道验签）；
 # 真实渠道（WeChat Pay v3 / Alipay 等）需实现 ChannelAdapter 且签名密钥经
 # 环境变量注入，不得用沙箱 HMAC 冒充支付机构验签（payment.md 安全边界 2）。
+# GP-202：下列真实渠道验签材料为渠道公开下发件（微信 v3 平台证书 / 支付宝
+# 公钥，无商户私钥），注入为空 = 该渠道未接入（验签恒失败回 501）。
 Channel:
   SandboxSecret: "tappi-payments-sandbox-channel-secret-2026"
+  # WechatPlatformCert: ""   # env PAYMENTS_WECHAT_PLATFORM_CERT
+  # AlipayPublicKey: ""      # env PAYMENTS_ALIPAY_PUBLIC_KEY
 
 # GP-203 发货接缝：teller Deliver 钩子（进程内）的签名 webhook 落地面。
 # Secret 未配置 = 分发 fail-closed（全部 403，无演示默认值）；生产经

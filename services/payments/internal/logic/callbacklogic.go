@@ -44,7 +44,9 @@ func (l *CallbackLogic) Handle(channelName string, rawBody []byte, signature str
 	case "sandbox":
 		adapter = l.svcCtx.Sandbox
 	default:
-		adapter = l.svcCtx.Real
+		// 真实渠道按渠道名选已配置的适配器（GP-202）；未配置/未知渠道
+		// 回退 501 占位，绝不把沙箱 HMAC 当真实渠道验签。
+		adapter = l.svcCtx.Real.For(channelName)
 	}
 	if err := adapter.VerifyNativeSignature(rawBody, signature, meta); err != nil {
 		l.Errorf("channel %s verify signature failed: %v", channelName, err)

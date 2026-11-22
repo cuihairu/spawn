@@ -35,7 +35,7 @@ func cbSandboxSvc(t *testing.T) *svc.ServiceContext {
 	t.Helper()
 	sc := testSvc("http://127.0.0.1:1")
 	sc.Sandbox = &channel.SandboxHMAC{Secret: []byte(cbSecret)}
-	sc.Real = channel.NewRealChannel("wechat")
+	sc.Real = channel.NewRealAdapter(channel.RealConfig{}) // 未注入材料：渠道一律 501 占位
 	sc.Courier = courier.NewClient("http://127.0.0.1:1", 300*time.Millisecond)
 	return sc
 }
