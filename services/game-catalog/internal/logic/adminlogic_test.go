@@ -28,6 +28,7 @@ type failingOpsStore struct {
 	getVersionErr         error
 	publishVersionErr     error
 	revokeVersionErr      error
+	setVersionStatusErr   error
 	listAuditErr          error
 	getRoleWithPartnerErr error
 	listFavUsersErr       error
@@ -120,6 +121,13 @@ func (f *failingOpsStore) RevokeVersion(id string) (*model.GameVersion, error) {
 		return nil, f.revokeVersionErr
 	}
 	return f.AdminStore.RevokeVersion(id)
+}
+
+func (f *failingOpsStore) SetVersionStatus(id, status, reason string) (*model.GameVersion, error) {
+	if f.setVersionStatusErr != nil {
+		return nil, f.setVersionStatusErr
+	}
+	return f.AdminStore.SetVersionStatus(id, status, reason)
 }
 
 func (f *failingOpsStore) ListAuditLogs(resourceType string, limit, offset int) ([]*model.AuditLog, int, error) {
