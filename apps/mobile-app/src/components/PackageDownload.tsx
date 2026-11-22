@@ -1,4 +1,5 @@
-// GP-105 平台包体下载区：受控下载（登录）→ 进度/暂停/续传/重试 → 大小校验 → 安装。
+// GP-105 平台包体下载区：受控下载（登录）→ 进度/暂停/续传/重试 →
+// 大小校验 + SHA-256 完整性校验 → 安装。
 // 服务端只放行「已发布 + 平台托管」版本；下载通道经网关流式透传（GET
 // /games/:id/versions/:versionId/download），Bearer 头由本组件注入。
 // 跨会话续传：挂载时读取暂停快照（resume-*.json）重建暂停态任务。
@@ -40,18 +41,22 @@ export function PackageDownload({ gameId, pkg }: { gameId: string; pkg: LatestGa
     [gameId, pkg],
   );
 
+  // 服务端登记的 SHA-256（形如 sha256:<hex>）去前缀后交下载器做流式比对
+  const expectedSha256 = useMemo(() => pkg.hash?.replace(/^sha256:/, ''), [pkg.hash]);
+
   const ensureHandle = useCallback((): PackageDownloadHandle => {
     if (!handleRef.current) {
       handleRef.current = createPackageDownload({
         url: downloadUrl,
         fileName,
         expectedSize: pkg.size_bytes,
+        expectedSha256,
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         onUpdate: setSnap,
       });
     }
     return handleRef.current;
-  }, [downloadUrl, fileName, pkg.size_bytes, token]);
+  }, [downloadUrl, fileName, pkg.size_bytes, expectedSha256, token]);
 
   // 跨会话续传：挂载时恢复上次暂停的下载（快照 URL 与当前版本一致才恢复；
   // 已有句柄不覆盖）。重建任务为 paused 相位，续传走既有 resume()。
@@ -67,11 +72,12 @@ export function PackageDownload({ gameId, pkg }: { gameId: string; pkg: LatestGa
       url: downloadUrl,
       fileName,
       expectedSize: pkg.size_bytes,
+      expectedSha256,
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       onUpdate: setSnap,
     });
     setSnap(handleRef.current.snapshot);
-  }, [fileName, downloadUrl, pkg.size_bytes, token]);
+  }, [fileName, downloadUrl, pkg.size_bytes, expectedSha256, token]);
 
   const phase = snap?.phase ?? 'idle';
 

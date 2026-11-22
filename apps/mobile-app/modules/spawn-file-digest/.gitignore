@@ -1,0 +1,10 @@
+node_modules/
+.expo/
+.DS_Store
+*.jar
+!gradle-wrapper.jar
+
+android/.idea/
+android/build/
+ios/build/
+ios/Pods/

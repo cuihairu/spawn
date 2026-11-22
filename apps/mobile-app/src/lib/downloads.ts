@@ -7,10 +7,10 @@
 //   原生断点续传）；跨会话续传：暂停时 task.savable() 落盘
 //   （resume-<文件名>.json），重启后 DownloadTask.fromSavable 重建暂停态
 //   任务再 resumeAsync（见 loadResumable/createResumablePackageDownload）。
-// - 完整性校验：下载完成后比对 Content-Length 与 size_bytes（截断检测）。
-//   SHA-256 校验（X-Package-Sha256）需原生文件哈希模块：expo-crypto 仅
-//   支持整块 digest（无流式/文件接口，2 GiB 包体读入内存不可行），作为
-//   已知缺口记录（真机验收时以 X-Package-Sha256 比对）。
+// - 完整性校验：下载完成后比对 Content-Length 与 size_bytes（截断检测），
+//   再比对服务端登记的 SHA-256（原生流式哈希，见
+//   modules/spawn-file-digest）；expo-crypto 仅支持整块 digest（无流式/
+//   文件接口，2 GiB 包体读入内存不可行），故自研本地 Expo Module。
 // - 安装：Android 经 IntentLauncher ACTION_VIEW 打开 APK（需要用户允许
 //   未知来源安装，REQ_INSTALL_PACKAGES 权限在 app.json 声明）。
 
@@ -18,6 +18,8 @@ import { Directory, File, Paths, DownloadTask, type DownloadPauseState, type Dow
 import { getContentUriAsync } from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { Platform } from 'react-native';
+
+import { digestFileSha256Async } from '../../modules/spawn-file-digest';
 
 export type DownloadPhase = 'idle' | 'downloading' | 'paused' | 'verifying' | 'done' | 'error';
 
@@ -37,6 +39,8 @@ export interface PackageDownloadOptions {
   fileName: string;
   /** 服务端 size_bytes；下载完成后的截断校验基准 */
   expectedSize?: number;
+  /** 服务端登记的 SHA-256（小写 hex，无 sha256: 前缀）；下载完成后流式比对 */
+  expectedSha256?: string;
   headers?: Record<string, string>;
   onUpdate: (snapshot: DownloadSnapshot) => void;
 }
@@ -268,6 +272,29 @@ class PackageDownload implements PackageDownloadHandle {
       }
       this.emit();
       return;
+    }
+    // 完整性校验（GP-105）：服务端登记了 SHA-256 时，用原生流式哈希比对。
+    // 原生模块不可用（开发期未 prebuild 生成原生工程）时不阻断，退化为仅
+    // 大小校验——生产构建必含该模块，哈希不一致视为损坏。
+    const expectedHash = this.opts.expectedSha256?.trim().toLowerCase();
+    if (expectedHash && /^[0-9a-f]{64}$/.test(expectedHash)) {
+      try {
+        const actualHash = await digestFileSha256Async(result.uri);
+        if (actualHash.toLowerCase() !== expectedHash) {
+          this.error = '包体哈希校验失败（SHA-256 与服务端登记不一致）';
+          this.phase = 'error';
+          try {
+            result.delete();
+          } catch {
+            // 清理失败不阻断错误上报
+          }
+          this.emit();
+          return;
+        }
+      } catch (err) {
+        // 模块缺失/文件不可读：仅记录，不阻断（大小校验已过）
+        console.warn('SHA-256 校验跳过：', err);
+      }
     }
     this.bytesWritten = actual ?? 0;
     this.totalBytes = actual ?? 0;

@@ -1,0 +1,23 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.spawnfiledigest'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.spawnfiledigest"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  // JVM 单测（sha256Hex 为纯 JVM 实现，可脱离真机验证）
+  testImplementation 'junit:junit:4.13.2'
+}

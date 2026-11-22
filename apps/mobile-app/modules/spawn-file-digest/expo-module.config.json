@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["SpawnFileDigestModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.spawnfiledigest.SpawnFileDigestModule"]
+  }
+}
