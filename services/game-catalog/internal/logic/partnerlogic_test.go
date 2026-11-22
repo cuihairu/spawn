@@ -29,6 +29,8 @@ type failingPartnerStore struct {
 	writeAuditErr       error
 	updateVersionPkgErr error
 	setVersionStatusErr error
+	markNotifiedErr     error
+	listGamesOverride   []string
 }
 
 var _ model.AdminStore = (*failingPartnerStore)(nil)
@@ -48,6 +50,9 @@ func (f *failingPartnerStore) GetOwnership(gameId string) (*model.GameOwnership,
 }
 
 func (f *failingPartnerStore) ListGamesByPartner(partnerId int64) ([]string, error) {
+	if f.listGamesOverride != nil {
+		return f.listGamesOverride, nil
+	}
 	if f.listGamesErr != nil {
 		return nil, f.listGamesErr
 	}
@@ -143,6 +148,13 @@ func (f *failingPartnerStore) UpdateVersionPackage(id, hash string, sizeBytes in
 		return nil, f.updateVersionPkgErr
 	}
 	return f.AdminStore.UpdateVersionPackage(id, hash, sizeBytes, storageUrl)
+}
+
+func (f *failingPartnerStore) MarkReservationsNotified(serverId int64) error {
+	if f.markNotifiedErr != nil {
+		return f.markNotifiedErr
+	}
+	return f.AdminStore.MarkReservationsNotified(serverId)
 }
 
 // newPartnerCtx 合作方自助测试上下文：账号 8 绑定合作方 5、g-rpg-1 归属 5 且
