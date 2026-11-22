@@ -230,6 +230,9 @@ func TestModel_CreateTablesBothFail(t *testing.T) {
 		{"promotion", func(db *sql.DB) error { return NewPromotionEvalModel(db).CreateTables() }},
 		{"notify", func(db *sql.DB) error { return NewNotifyOutboxModel(db).CreateTables() }},
 		{"analytics", func(db *sql.DB) error { return NewAnalyticsOutboxModel(db).CreateTables() }},
+		{"coupon", func(db *sql.DB) error { return NewCouponModel(db).CreateTables() }},
+		{"statement", func(db *sql.DB) error { return NewStatementModel(db).CreateTables() }},
+		{"projection", func(db *sql.DB) error { return NewOrderProjectionModel(db).CreateTables() }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
