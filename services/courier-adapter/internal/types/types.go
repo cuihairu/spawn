@@ -12,11 +12,13 @@ type Capabilities struct {
 }
 
 // UpsertMappingRequest 管理面映射写入（operator/platform_admin）。
+// Env/PartnerId 显式 json 名（go-zero 无名字段按 Go 字段名 Env/PartnerId
+// 绑定，管理面 API 送 env/partnerId 会静默丢字段 → 恒 prod/0，实测）。
 type UpsertMappingRequest struct {
 	Id            string       `path:"id"`
 	CourierGameId string       `json:"courierGameId"`
-	Env           string       `json:",default=prod"`
-	PartnerId     int64        `json:",default=0"`
+	Env           string       `json:"env,default=prod"`
+	PartnerId     int64        `json:"partnerId,default=0"`
 	Capabilities  Capabilities `json:"capabilities"`
 }
 

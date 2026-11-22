@@ -450,9 +450,10 @@ func TestRoutes_InternalMapping(t *testing.T) {
 	base := env.base
 	operator := signToken(t, 42, "ops")
 
-	// 预置 g1 映射（管理面写入，与 §1 同款）
+	// 预置 g1 映射（管理面写入，与 §1 同款；env 用非默认 staging + partnerId，
+	// 锁定 json 名绑定修复：env/partnerId 显式命名，否则恒 prod/0）
 	if code, body := doJSON(t, http.MethodPut, base+"/admin/games/g1/mapping", operator,
-		`{"courierGameId":"cg1","env":"prod","partnerId":1,"capabilities":{"login":true}}`); code != http.StatusOK {
+		`{"courierGameId":"cg1","env":"staging","partnerId":7,"capabilities":{"login":true}}`); code != http.StatusOK {
 		t.Fatalf("upsert mapping status = %d body=%s", code, body)
 	}
 
@@ -477,11 +478,13 @@ func TestRoutes_InternalMapping(t *testing.T) {
 		SpawnGameId   string `json:"spawnGameId"`
 		CourierGameId string `json:"courierGameId"`
 		Env           string `json:"env"`
+		PartnerId     int64  `json:"partnerId"`
 	}
 	if err := json.Unmarshal([]byte(body), &mapping); err != nil {
 		t.Fatalf("decode mapping: %v body=%s", err, body)
 	}
-	if mapping.SpawnGameId != "g1" || mapping.CourierGameId != "cg1" || mapping.Env != "prod" {
+	if mapping.SpawnGameId != "g1" || mapping.CourierGameId != "cg1" ||
+		mapping.Env != "staging" || mapping.PartnerId != 7 {
 		t.Fatalf("internal mapping mismatch: %+v", mapping)
 	}
 
