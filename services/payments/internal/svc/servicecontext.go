@@ -6,9 +6,9 @@ import (
 
 	"github.com/tappi/tappi/services/payments/courier"
 	"github.com/tappi/tappi/services/payments/internal/analytics"
-	"github.com/tappi/tappi/services/payments/internal/courierscope"
 	"github.com/tappi/tappi/services/payments/internal/channel"
 	"github.com/tappi/tappi/services/payments/internal/config"
+	"github.com/tappi/tappi/services/payments/internal/courierscope"
 	"github.com/tappi/tappi/services/payments/internal/delivery"
 	"github.com/tappi/tappi/services/payments/internal/notify"
 	"github.com/tappi/tappi/services/payments/internal/promotion"
@@ -31,7 +31,7 @@ type ServiceContext struct {
 	// ScopeRes GP-202 集成缺口：spawn_game_id → courier scope 解析客户端
 	//（courier-adapter /internal/games/:id/mapping，X-Internal-Token）。
 	ScopeRes *courierscope.Client
-	Sandbox      *channel.SandboxHMAC
+	Sandbox  *channel.SandboxHMAC
 	// Real 真实渠道适配注册表（按渠道名选择原生验签适配器，GP-202）。
 	Real            *channel.RealAdapter
 	Dispatcher      *delivery.Dispatcher
