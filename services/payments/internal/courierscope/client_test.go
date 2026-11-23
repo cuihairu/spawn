@@ -125,3 +125,12 @@ func TestResolve_TransportError(t *testing.T) {
 		t.Fatal("err = nil, want transport error")
 	}
 }
+
+// NewRequest 失败臂：baseURL 含 URL 非法控制字符（NewClient 不做 URL 合法性
+// 校验，非法字面由 http.NewRequest 在构造请求时拒绝）。白盒直构客户端注入。
+func TestResolve_BadBaseURLNewRequest(t *testing.T) {
+	c := &Client{baseURL: "http://a\x01b/", token: "tok", http: &http.Client{}}
+	if _, err := c.Resolve("g"); err == nil {
+		t.Fatal("err = nil, want NewRequest 失败")
+	}
+}

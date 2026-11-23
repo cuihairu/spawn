@@ -95,6 +95,19 @@ func TestDownloadEnabled_TransportError(t *testing.T) {
 	}
 }
 
+// NewRequest 失败臂：baseURL 含 URL 非法控制字符（NewClient 只判空，非法
+// 字面由 http.NewRequest 在构造请求时拒绝）。白盒直构客户端以注入非法 URL。
+func TestDownloadEnabled_BadBaseURLNewRequest(t *testing.T) {
+	c := &Client{baseURL: "http://a\x01b/", token: "tok", http: &http.Client{}}
+	got, err := c.DownloadEnabled("g")
+	if err == nil {
+		t.Fatalf("err = nil, want NewRequest 失败")
+	}
+	if got {
+		t.Fatal("DownloadEnabled = true on 构造失败, want false fail-closed")
+	}
+}
+
 // 防回归：ErrMappingNotFound 仍导出（下游可判未映射）。
 func TestErrMappingNotFoundExported(t *testing.T) {
 	if !errors.Is(ErrMappingNotFound, ErrMappingNotFound) {
