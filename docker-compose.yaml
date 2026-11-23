@@ -65,6 +65,11 @@ services:
       DATA_PANEL_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
     volumes:
       - game-packages:/app/data/packages
+      # GP-005 沙箱目录主库：/app/data/games.db 挂命名卷（partner/role/game/
+      # version/server 表），重建不丢 seed 资产。2026-11-23 走查：无卷时
+      # --force-recreate 清库，partner/game 全丢、支付链路 404「游戏不存在」。
+      # 嵌套卷：game-packages 挂 /app/data/packages，本卷挂 /app/data 根。
+      - catalog-data:/app/data
     ports:
       - "8890:8890"
       - "9092:9092" # /metrics（deploy/ 观测栈抓取）
@@ -231,6 +236,12 @@ services:
     depends_on:
       - user-service
       - game-catalog
+    volumes:
+      # GP-202/203 沙箱支付账本：/app/data/payments.db 挂命名卷，重建不丢
+      # seed 写入的商品/订单（同 game-catalog game-packages、user-service
+      # uploads 惯例）。2026-11-23 走查：无卷时 --force-recreate 丢库，下单
+      # 404「商品不存在」。
+      - payments-data:/app/data
     ports:
       - "8898:8898"
       - "9099:9099" # /metrics（deploy/ 观测栈抓取）
@@ -284,3 +295,5 @@ services:
 volumes:
   uploads:
   game-packages:
+  catalog-data:
+  payments-data:

@@ -196,16 +196,16 @@ SERVER_ID="$(call POST "$CATALOG/partner/games/$GAME_ID/servers" "$PARTNER_TOKEN
   | assert '区服 id' '.id')"
 
 call PUT "$ADAPTER/admin/games/$GAME_ID/mapping" "$ADMIN_TOKEN" \
-  "{\"courierGameId\":\"$COURIER_GAME_ID\",\"Env\":\"sandbox\",\"PartnerId\":$PARTNER_ID,\"capabilities\":{\"login\":true,\"payment\":true,\"download\":true,\"support\":true}}" \
+  "{\"courierGameId\":\"$COURIER_GAME_ID\",\"env\":\"sandbox\",\"partnerId\":$PARTNER_ID,\"capabilities\":{\"login\":true,\"payment\":true,\"download\":true,\"support\":true}}" \
   >/dev/null
 # 写操作返回空体，须读回核验。读回 env 必须真是 sandbox：UpsertMappingRequest 的
-# Env/PartnerId 无显式 JSON 名（json:",default=prod"），小写键会被忽略并落回
-# 默认值——静默写成 prod。
+# env/partnerId 有显式 JSON 名（json:"env,default=prod"），大写键（历史写法
+# "Env"）会被忽略并落回默认值——静默写成 prod/0，故须用小写键并读回核对。
 MAP_BODY="$(call GET "$ADAPTER/admin/games/$GAME_ID/mapping" "$ADMIN_TOKEN")"
 MAPPING="$(jq -r '.spawnGameId' <<<"$MAP_BODY")"
 [ "$MAPPING" = "$GAME_ID" ] || { echo "[FAIL] 映射游戏 id 不符：$MAPPING" >&2; exit 1; }
 MAP_ENV="$(jq -r '.env' <<<"$MAP_BODY")"
-[ "$MAP_ENV" = "sandbox" ] || { echo "[FAIL] 映射 env 读回为 $MAP_ENV（期望 sandbox；Env 须用大写键名）" >&2; exit 1; }
+[ "$MAP_ENV" = "sandbox" ] || { echo "[FAIL] 映射 env 读回为 $MAP_ENV（期望 sandbox；env 键须小写）" >&2; exit 1; }
 
 # 商品路径 :id 即主键（409「商品 id 已存在」= 主键撞行，product_id 无唯一索引）
 call POST "$PAYMENTS/admin/products/$PRODUCT_ID" "$ADMIN_TOKEN" \

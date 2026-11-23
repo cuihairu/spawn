@@ -98,11 +98,51 @@ support→croupier、cdk→voucher，可经 `COURIER_GATEWAY_CONFIG` 换主实�
 代登录/下单等触达 Courier 的端点以 502 呈现上游不可达；映射/商品/礼包/活动等
 本地管理面与玩家冒烟不受影响。
 
+### 支付链路装配（courier-gateway-integrator）
+
+冻结 stock 网关二进制（`gateway/cmd/gateway`）跑不通支付链路，缺两处只能
+**装配期**给的接线：teller 价格表只经 Go 方法 `AddSku` 登记（无 HTTP 管理端点，
+启动为空表 → 下单恒 `PAYMENT_SKU_NOT_FOUND`）；发货钩子 `teller.Options.Deliver`
+未接线 = 记账即发货成功（不通知 Spawn）。GP-203 注记的合法路径是「接入方构建
+嵌入 teller 的二进制」，即本目录的独立 Go 模块
+`deploy/sandbox/courier-gateway-integrator/`：只组合 courier 的导出包
+（providers/account + providers/teller + auth/middleware/routing），不改 courier 仓。
+
+```bash
+# SKUs 的 id/金额/币种须与 payments payment_products 对齐（否则金额漂移 409）
+COURIER_PAYMENTS_CHANNEL_SECRET=sandbox-channel-secret-2026 \
+COURIER_PAYMENTS_DELIVER_WEBHOOK=http://payments:8898/internal/deliveries \
+COURIER_PAYMENTS_DELIVER_SECRET=<同 payments 的 PAYMENTS_DELIVERY_SECRET> \
+COURIER_TELLER_SKUS='[{"id":"<payment_products.id>","productId":"<同左>",
+  "form":"DIRECT_PURCHASE","amountCents":1000,"currency":"CNY"}]' \
+./deploy/sandbox/build-courier-gateway.sh
+```
+
+脚本 go build → docker build（alpine 基）→ 替换容器名 `courier-gateway` 接入
+`spawn_default`。模块钉 courier/gateway 的 commit 伪版本（冻结契约），
+不入 spawn go.work（toolchain 隔离），CI 不构建此沙箱工具。
+
+**已验证链路（2026-11-23 活栈走查）**：guest 登录取 Courier opaque token →
+玩家下单（平台 JWT + `X-Courier-Authorization` 双带）→ CREATED →
+渠道回调 `/v1/payments/callback`（`X-Payment-Signature`）→ PAID → Deliver
+钩子 POST payments `/internal/deliveries` → dispatcher 按发货账本 `server_id`
+调游戏服发货接口（200）→ **DELIVERED**。走查时另需：
+
+- 下单体带 `server_id` 指向该游戏的 **open** 区服（发货账本目标；关服未开
+  → `区服不存在或未开放`），并在 payments `PUT /admin/games/:id/delivery`
+  配置该游戏发货接口，否则停 PAID 等对账。
+- 网关 scope 中间件先于 auth 生效：`/v1/payments/*` **含 callback** 一律要
+  `X-Courier-Game-Id` + `X-Courier-Env`，缺则 `COMMON_INVALID_ARGUMENT`。
+- 直连网关取 token/查单时 Courier 令牌走标准 `Authorization: Bearer` 头；
+  `X-Courier-Authorization` 是客户端→Spawn payments 的头（Spawn 才转成
+  `Authorization` 透传给 Courier）。
+
 ### 回调面（Courier → Spawn）
 
 - teller Deliver 发货 webhook：`POST /internal/deliveries`（payments，
-  `X-Game-Delivery-Signature` HMAC，密钥 `PAYMENTS_DELIVERY_SECRET`，
+  `X-Delivery-Signature` HMAC，密钥 `PAYMENTS_DELIVERY_SECRET`，
   未配置 = 分发 fail-closed 全 403）。沙箱联调发货必须显式给值。
+  出站向游戏服发货则用 `X-Game-Delivery-Signature`（配置接口自带的密钥）。
 - 沙箱渠道支付回调：`POST /callback/sandbox/...`（payments，HMAC
   `PAYMENTS_SANDBOX_SECRET`，仅开发/沙箱）。
 - 订单事实 S2S：payments `GET /internal/orders/:id`，`X-Internal-Token`
