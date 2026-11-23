@@ -74,6 +74,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_mapping_scope ON courier_game_mapping (cour
 ```
 
 - `spawn_game_id ↔ (courier_game_id, env)` 一一映射；`partner_id` 记录合作方归属；`capabilities` JSON：`login`（需代登录进游戏）、`payment`（接支付）、`download`（平台包体下载）——能力按需开通，与标签解耦。
+- 能力消费门（fail-closed：缺省 false，未开通即拒，不伪造成功）：`login`/`support` 在 courier-adapter（sessionlogic/supportlogic 403）、`payment` 在 payments（CreateOrder 403，3cb5701）、`download` 在 game-catalog 受控包体下载（DownloadVersionLogic.Download 403，e914a6e）。`download` 的消费方是 game-catalog（courier-adapter 自身无 download 端点），勿据「adapter 无端点」误判其无消费方。
 - 区服/角色映射：Courier archivist 已有按 scope 的账号↔角色映射（调研 §4），Spawn 不重建；区服目录与运营事件字段补差归 GP-201（M2）。本轮只定义承载：适配服务把 `courier_game_id + env` 沿 header 传下。
 
 ### 2.2 标签只作展示
