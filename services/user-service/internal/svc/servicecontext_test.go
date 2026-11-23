@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/tappi/tappi/services/user-service/internal/config"
+	"github.com/tappi/tappi/services/user-service/utils"
 )
 
 func sqliteConfig(t *testing.T) config.Config {
@@ -113,4 +114,85 @@ func TestNewServiceContext_CreateUsersTableFailsPanic(t *testing.T) {
 		}
 	}()
 	NewServiceContext(c)
+}
+
+// wantPanic 断言 NewServiceContext panic 且信息含 want。
+func wantPanic(t *testing.T, name, want string, fn func()) {
+	t.Helper()
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatalf("%s: want panic", name)
+		}
+		msg, ok := r.(string)
+		if !ok || !strings.Contains(msg, want) {
+			t.Fatalf("%s: panic = %v, want containing %q", name, r, want)
+		}
+	}()
+	fn()
+}
+
+// TestNewServiceContext_EmptyJWTPanic 空密钥启动期拒绝（不落库不装配）。
+func TestNewServiceContext_EmptyJWTPanic(t *testing.T) {
+	c := sqliteConfig(t)
+	c.Auth.JWTSecret = ""
+	wantPanic(t, "empty jwt", "JWT 密钥未配置", func() { NewServiceContext(c) })
+}
+
+// TestNewServiceContext_DevSecretWarns 内置演示密钥：大声告警后照常装配
+// （本地开发默认形态），并顺带覆盖 InternalToken 非空分支与启用态
+// analytics 客户端 → relay 接线。
+func TestNewServiceContext_DevSecretWarns(t *testing.T) {
+	c := sqliteConfig(t)
+	c.Auth.JWTSecret = utils.WellKnownDevJWTSecret
+	c.Services.GameCatalog.InternalToken = "svc-internal-tok"
+	c.Analytics.BaseURL = "http://127.0.0.1:1" // 启用态 → relay 非空（noop 则 nil）
+
+	ctx := NewServiceContext(c)
+	if ctx.Auth == nil || ctx.GameCatalogClient == nil {
+		t.Fatalf("dev-secret context incomplete: %+v", ctx)
+	}
+	if ctx.AnalyticsSvc == nil || ctx.AnalyticsRelay == nil || ctx.PromoAttrRelay == nil {
+		t.Fatalf("relays not wired: %+v", ctx)
+	}
+}
+
+// seedTables 预建只读库：seedDDL 落盘后以 ro 模式复用——已有表走
+// CREATE IF NOT EXISTS no-op（不写库），缺表才真正建（只读必败），
+// 驱动 outbox 建表 panic 臂。
+func seedTables(t *testing.T, seedDDL ...string) config.Config {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "users.db")
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatalf("open %s: %v", path, err)
+	}
+	for _, ddl := range seedDDL {
+		if _, err := db.Exec(ddl); err != nil {
+			t.Fatalf("exec seed %q: %v", ddl, err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close %s: %v", path, err)
+	}
+
+	c := sqliteConfig(t)
+	c.MySQL.DataSource = "file:" + path + "?mode=ro"
+	return c
+}
+
+// TestNewServiceContext_AnalyticsOutboxFailsPanic 只读库有 users 表（建表
+// no-op 过）而无 analytics_outbox → GP-402 表建失败 → panic（表始终建，
+// 失败不带病启动）。
+func TestNewServiceContext_AnalyticsOutboxFailsPanic(t *testing.T) {
+	c := seedTables(t, "CREATE TABLE users (id INTEGER PRIMARY KEY)")
+	wantPanic(t, "analytics outbox", "create analytics outbox tables", func() { NewServiceContext(c) })
+}
+
+// TestNewServiceContext_PromoOutboxFailsPanic 只读库 users/analytics_outbox
+// 皆备而缺 promo_attribution_outbox → GP-403 表建失败 → panic。
+func TestNewServiceContext_PromoOutboxFailsPanic(t *testing.T) {
+	c := seedTables(t, "CREATE TABLE users (id INTEGER PRIMARY KEY)",
+		"CREATE TABLE analytics_outbox (event_id TEXT PRIMARY KEY)")
+	wantPanic(t, "promo outbox", "create promo attr outbox tables", func() { NewServiceContext(c) })
 }
