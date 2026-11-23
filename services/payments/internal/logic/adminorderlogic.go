@@ -6,10 +6,12 @@ package logic
 // 维护第二套可独立推进的状态机。Courier 无全局订单 HTTP 管理 API（调研
 // §4 边界 6），运营检索/审计经本投影；不旁路契约。
 //
-// 退款/冲正：管理适配接缝——登记 PENDING 意图 + 状态映射（PENDING →
-// 执行器 → EXECUTED/REJECTED）。**不假设 Courier 已有退款端点**：执行器
-// 为 Courier 提案（provider 扩展或独立管理 Provider），接入前保持 PENDING
-// 并附 pending-courier-refund-endpoint 说明，不伪造执行成功。
+// 退款/冲正：管理适配接缝——登记 PENDING 意图 + 退款执行器同步首跑 + 状态
+// 映射（PENDING → 执行器 → EXECUTED/REJECTED）。执行器经 Courier 管理面退款
+// 端点（payment v1.2 /v1/payments/admin/orders/{id}/refund）登记冲减事实；
+// 瞬态失败留 PENDING 由后台扫描续扫，确定性拒绝（订单不存在/未付款/金额超
+// 实付）置 REJECTED。未接线（AdminToken 未配置）时执行器为 nil，保持
+// PENDING 不伪造成功。
 
 import (
 	"context"
@@ -99,7 +101,7 @@ func (l *AdminOrderLogic) GetOrder(req *types.OrderPathRequest, authHeader strin
 	return &view, nil
 }
 
-// CreateRefund 登记退款/冲正意图（管理适配接缝；不执行——待 Courier 端点）。
+// CreateRefund 登记退款/冲正意图（管理适配接缝）+ 退款执行器同步首跑。
 func (l *AdminOrderLogic) CreateRefund(req *types.CreateRefundRequest, authHeader string) (*types.RefundResponse, error) {
 	userID, ip := actorFrom(l.ctx)
 	role, err := l.adminRole(authHeader)
@@ -134,7 +136,7 @@ func (l *AdminOrderLogic) CreateRefund(req *types.CreateRefundRequest, authHeade
 	refund := &model.RefundRequest{
 		OrderId: req.OrderId, Action: action, AmountCents: amount,
 		Reason: req.Reason, Status: model.RefundStatusPending,
-		Note: "待 Courier 退款端点接入后执行", CreatedBy: userID,
+		Note: "登记后由退款执行器经 Courier 管理面执行", CreatedBy: userID,
 	}
 	if err := l.svcCtx.ProjectionDB.CreateRefund(refund); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "Duplicate") {
@@ -149,11 +151,15 @@ func (l *AdminOrderLogic) CreateRefund(req *types.CreateRefundRequest, authHeade
 	_ = l.svcCtx.ProjectionDB.LogAudit(&model.OrderAuditLog{
 		OrderId: req.OrderId, ActorId: userID, ActorRole: role, Action: "refund_request", Detail: string(detail), Ip: ip,
 	})
-	// GP-402/F24：退款请求事实事件（口径=请求事实，非执行结果；执行器未
-	// 接入，EXECUTED 口径事件待 Courier 退款端点后补）
+	// GP-402/F24：退款请求事实事件（口径=请求事实，非执行结果；EXECUTED
+	// 口径事件待执行器置 EXECUTED 后补）
 	l.emitRefundRequested(row, action, amount)
+	// 退款执行器同步首跑（PENDING → Courier 管理面退款端点 → EXECUTED/
+	// REJECTED）；瞬态失败留 PENDING 由后台扫描续扫。执行器 nil（AdminToken
+	// 未配）时 ExecuteOne 返回 pending，不伪造成功。
+	execution := l.svcCtx.RefundExec.ExecuteOne(req.OrderId, action)
 	got, _ := l.svcCtx.ProjectionDB.GetRefund(req.OrderId, action)
-	return &types.RefundResponse{Refund: toRefundView(got), Execution: "pending-courier-refund-endpoint"}, nil
+	return &types.RefundResponse{Refund: toRefundView(got), Execution: execution}, nil
 }
 
 // emitRefundRequested 投 refund_requested 事实事件。event_id 由

@@ -85,6 +85,14 @@ func run() error {
 		go ctx.NotifyRelay.Run(recoveryCtx)
 	}
 
+	// GP-204 退款执行器：PENDING 退款意图 → Courier 管理面退款端点 →
+	// EXECUTED/REJECTED（瞬态失败留 PENDING 下轮重试），共用同一 ctx（进程
+	// 信号面）；COURIER_PAYMENTS_ADMIN_TOKEN 未配置时 NewExecutor 返回 nil，
+	// 不启动（退款保持 PENDING 不伪造成功）。
+	if ctx.RefundExec != nil {
+		go ctx.RefundExec.Run(recoveryCtx)
+	}
+
 	fmt.Printf("Starting server at %s:%d...\n", c.Host, c.Port)
 	server.Start()
 	return nil

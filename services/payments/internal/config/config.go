@@ -19,6 +19,14 @@ type Config struct {
 	Courier struct {
 		BaseURL string `json:",default=http://localhost:8080,env=COURIER_GATEWAY_URL"`
 		Timeout int64  `json:",default=5000,env=COURIER_TIMEOUT"`
+		// AdminToken 管理面 S2S 凭证（Courier payment v1.2 /v1/payments/admin/*，
+		// Authorization: Bearer <token>，与网关 COURIER_PAYMENTS_ADMIN_TOKEN 同值）。
+		// 空 = 管理面操作 fail-closed（SKU 注册/退款执行/断单重发经此凭证；不配置
+		// 不静默跳过——退款保持 PENDING 由执行器下轮重试，SKU 注册失败报错）。
+		AdminToken string `json:",env=COURIER_PAYMENTS_ADMIN_TOKEN,optional"`
+		// RefundExecIntervalSeconds 退款执行器扫描周期（PENDING 意图 → Courier
+		// 退款端点 → EXECUTED/REJECTED）。
+		RefundExecIntervalSeconds int64 `json:",default=60,env=PAYMENTS_REFUND_EXEC_INTERVAL_SECONDS"`
 	}
 
 	// GameCatalog 角色权威（/me）：商品配置等管理面按平台角色放行

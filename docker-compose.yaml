@@ -233,6 +233,11 @@ services:
       # scope（courier_adapter /internal/games/:id/mapping，X-Internal-Token）。
       # 未配置 = 解析失败 → 502 fail-closed（绝不透传 spawn id 当 Courier scope）。
       COURIER_ADAPTER_URL: http://courier-adapter:8897
+      # GP-204 退款执行器：调 Courier 管理面 /v1/payments/admin/*（退款/冲正
+      # 登记、断单重发）的 S2S 凭证，与 courier-gateway 容器
+      # COURIER_PAYMENTS_ADMIN_TOKEN 同值。未配置 = 执行器不接线（退款保持
+      # PENDING 不伪造成功）；生产必须注入真实凭证。
+      COURIER_PAYMENTS_ADMIN_TOKEN: "${COURIER_PAYMENTS_ADMIN_TOKEN:-tappi-courier-payments-admin-token-2026}"
     depends_on:
       - user-service
       - game-catalog

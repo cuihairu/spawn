@@ -105,9 +105,12 @@ func TestRoutes_OrdersProjectionAndRefund(t *testing.T) {
 		t.Fatalf("player admin orders = %d, want 403", code)
 	}
 
-	// 4. 退款/冲正管理适配：登记 PENDING 意图 + 状态映射，执行待 Courier 端点
+	// 4. 退款/冲正管理适配：登记 PENDING 意图 + 状态映射。本测试未配
+	// COURIER_PAYMENTS_ADMIN_TOKEN → 执行器为 nil（未接线），保持 PENDING 且
+	// execution=pending，**不伪造 executed**；接线的执行路径见
+	// TestRoutes_RefundExecutor。
 	code, body = do(t, http.MethodPost, env.base+"/admin/orders/"+orderID+"/refund", admin, `{"reason":"重复扣款"}`)
-	if code != http.StatusOK || !strings.Contains(body, `"status":"PENDING"`) || !strings.Contains(body, "pending-courier-refund-endpoint") {
+	if code != http.StatusOK || !strings.Contains(body, `"status":"PENDING"`) || !strings.Contains(body, `"execution":"pending"`) {
 		t.Fatalf("create refund = %d body=%s", code, body)
 	}
 	// 同订单同动作重复 → 409
@@ -133,6 +136,84 @@ func TestRoutes_OrdersProjectionAndRefund(t *testing.T) {
 	code, body = do(t, http.MethodGet, env.base+"/admin/audit?order_id="+orderID, admin, "")
 	if code != http.StatusOK || !strings.Contains(body, "refund_request") {
 		t.Fatalf("audit lacks refund_request: %s", body)
+	}
+}
+
+// TestRoutes_RefundExecutor GP-204 退款执行器接线：配了
+// COURIER_PAYMENTS_ADMIN_TOKEN 时 CreateRefund 同步首跑（PENDING → Courier
+// 管理面退款端点 /v1/payments/admin/orders/{id}/refund → EXECUTED/REJECTED）；
+// scope 取 GP-002 映射后的 courier_game_id+env（绝不发 spawn game id），管理
+// 凭证走独立 Bearer 头；确定性拒绝（409 PAYMENT_ORDER_STATE）置 REJECTED 不
+// 重试、不伪造 executed。
+func TestRoutes_RefundExecutor(t *testing.T) {
+	env := newDeliveryServerCfg(t, func(e *testDeliveryEnv) {
+		e.courierAdminToken = "courier-admin-tok"
+	})
+	admin := env.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
+	player := env.sign(utils.JWTClaims{UserId: 7, Username: "bob"})
+
+	code, body := do(t, http.MethodPost, env.base+"/admin/products/sku-re-1", admin,
+		`{"product_id":"re-1","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"game-a","partner_id":2}`)
+	if code != http.StatusOK {
+		t.Fatalf("create product = %d body=%s", code, body)
+	}
+
+	// payOrder 下单 + 渠道回调推 PAID（投影按上报落 PAID，可退款）。
+	payOrder := func() string {
+		id := createOrder(t, env, player, `{"sku_id":"sku-re-1","server_id":1}`)
+		cb := fmt.Sprintf(`{"orderId":%q,"paidAt":"2026-11-23T12:00:00.000Z"}`, id)
+		req, _ := http.NewRequest(http.MethodPost, env.base+"/callback/sandbox", strings.NewReader(cb))
+		req.Header.Set("X-Payment-Signature", deliverySig(testSandboxSecret, cb))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("sandbox callback: %v", err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("sandbox callback = %d", resp.StatusCode)
+		}
+		return id
+	}
+	refund := func(orderID, reason string) (int, string) {
+		return do(t, http.MethodPost, env.base+"/admin/orders/"+orderID+"/refund", admin,
+			fmt.Sprintf(`{"reason":%q}`, reason))
+	}
+
+	// 1. 已接线：PENDING → Courier 管理面接受登记 → EXECUTED
+	ok := payOrder()
+	code, body = refund(ok, "重复扣款")
+	if code != http.StatusOK || !strings.Contains(body, `"execution":"executed"`) || !strings.Contains(body, `"status":"EXECUTED"`) {
+		t.Fatalf("refund executed = %d body=%s", code, body)
+	}
+	if env.refundAdminCalls != 1 {
+		t.Fatalf("courier admin refund calls = %d, want 1", env.refundAdminCalls)
+	}
+	// scope = 映射后的 courier_game_id+env；管理凭证独立 Bearer（非玩家令牌）
+	if env.refundAdminScope["gameId"] != "courier-game-a" || env.refundAdminScope["env"] != "dev" ||
+		env.refundAdminScope["auth"] != "Bearer courier-admin-tok" {
+		t.Fatalf("refund admin scope/auth = %v", env.refundAdminScope)
+	}
+
+	// 2. 确定性拒绝：Courier 409 PAYMENT_ORDER_STATE → REJECTED
+	env.refundAdminStatus, env.refundAdminCode = http.StatusConflict, "PAYMENT_ORDER_STATE"
+	rej := payOrder()
+	code, body = refund(rej, "重复扣款")
+	if code != http.StatusOK || !strings.Contains(body, `"execution":"rejected"`) || !strings.Contains(body, `"status":"REJECTED"`) {
+		t.Fatalf("refund rejected = %d body=%s", code, body)
+	}
+
+	// 3. 列表按状态筛（EXECUTED/REJECTED 均终态，PENDING 无残留）
+	code, body = do(t, http.MethodGet, env.base+"/admin/refunds?status=EXECUTED", admin, "")
+	if code != http.StatusOK || !strings.Contains(body, ok) || strings.Contains(body, rej) {
+		t.Fatalf("list refunds executed = %d body=%s", code, body)
+	}
+	code, body = do(t, http.MethodGet, env.base+"/admin/refunds?status=REJECTED", admin, "")
+	if code != http.StatusOK || !strings.Contains(body, rej) || strings.Contains(body, ok) {
+		t.Fatalf("list refunds rejected = %d body=%s", code, body)
+	}
+	code, body = do(t, http.MethodGet, env.base+"/admin/refunds?status=PENDING", admin, "")
+	if code != http.StatusOK || strings.Contains(body, ok) || strings.Contains(body, rej) {
+		t.Fatalf("list refunds pending = %d body=%s", code, body)
 	}
 }
 

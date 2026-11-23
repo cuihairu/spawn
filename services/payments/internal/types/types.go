@@ -258,8 +258,11 @@ type RefundView struct {
 }
 
 type RefundResponse struct {
-	Refund    RefundView `json:"refund"`
-	Execution string     `json:"execution"` // pending-courier-refund-endpoint：执行待提案接入
+	Refund RefundView `json:"refund"`
+	// Execution 退款执行态（GP-204 执行器）：pending=未接线或瞬态失败留 PENDING
+	// 重试；executed=Courier 管理面接受登记；rejected=Courier 确定性拒绝。绝不
+	// 伪造执行成功——未接线/失败保持 pending，不谎报 executed。
+	Execution string `json:"execution"`
 }
 
 type RefundListResponse struct {

@@ -394,12 +394,23 @@ func (m *OrderProjectionModel) CreateRefund(r *RefundRequest) error {
 	return err
 }
 
-// MarkRefundExecuted 退款执行器置 EXECUTED（Courier 退款端点接入后由执行
-// 器调用；现登记保持 PENDING 不伪造成功）。
+// MarkRefundExecuted 退款执行器置 EXECUTED（Courier 管理面退款端点接受登记后
+// 调用；幂等红线：仅 PENDING 可转移，已终态不覆盖）。PENDING 保持 = 执行未定
+// （瞬态失败重试/未接线），不伪造成功。
 func (m *OrderProjectionModel) MarkRefundExecuted(orderId, action string) error {
 	_, err := m.db.Exec(
-		`UPDATE refund_requests SET status = 'EXECUTED', note = ?, updated_at = ? WHERE order_id = ? AND action = ?`,
+		`UPDATE refund_requests SET status = 'EXECUTED', note = ?, updated_at = ? WHERE order_id = ? AND action = ? AND status = 'PENDING'`,
 		"执行完成", nowUTC(), orderId, action,
+	)
+	return err
+}
+
+// MarkRefundRejected 退款执行器置 REJECTED（Courier 确定性拒绝：订单不存在/
+// 未付款/金额超实付，重试无益）。reason 记录拒绝事实（如 Courier 错误码）。
+func (m *OrderProjectionModel) MarkRefundRejected(orderId, action, reason string) error {
+	_, err := m.db.Exec(
+		`UPDATE refund_requests SET status = 'REJECTED', note = ?, updated_at = ? WHERE order_id = ? AND action = ? AND status = 'PENDING'`,
+		reason, nowUTC(), orderId, action,
 	)
 	return err
 }

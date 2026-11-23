@@ -47,6 +47,15 @@ type testDeliveryEnv struct {
 	orderSeq   int64
 	orderMu    sync.Mutex
 	orders     []map[string]any
+	// GP-204 退款执行器接线：courierAdminToken 非空则注入
+	// COURIER_PAYMENTS_ADMIN_TOKEN（执行器非 nil）；refundAdminStatus/Code
+	// 控制 Courier 管理面退款端点响应（0=默认成功）。
+	courierAdminToken string
+	refundAdminCalls  int
+	refundAdminStatus int
+	refundAdminCode   string
+	refundAdminScope  map[string]string
+	refundRejectOrder string
 }
 
 // notifyStub GP-404 站内通知存根（community /internal/notifications）：记录
@@ -119,10 +128,20 @@ func (g *deliveryGameStub) Calls() int {
 }
 
 func newDeliveryServer(t *testing.T) *testDeliveryEnv {
+	return newDeliveryServerCfg(t, nil)
+}
+
+// newDeliveryServerCfg 在服务构造前注入存根配置（如 Courier 管理面凭证
+// 接线），before 为 nil = 默认配置（COURIER_PAYMENTS_ADMIN_TOKEN 空 →
+// 退款执行器未接线 nil）。
+func newDeliveryServerCfg(t *testing.T, before func(*testDeliveryEnv)) *testDeliveryEnv {
 	t.Helper()
 	httpx.SetErrorHandlerCtx(logic.ErrorHandler)
 
 	env := &testDeliveryEnv{}
+	if before != nil {
+		before(env)
+	}
 
 	// game-catalog 存根：/me 判定角色（user 1 = platform_admin）；
 	// GET /games/:id/servers 公开区服（s1 开放 / s2 维护 / s99 不存在）。
@@ -181,6 +200,41 @@ func newDeliveryServer(t *testing.T) *testDeliveryEnv {
 		}
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/payments/callback" {
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"accepted": true}})
+			return
+		}
+		// GP-204 管理面退款端点存根：默认成功登记（幂等既有不叠加）；可翻转
+		// 状态码/错误码模拟确定性拒绝（如 409 PAYMENT_ORDER_STATE）。
+		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/payments/admin/orders/") &&
+			strings.HasSuffix(r.URL.Path, "/refund") {
+			orderID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/payments/admin/orders/"), "/refund")
+			env.refundAdminCalls++
+			env.refundAdminScope = map[string]string{
+				"gameId": r.Header.Get("X-Courier-Game-Id"),
+				"env":    r.Header.Get("X-Courier-Env"),
+				"auth":   r.Header.Get("Authorization"),
+			}
+			// refundRejectOrder 非空时仅该订单按 status/code 拒绝（供批量扫
+			// 描测试区分接受/拒绝两笔）。
+			if env.refundRejectOrder == "" || orderID == env.refundRejectOrder {
+				if env.refundAdminStatus != 0 {
+					w.WriteHeader(env.refundAdminStatus)
+					_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{
+						"code": env.refundAdminCode, "message": "courier 拒绝详情",
+					}})
+					return
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+					"orderId": orderID,
+					"refund":  map[string]any{"action": "REFUND", "amountCents": 600, "at": "2026-11-23T00:00:00Z"},
+				}})
+				return
+			}
+			// 非目标订单（且 refundRejectOrder 已设）：按成功处理（批量扫描的
+			// 接受笔）。
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+				"orderId": orderID,
+				"refund":  map[string]any{"action": "REFUND", "amountCents": 600, "at": "2026-11-23T00:00:00Z"},
+			}})
 			return
 		}
 		http.NotFound(w, r)
@@ -255,6 +309,7 @@ func newDeliveryServer(t *testing.T) *testDeliveryEnv {
 	c.MySQL.DataSource = "file:" + t.TempDir() + "/delivery.db"
 	c.Auth.JWTSecret = testJWTSecret
 	c.Courier.BaseURL = courier.URL
+	c.Courier.AdminToken = env.courierAdminToken // 空 = 执行器未接线（nil，保持 PENDING）
 	c.GameCatalog.BaseURL = catalog.URL
 	c.CourierAdapter.BaseURL = mapping.URL
 	c.Internal.Token = testInternalToken

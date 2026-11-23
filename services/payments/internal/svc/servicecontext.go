@@ -12,6 +12,7 @@ import (
 	"github.com/tappi/tappi/services/payments/internal/delivery"
 	"github.com/tappi/tappi/services/payments/internal/notify"
 	"github.com/tappi/tappi/services/payments/internal/promotion"
+	"github.com/tappi/tappi/services/payments/internal/refundexec"
 	"github.com/tappi/tappi/services/payments/model"
 	"github.com/tappi/tappi/services/payments/utils"
 
@@ -45,6 +46,10 @@ type ServiceContext struct {
 	NotifyRelay *notify.Relay
 	// NotifyOutbox GP-404 业务通知 outbox（始终建表，未启用时不写行）。
 	NotifyOutbox *model.NotifyOutboxModel
+	// RefundExec GP-204 退款执行器（PENDING → Courier 管理面退款端点 →
+	// EXECUTED/REJECTED）；nil = COURIER_PAYMENTS_ADMIN_TOKEN 未配置（no-op，
+	// 退款保持 PENDING，不伪造成功）。
+	RefundExec *refundexec.Executor
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -134,6 +139,10 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	dispatcher := delivery.NewDispatcher(deliveryDB, productDB, c.Delivery.TimeoutMs,
 		time.Second*time.Duration(c.Delivery.RetryIntervalSeconds),
 		func(orderID string) { _ = projectionDB.MarkDelivered(orderID, time.Now().UTC().Format(time.RFC3339)) })
+	// GP-204 退款执行器（PENDING → Courier 管理面退款端点；AdminToken 空 =
+	// nil no-op，退款保持 PENDING 不伪造成功）。
+	refundExec := refundexec.NewExecutor(projectionDB, courierClient, scopeClient,
+		c.Courier.AdminToken, time.Second*time.Duration(c.Courier.RefundExecIntervalSeconds))
 
 	return &ServiceContext{
 		Config:       c,
@@ -161,5 +170,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		NotifySvc:       notifyClient,
 		NotifyRelay:     notifyRelay,
 		NotifyOutbox:    notifyOutbox,
+		RefundExec:      refundExec,
 	}
 }

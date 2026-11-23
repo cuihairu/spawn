@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -162,6 +163,162 @@ func (c *Client) ForwardCallback(rawBody []byte, hmacHex, gatewayID, gatewayEnv 
 		return &APIError{HTTPStatus: resp.StatusCode, Code: "HTTP_" + http.StatusText(resp.StatusCode), Message: string(raw)}
 	}
 	return nil
+}
+
+// ---- 管理面（Courier payment v1.2，/v1/payments/admin/*，S2S 运营面）----
+//
+// 管理端点认证 = Authorization: Bearer <AdminToken>（空 token fail-closed 401，
+// 网关侧不配置不裸奔）；端点本身不经玩家 Bearer-scope 路由，但网关全局 scope
+// 中间件先于业务校验仍强制两 header（缺失即 400），故方法签名与玩家面一致
+// 保留 gameID/env——调用方按订单/商品所属游戏解析 courier scope 传入。
+// 管理凭证与玩家令牌不混用：adminToken 独立于 bearer。
+
+// AdminSkuReq 管理面 SKU 登记/改价请求（v1.2 管理端点；服务端定价事实）。
+type AdminSkuReq struct {
+	SkuId       string `json:"skuId"`
+	ProductId   string `json:"productId"`
+	Form        string `json:"form"`
+	AmountCents int64  `json:"amountCents"`
+	Currency    string `json:"currency"`
+}
+
+// AdminOrder 管理面订单视图（v1.2；不下发 payToken，含断单态 PAID 标识与退款登记事实）。
+type AdminOrder struct {
+	Id          string           `json:"id"`
+	Status      string           `json:"status"`
+	AccountId   string           `json:"accountId"`
+	GameId      string           `json:"gameId"`
+	SkuId       string           `json:"skuId"`
+	ProductId   string           `json:"productId"`
+	Form        string           `json:"form"`
+	AmountCents int64            `json:"amountCents"`
+	Currency    string           `json:"currency"`
+	CreatedAt   string           `json:"createdAt"`
+	UpdatedAt   string           `json:"updatedAt"`
+	PaidAt      string           `json:"paidAt,omitempty"`
+	DeliveredAt string           `json:"deliveredAt,omitempty"`
+	Refunds     []AdminRefundEnt `json:"refunds,omitempty"`
+}
+
+// AdminOrderPage 管理面全局检索分页（cursor keyset = updatedAt+orderID base64）。
+type AdminOrderPage struct {
+	Items      []AdminOrder `json:"items"`
+	NextCursor string       `json:"nextCursor"`
+}
+
+// AdminRefundEnt 退款登记事实条目（v1.2 管理面）。
+type AdminRefundEnt struct {
+	Action      string `json:"action"`
+	AmountCents int64  `json:"amountCents"`
+	Reason      string `json:"reason"`
+	At          string `json:"at"`
+}
+
+// AdminRefund 管理面退款登记结果（幂等：同订单同动作重复登记返回既有）。
+type AdminRefund struct {
+	OrderId string         `json:"orderId"`
+	Refund  AdminRefundEnt `json:"refund"`
+}
+
+// AdminRedeliver 管理面断单（停 PAID）对账重发结果。
+type AdminRedeliver struct {
+	Order       AdminOrder `json:"order"`
+	Redelivered bool       `json:"redelivered"`
+}
+
+// AdminOrderQuery 管理面检索筛选（gameId/status/accountId + 有界分页）。
+type AdminOrderQuery struct {
+	GameId    string
+	Status    string
+	AccountId string
+	Limit     int
+	Cursor    string
+}
+
+// adminBearer 管理凭证封装（Authorization: Bearer <token>）；空 token = 不设
+// Authorization 头，网关 fail-closed 401 COMMON_UNAUTHENTICATED 原样上抛
+// （APIError），调用方据此判定管理面未接线。
+func adminBearer(token string) string {
+	if token == "" {
+		return ""
+	}
+	return "Bearer " + token
+}
+
+// AdminSku POST /v1/payments/admin/skus（登记/改价 SKU；重复登记 = 改价，已建
+// 订单不受影响）。服务端定价事实，接入方按 game 归属登记。
+func (c *Client) AdminSku(gameID, env, adminToken string, req *AdminSkuReq) (*Sku, error) {
+	var out struct {
+		Sku Sku `json:"sku"`
+	}
+	if err := c.call(http.MethodPost, c.baseURL+"/v1/payments/admin/skus", gameID, env, adminBearer(adminToken), req, &out); err != nil {
+		return nil, err
+	}
+	return &out.Sku, nil
+}
+
+// AdminListOrders GET /v1/payments/admin/orders（全局检索 + 有界分页）。
+func (c *Client) AdminListOrders(gameID, env, adminToken string, q AdminOrderQuery) (*AdminOrderPage, error) {
+	u, err := url.Parse(c.baseURL + "/v1/payments/admin/orders")
+	if err != nil {
+		return nil, err
+	}
+	qs := u.Query()
+	if q.GameId != "" {
+		qs.Set("gameId", q.GameId)
+	}
+	if q.Status != "" {
+		qs.Set("status", q.Status)
+	}
+	if q.AccountId != "" {
+		qs.Set("accountId", q.AccountId)
+	}
+	if q.Limit > 0 {
+		qs.Set("limit", strconv.Itoa(q.Limit))
+	}
+	if q.Cursor != "" {
+		qs.Set("cursor", q.Cursor)
+	}
+	u.RawQuery = qs.Encode()
+	var out AdminOrderPage
+	if err := c.call(http.MethodGet, u.String(), gameID, env, adminBearer(adminToken), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// AdminGetOrder GET /v1/payments/admin/orders/{orderId}（管理详情，无 payToken）。
+func (c *Client) AdminGetOrder(gameID, env, adminToken, orderID string) (*AdminOrder, error) {
+	var out AdminOrder
+	if err := c.call(http.MethodGet, c.baseURL+"/v1/payments/admin/orders/"+url.PathEscape(orderID), gameID, env, adminBearer(adminToken), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// AdminRedeliver POST /v1/payments/admin/orders/{orderId}/redeliver（断单对账
+// 重发）：仅停 PAID 可重发；DELIVERED/CLOSED 409 PAYMENT_ORDER_STATE。
+func (c *Client) AdminRedeliver(gameID, env, adminToken, orderID string) (*AdminRedeliver, error) {
+	var out AdminRedeliver
+	if err := c.call(http.MethodPost, c.baseURL+"/v1/payments/admin/orders/"+url.PathEscape(orderID)+"/redeliver", gameID, env, adminBearer(adminToken), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// AdminRefund POST /v1/payments/admin/orders/{orderId}/refund（退款/冲正登记；
+// action REFUND/CORRECTION）。金额 ≤ 实付（≤0 记全额，网关侧兜底）；幂等：
+// 同订单同动作重复登记返回既有。
+func (c *Client) AdminRefund(gameID, env, adminToken, orderID, action string, amountCents int64, reason string) (*AdminRefund, error) {
+	body := map[string]any{"action": action, "amountCents": amountCents}
+	if reason != "" {
+		body["reason"] = reason
+	}
+	var out AdminRefund
+	if err := c.call(http.MethodPost, c.baseURL+"/v1/payments/admin/orders/"+url.PathEscape(orderID)+"/refund", gameID, env, adminBearer(adminToken), body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 func (c *Client) call(method, urlStr, gameID, env, bearer string, reqBody any, out any) error {
