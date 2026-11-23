@@ -109,6 +109,71 @@ func TestRegisterPaymentsRoutesGP404Passthrough(t *testing.T) {
 	}
 }
 
+// TestRegisterPaymentsRoutesCourierRedeliverPassthrough GP-204 断单对账重发
+// 管理适配：POST /admin/orders/:orderId/redeliver 原样穿网关到达 payments
+// 上游（鉴权/角色/fail-closed 均在 payments 侧）。
+func TestRegisterPaymentsRoutesCourierRedeliverPassthrough(t *testing.T) {
+	type hit struct{ method, path string }
+	var hits []hit
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, hit{r.Method, r.URL.Path})
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"redelivered":true,"courier_status":"DELIVERED"}`)
+	}))
+	t.Cleanup(upstream.Close)
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("grab port: %v", err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close()
+
+	var cfg config.Config
+	cfg.Upstreams.Payments.BaseURL = upstream.URL
+	cfg.Upstreams.Payments.Timeout = 2000
+
+	var conf rest.RestConf
+	conf.Port = port
+	server := rest.MustNewServer(conf)
+	RegisterPaymentsRoutes(server, &svc.ServiceContext{Config: cfg})
+	go server.Start()
+	t.Cleanup(server.Stop)
+
+	base := "http://127.0.0.1:" + strconv.Itoa(port)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		resp, err := http.Get(base + "/healthz")
+		if err == nil {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("payments proxy server not ready")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, base+"/admin/orders/order_rd_1/redeliver", nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("redeliver via gateway: %v", err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("redeliver status=%d", resp.StatusCode)
+	}
+	last := hits[len(hits)-1]
+	if last.method != http.MethodPost || last.path != "/admin/orders/order_rd_1/redeliver" {
+		t.Fatalf("redeliver hit = %+v", last)
+	}
+}
+
 // TestRegisterPaymentsRoutesCourierAuthHeaderPassthrough GP-202 客户端带
 // Courier token 决策：玩家下单请求的 X-Courier-Authorization（客户端经
 // GP-201 代登录/票据兑换取得的 Courier 会话令牌）必须原样穿网关到达

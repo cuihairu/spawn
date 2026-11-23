@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tappi/tappi/services/payments/model"
 	"github.com/tappi/tappi/services/payments/utils"
 )
 
@@ -214,6 +215,139 @@ func TestRoutes_RefundExecutor(t *testing.T) {
 	code, body = do(t, http.MethodGet, env.base+"/admin/refunds?status=PENDING", admin, "")
 	if code != http.StatusOK || strings.Contains(body, ok) || strings.Contains(body, rej) {
 		t.Fatalf("list refunds pending = %d body=%s", code, body)
+	}
+}
+
+// TestRoutes_CourierRedeliver GP-204 断单对账重发管理适配：courier 管理面
+// /v1/payments/admin/orders/{id}/redeliver 同步执行。scope 取 GP-002 映射后的
+// courier_game_id+env（绝不发 spawn game id），管理凭证走独立 Bearer 头；管理面
+// 未接线（AdminToken 未配置）fail-closed 503 不伪造重发成功；确定性拒绝
+// （409 已发货、404 订单不存在）如实映射。
+func TestRoutes_CourierRedeliver(t *testing.T) {
+	setup := func(t *testing.T, withToken bool) (*testDeliveryEnv, string, string) {
+		var env *testDeliveryEnv
+		if withToken {
+			env = newDeliveryServerCfg(t, func(e *testDeliveryEnv) { e.courierAdminToken = "courier-admin-tok" })
+		} else {
+			env = newDeliveryServer(t)
+		}
+		admin := env.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
+		code, body := do(t, http.MethodPost, env.base+"/admin/products/sku-rd-1", admin,
+			`{"product_id":"rd-1","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"game-a","partner_id":2}`)
+		if code != http.StatusOK {
+			t.Fatalf("create product = %d body=%s", code, body)
+		}
+		player := env.sign(utils.JWTClaims{UserId: 7, Username: "bob"})
+		orderID := createOrder(t, env, player, `{"sku_id":"sku-rd-1","server_id":1}`)
+		return env, orderID, admin
+	}
+
+	// 1. 未接线（AdminToken 未配置）：fail-closed 503，不伪造重发成功
+	env, orderID, admin := setup(t, false)
+	code, body := do(t, http.MethodPost, env.base+"/admin/orders/"+orderID+"/redeliver", admin, "")
+	if code != http.StatusServiceUnavailable {
+		t.Fatalf("redeliver unwired = %d body=%s, want 503", code, body)
+	}
+
+	// 2. 已接线：200 redelivered=true + courier_status + scope/凭证断言 + 审计
+	env2, orderID2, admin2 := setup(t, true)
+	code, body = do(t, http.MethodPost, env2.base+"/admin/orders/"+orderID2+"/redeliver", admin2, "")
+	if code != http.StatusOK || !strings.Contains(body, `"redelivered":true`) || !strings.Contains(body, `"courier_status":"DELIVERED"`) {
+		t.Fatalf("redeliver ok = %d body=%s", code, body)
+	}
+	if env2.redeliverAdminCalls != 1 {
+		t.Fatalf("courier redeliver calls = %d, want 1", env2.redeliverAdminCalls)
+	}
+	if env2.redeliverAdminScope["gameId"] != "courier-game-a" || env2.redeliverAdminScope["env"] != "dev" ||
+		env2.redeliverAdminScope["auth"] != "Bearer courier-admin-tok" {
+		t.Fatalf("redeliver scope/auth = %v", env2.redeliverAdminScope)
+	}
+	code, body = do(t, http.MethodGet, env2.base+"/admin/audit?order_id="+orderID2, admin2, "")
+	if code != http.StatusOK || !strings.Contains(body, "courier_redeliver") {
+		t.Fatalf("audit lacks courier_redeliver: %s", body)
+	}
+
+	// 3. 确定性拒绝映射：409 PAYMENT_ORDER_STATE（已发货，不二次发货）→ 409
+	env3, orderID3, admin3 := setup(t, true)
+	env3.redeliverAdminStatus, env3.redeliverAdminCode = http.StatusConflict, "PAYMENT_ORDER_STATE"
+	code, _ = do(t, http.MethodPost, env3.base+"/admin/orders/"+orderID3+"/redeliver", admin3, "")
+	if code != http.StatusConflict {
+		t.Fatalf("redeliver 409 = %d, want 409", code)
+	}
+
+	// 4. courier 侧订单不存在 → 404
+	env4, orderID4, admin4 := setup(t, true)
+	env4.redeliverAdminStatus, env4.redeliverAdminCode = http.StatusNotFound, "PAYMENT_ORDER_NOT_FOUND"
+	code, _ = do(t, http.MethodPost, env4.base+"/admin/orders/"+orderID4+"/redeliver", admin4, "")
+	if code != http.StatusNotFound {
+		t.Fatalf("redeliver 404 = %d, want 404", code)
+	}
+
+	// 4b. 管理凭证无效（courier 401）→ 503（fail-closed，不裸奔）
+	env4b, orderID4b, admin4b := setup(t, true)
+	env4b.redeliverAdminStatus, env4b.redeliverAdminCode = http.StatusUnauthorized, "COMMON_UNAUTHENTICATED"
+	code, _ = do(t, http.MethodPost, env4b.base+"/admin/orders/"+orderID4b+"/redeliver", admin4b, "")
+	if code != http.StatusServiceUnavailable {
+		t.Fatalf("redeliver auth 401 = %d, want 503", code)
+	}
+
+	// 4c. 未识别 courier 错误码 → 502（不透传内部细节）
+	env4c, orderID4c, admin4c := setup(t, true)
+	env4c.redeliverAdminStatus, env4c.redeliverAdminCode = http.StatusInternalServerError, "INTERNAL"
+	code, _ = do(t, http.MethodPost, env4c.base+"/admin/orders/"+orderID4c+"/redeliver", admin4c, "")
+	if code != http.StatusBadGateway {
+		t.Fatalf("redeliver internal = %d, want 502", code)
+	}
+
+	// 5. 本侧投影无此订单 → 404
+	env5 := newDeliveryServerCfg(t, func(e *testDeliveryEnv) { e.courierAdminToken = "courier-admin-tok" })
+	admin5 := env5.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
+	code, _ = do(t, http.MethodPost, env5.base+"/admin/orders/order_never_redeliver/redeliver", admin5, "")
+	if code != http.StatusNotFound {
+		t.Fatalf("redeliver unknown order = %d, want 404", code)
+	}
+
+	// 5b. scope 解析失败：订单所属游戏无 Courier 映射（404）→ 502（GP-002 映射
+	// 权威，绝不把 spawn 游戏 id 当 Courier scope）。投影行直接植入以模拟
+	// 「已下单但游戏后撤映射」的既有事实。
+	seedNomap := func(env *testDeliveryEnv, orderID, gameID string) {
+		err := env.svcCtx.ProjectionDB.UpsertFromOrder(&model.OrderProjection{
+			OrderId: orderID, GameId: gameID, AccountId: "7", SkuId: "sku-rd-1",
+			ProductId: "rd-1", Form: "DIRECT_PURCHASE", AmountCents: 1000,
+			Currency: "CNY", Status: "PAID",
+		})
+		if err != nil {
+			t.Fatalf("seed projection %s: %v", orderID, err)
+		}
+	}
+	env5b := newDeliveryServerCfg(t, func(e *testDeliveryEnv) { e.courierAdminToken = "courier-admin-tok" })
+	admin5b := env5b.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
+	seedNomap(env5b, "order_nomap_rd", "nomap-game")
+	code, body = do(t, http.MethodPost, env5b.base+"/admin/orders/order_nomap_rd/redeliver", admin5b, "")
+	if code != http.StatusBadGateway {
+		t.Fatalf("redeliver nomap game = %d body=%s, want 502", code, body)
+	}
+	if env5b.redeliverAdminCalls != 0 {
+		t.Fatalf("nomap scope failure still called courier: calls=%d", env5b.redeliverAdminCalls)
+	}
+
+	// 5c. 映射服务故障（500，非 404）→ 通用兜底 502（不透传内部细节）
+	env5c := newDeliveryServerCfg(t, func(e *testDeliveryEnv) { e.courierAdminToken = "courier-admin-tok" })
+	admin5c := env5c.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
+	seedNomap(env5c, "order_err500_rd", "err500-game")
+	code, body = do(t, http.MethodPost, env5c.base+"/admin/orders/order_err500_rd/redeliver", admin5c, "")
+	if code != http.StatusBadGateway {
+		t.Fatalf("redeliver mapping 500 = %d body=%s, want 502", code, body)
+	}
+	if env5c.redeliverAdminCalls != 0 {
+		t.Fatalf("mapping failure still called courier: calls=%d", env5c.redeliverAdminCalls)
+	}
+
+	// 6. 玩家越权 403
+	code, _ = do(t, http.MethodPost, env2.base+"/admin/orders/"+orderID2+"/redeliver",
+		env2.sign(utils.JWTClaims{UserId: 7, Username: "bob"}), "")
+	if code != http.StatusForbidden {
+		t.Fatalf("player redeliver = %d, want 403", code)
 	}
 }
 

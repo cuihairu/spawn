@@ -56,6 +56,13 @@ type testDeliveryEnv struct {
 	refundAdminCode   string
 	refundAdminScope  map[string]string
 	refundRejectOrder string
+	// GP-204 断单对账重发（courier 管理面 /v1/payments/admin/orders/{id}/
+	// redeliver）：计数 + scope 断言；Status/Code 非 0 = 模拟确定性拒绝
+	//（409 PAYMENT_ORDER_STATE / 404 PAYMENT_ORDER_NOT_FOUND）。
+	redeliverAdminCalls  int
+	redeliverAdminStatus int
+	redeliverAdminCode   string
+	redeliverAdminScope  map[string]string
 }
 
 // notifyStub GP-404 站内通知存根（community /internal/notifications）：记录
@@ -234,6 +241,33 @@ func newDeliveryServerCfg(t *testing.T, before func(*testDeliveryEnv)) *testDeli
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
 				"orderId": orderID,
 				"refund":  map[string]any{"action": "REFUND", "amountCents": 600, "at": "2026-11-23T00:00:00Z"},
+			}})
+			return
+		}
+		// GP-204 断单对账重发端点存根：默认成功（redelivered=true, DELIVERED）；
+		// 可翻转 Status/Code 模拟确定性拒绝（409 PAYMENT_ORDER_STATE 已发货、
+		// 404 PAYMENT_ORDER_NOT_FOUND）。
+		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/payments/admin/orders/") &&
+			strings.HasSuffix(r.URL.Path, "/redeliver") {
+			orderID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/payments/admin/orders/"), "/redeliver")
+			env.redeliverAdminCalls++
+			env.redeliverAdminScope = map[string]string{
+				"gameId": r.Header.Get("X-Courier-Game-Id"),
+				"env":    r.Header.Get("X-Courier-Env"),
+				"auth":   r.Header.Get("Authorization"),
+			}
+			if env.redeliverAdminStatus != 0 {
+				w.WriteHeader(env.redeliverAdminStatus)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{
+					"code": env.redeliverAdminCode, "message": "courier 拒绝详情",
+				}})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+				"order": map[string]any{
+					"id": orderID, "status": "DELIVERED", "amountCents": 1000, "currency": "CNY",
+				},
+				"redelivered": true,
 			}})
 			return
 		}

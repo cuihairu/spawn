@@ -204,8 +204,8 @@ func newPaymentsServer(t *testing.T) *testEnv {
 // newMappingStub courier-adapter 映射存根（GP-202 scope 解析）：
 // /internal/games/:id/mapping 校验 X-Internal-Token（testInternalToken），
 // 返回映射后的 courier scope（spawn <id> → courier-<id> + dev）；id 前缀
-// nomap 返 404（无映射）。payments 下单/查询前调用它，绝不用 spawn id 当
-// Courier scope。
+// nomap 返 404（无映射）、err500 返 500（映射服务故障）。payments 下单/查询
+// 前调用它，绝不用 spawn id 当 Courier scope。
 func newMappingStub(t *testing.T) *httptest.Server {
 	t.Helper()
 	mapping := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -219,6 +219,11 @@ func newMappingStub(t *testing.T) *httptest.Server {
 		if strings.HasPrefix(id, "nomap") {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"code":404,"message":"游戏未接入 Courier"}`))
+			return
+		}
+		if strings.HasPrefix(id, "err500") {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"code":500,"message":"mapping unavailable"}`))
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{

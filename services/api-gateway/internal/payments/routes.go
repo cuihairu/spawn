@@ -45,6 +45,8 @@ func RegisterPaymentsRoutes(server *rest.Server, serverCtx *svc.ServiceContext) 
 		{Method: http.MethodGet, Path: "/admin/orders", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/orders/:orderId", Handler: h},
 		{Method: http.MethodPost, Path: "/admin/orders/:orderId/refund", Handler: h},
+		// GP-204 断单对账重发（courier 管理面同步执行；未接线 503 在 payments 侧）
+		{Method: http.MethodPost, Path: "/admin/orders/:orderId/redeliver", Handler: h},
 		{Method: http.MethodGet, Path: "/admin/refunds", Handler: h},
 		// 审计回读挂域内路径：上游路径（/admin/audit）与 games 组（game-catalog）
 		// 的审计同名，走 HandlerFor 转发时还原成上游路径。

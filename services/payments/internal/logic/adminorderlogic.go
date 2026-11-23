@@ -21,7 +21,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tappi/tappi/services/payments/courier"
 	"github.com/tappi/tappi/services/payments/internal/analytics"
+	"github.com/tappi/tappi/services/payments/internal/courierscope"
 	"github.com/tappi/tappi/services/payments/internal/svc"
 	"github.com/tappi/tappi/services/payments/internal/types"
 	"github.com/tappi/tappi/services/payments/model"
@@ -224,6 +226,82 @@ func (l *AdminOrderLogic) ListAudit(req *types.AuditListRequest, authHeader stri
 		items = append(items, toAuditView(row))
 	}
 	return &types.AuditListResponse{Items: items}, nil
+}
+
+// resolveCourierScope spawn game id → Courier scope（GP-002 映射权威，绝不透传
+// spawn 游戏 id 当 Courier scope；与 OrderLogic/CallbackLogic 同款口径）。
+func (l *AdminOrderLogic) resolveCourierScope(spawnGameID string) (string, string, error) {
+	scope, err := l.svcCtx.ScopeRes.Resolve(spawnGameID)
+	if err != nil {
+		if errors.Is(err, courierscope.ErrMappingNotFound) {
+			return "", "", newAPIError(http.StatusBadGateway, "该游戏未接入 Courier 支付（无映射）")
+		}
+		l.Errorf("resolve courier scope for game %s failed: %v", spawnGameID, err)
+		return "", "", newAPIError(http.StatusBadGateway, "支付接线解析失败")
+	}
+	return scope.CourierGameId, scope.Env, nil
+}
+
+// CourierRedeliver 断单对账重发管理适配（payment v1.2 /v1/payments/admin/orders/
+// {id}/redeliver 同步执行）：courier 侧停 PAID（已付未发，发货 webhook 断链）的
+// 订单经管理面重发 Deliver 钩子——幂等，已 DELIVERED/CLOSED 由 courier 权威判定
+// 409 不二次发货（本侧不另做状态预判，投影可能滞后 courier 事实）。管理面未
+// 接线（AdminToken 未配置）fail-closed 503，不伪造重发成功。
+func (l *AdminOrderLogic) CourierRedeliver(req *types.OrderPathRequest, authHeader string) (*types.CourierRedeliverResponse, error) {
+	userID, ip := actorFrom(l.ctx)
+	role, err := l.adminRole(authHeader)
+	if err != nil {
+		return nil, err
+	}
+	adminToken := l.svcCtx.Config.Courier.AdminToken
+	if adminToken == "" {
+		return nil, newAPIError(http.StatusServiceUnavailable, "Courier 管理面未接线（未配置管理凭证）")
+	}
+	row, err := l.svcCtx.ProjectionDB.Get(req.OrderId)
+	if errors.Is(err, model.ErrOrderProjectionNotFound) {
+		return nil, newAPIError(http.StatusNotFound, "订单不存在")
+	}
+	if err != nil {
+		l.Errorf("get order %s for redeliver failed: %v", req.OrderId, err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询订单失败")
+	}
+	// scope 按订单所属游戏解析（投影是事实副本；绝不把 spawn 游戏 id 当 Courier scope）
+	gameID, env, err := l.resolveCourierScope(row.GameId)
+	if err != nil {
+		return nil, err
+	}
+	res, err := l.svcCtx.Courier.AdminRedeliver(gameID, env, adminToken, req.OrderId)
+	if err != nil {
+		return nil, mapRedeliverError(err)
+	}
+	detail, _ := json.Marshal(map[string]any{
+		"redelivered": res.Redelivered, "courier_status": res.Order.Status,
+	})
+	_ = l.svcCtx.ProjectionDB.LogAudit(&model.OrderAuditLog{
+		OrderId: req.OrderId, ActorId: userID, ActorRole: role, Action: "courier_redeliver", Detail: string(detail), Ip: ip,
+	})
+	return &types.CourierRedeliverResponse{
+		Redelivered: res.Redelivered, CourierStatus: res.Order.Status,
+	}, nil
+}
+
+// mapRedeliverError 把 Courier 管理面重发错误映射为 HTTP 状态：确定性拒绝
+// （非待发货/订单不存在）对应业务状态，管理凭证无效/未接线 503，其余 502 不
+// 透传内部细节。
+func mapRedeliverError(err error) error {
+	var ae *courier.APIError
+	if !errors.As(err, &ae) {
+		return newAPIError(http.StatusBadGateway, "Courier 管理面调用失败")
+	}
+	switch ae.Code {
+	case "PAYMENT_ORDER_STATE":
+		return newAPIError(http.StatusConflict, "订单非待发货状态，不可重发")
+	case "PAYMENT_ORDER_NOT_FOUND":
+		return newAPIError(http.StatusNotFound, "Courier 侧订单不存在")
+	case "COMMON_UNAUTHENTICATED":
+		return newAPIError(http.StatusServiceUnavailable, "Courier 管理凭证无效/未接线")
+	}
+	return newAPIError(http.StatusBadGateway, "Courier 管理面调用失败")
 }
 
 // adminRole 管理面角色守卫（platform_admin/operator），返回角色供审计。

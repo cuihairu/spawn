@@ -269,6 +269,15 @@ type RefundListResponse struct {
 	Items []RefundView `json:"items"`
 }
 
+// CourierRedeliverResponse 断单对账重发结果（GP-204 管理适配，courier 管理面
+// 同步执行）：redelivered 如实报告——courier 停 PAID（已付未发）时重发 Deliver
+// 钩子并置 DELIVERED，否则留 PAID 不二次发货；courier_status 为 courier 侧订单
+// 状态快照（投影可能滞后，以 courier 权威为准）。
+type CourierRedeliverResponse struct {
+	Redelivered   bool   `json:"redelivered"`
+	CourierStatus string `json:"courier_status"`
+}
+
 // RefundListRequest 退款意图列表（status 可选筛）。
 type RefundListRequest struct {
 	Status string `form:"status,optional"`

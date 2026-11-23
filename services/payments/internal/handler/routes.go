@@ -52,6 +52,9 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodGet, Path: "/admin/orders", Handler: AdminListOrdersHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/orders/:orderId", Handler: AdminGetOrderHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/admin/orders/:orderId/refund", Handler: CreateRefundHandler(svcCtx)},
+		// GP-204 断单对账重发（courier 管理面同步执行；courier 权威判定 PAID 态，
+		// 已发货/已关闭 409 不二次发货；未接线 fail-closed 503 不伪造成功）
+		{Method: http.MethodPost, Path: "/admin/orders/:orderId/redeliver", Handler: CourierRedeliverHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/refunds", Handler: ListRefundsHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/audit", Handler: ListAuditHandler(svcCtx)},
 		// GP-205 厂商对账单：生成/列表/详情/结算单录入/确认/导出（先确认不自动打款）
@@ -517,6 +520,23 @@ func CreateRefundHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 		resp, err := logic.NewAdminOrderLogic(r.Context(), svcCtx).CreateRefund(&req, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// CourierRedeliverHandler GP-204 断单对账重发管理适配（courier 管理面同步执行）。
+func CourierRedeliverHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.OrderPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewAdminOrderLogic(r.Context(), svcCtx).CourierRedeliver(&req, authHeaderFrom(r))
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
