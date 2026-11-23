@@ -80,20 +80,21 @@ func requireCourierSession(courierAuth string) error {
 }
 
 // resolveCourierScope 把 spawn 游戏 id 解析为调 Courier 的 scope 头值
-// （X-Courier-Game-Id / X-Courier-Env = courier_game_id + env，GP-002 映射）。
+// （X-Courier-Game-Id / X-Courier-Env = courier_game_id + env，GP-002 映射），
+// 并带回能力位（login/payment/download/support，消费方 fail-closed 门）。
 // 客户端经 GP-201 取得的 Courier 令牌绑定的是 courier 侧 scope，透传 spawn
 // 游戏 id 必 502「token scope mismatch」（活走查实测）；解析失败 fail-closed，
 // 不静默回退 spawn id 透传。
-func (l *OrderLogic) resolveCourierScope(spawnGameID string) (string, string, error) {
+func (l *OrderLogic) resolveCourierScope(spawnGameID string) (*courierscope.Scope, error) {
 	scope, err := l.svcCtx.ScopeRes.Resolve(spawnGameID)
 	if err != nil {
 		if errors.Is(err, courierscope.ErrMappingNotFound) {
-			return "", "", newAPIError(http.StatusBadGateway, "该游戏未接入 Courier 支付（无映射）")
+			return nil, newAPIError(http.StatusBadGateway, "该游戏未接入 Courier 支付（无映射）")
 		}
 		l.Errorf("resolve courier scope for game %s failed: %v", spawnGameID, err)
-		return "", "", newAPIError(http.StatusBadGateway, "支付接线解析失败")
+		return nil, newAPIError(http.StatusBadGateway, "支付接线解析失败")
 	}
-	return scope.CourierGameId, scope.Env, nil
+	return scope, nil
 }
 
 // CreateOrder 玩家下单：scope=path gameId，先核验商品归属（商品必须属于该
@@ -133,11 +134,17 @@ func (l *OrderLogic) CreateOrder(req *types.CreateOrderRequest, bearer string) (
 	}
 	// scope 以映射为准（客户端令牌绑定 courier 侧 scope）；req.Env 不参与
 	// scope 头，客户端不可指定 scope（GP-002 映射权威）。
-	courierGameID, courierEnv, err := l.resolveCourierScope(product.GameId)
+	scope, err := l.resolveCourierScope(product.GameId)
 	if err != nil {
 		return nil, err
 	}
-	order, err := l.svcCtx.Courier.CreateOrder(courierGameID, courierEnv, bearer, req.SkuId)
+	// GP-002 能力门：游戏未开通支付（payment 能力缺省 false，fail-closed）→
+	// 403 拒单，不伪造成功。与 login/support 能力门同款口径（sessionlogic/
+	// supportlogic 403）。查询/回调不设门——已存在订单不受能力下线影响。
+	if !scope.Payment {
+		return nil, newAPIError(http.StatusForbidden, "该游戏未开通支付")
+	}
+	order, err := l.svcCtx.Courier.CreateOrder(scope.CourierGameId, scope.Env, bearer, req.SkuId)
 	if err != nil {
 		return nil, courierError(err)
 	}
@@ -222,11 +229,11 @@ func (l *OrderLogic) GetOrder(req *types.OrderQueryRequest, bearer string) (*typ
 	if err := requireCourierSession(bearer); err != nil {
 		return nil, err
 	}
-	courierGameID, courierEnv, err := l.resolveCourierScope(req.GameId)
+	scope, err := l.resolveCourierScope(req.GameId)
 	if err != nil {
 		return nil, err
 	}
-	order, err := l.svcCtx.Courier.GetOrder(courierGameID, courierEnv, bearer, req.OrderId)
+	order, err := l.svcCtx.Courier.GetOrder(scope.CourierGameId, scope.Env, bearer, req.OrderId)
 	if err != nil {
 		return nil, courierError(err)
 	}
@@ -242,11 +249,11 @@ func (l *OrderLogic) ListMyOrders(gameID, env, bearer string) (*types.OrderListR
 	if err := requireCourierSession(bearer); err != nil {
 		return nil, err
 	}
-	courierGameID, courierEnv, err := l.resolveCourierScope(gameID)
+	scope, err := l.resolveCourierScope(gameID)
 	if err != nil {
 		return nil, err
 	}
-	orders, err := l.svcCtx.Courier.ListOrders(courierGameID, courierEnv, bearer)
+	orders, err := l.svcCtx.Courier.ListOrders(scope.CourierGameId, scope.Env, bearer)
 	if err != nil {
 		return nil, courierError(err)
 	}

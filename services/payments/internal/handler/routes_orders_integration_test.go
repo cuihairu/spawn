@@ -426,3 +426,24 @@ func TestRoutes_InternalOrderQuery(t *testing.T) {
 		t.Fatalf("missing order = %d, want 404", resp.StatusCode)
 	}
 }
+
+// TestRoutes_CreateOrderPaymentDisabled GP-002 支付能力门：映射存在但 payment
+// 能力未开（存根 nopay 分支缺 capabilities → fail-closed false）→ 下单 403，
+// 不触达 Courier。
+func TestRoutes_CreateOrderPaymentDisabled(t *testing.T) {
+	env := newDeliveryServer(t)
+	admin := env.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
+	player := env.sign(utils.JWTClaims{UserId: 7, Username: "bob"})
+
+	// 商品属于 nopay-game（映射 stub nopay 分支：有 courierGameId/env，无能力位）
+	code, body := do(t, http.MethodPost, env.base+"/admin/products/sku-nopay", admin,
+		`{"product_id":"nopay","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"nopay-game","partner_id":2}`)
+	if code != http.StatusOK {
+		t.Fatalf("create product = %d body=%s", code, body)
+	}
+	code, body = do(t, http.MethodPost, env.base+"/games/nopay-game/orders", player,
+		`{"sku_id":"sku-nopay"}`)
+	if code != http.StatusForbidden || !strings.Contains(body, "未开通支付") {
+		t.Fatalf("payment disabled order = %d body=%s, want 403", code, body)
+	}
+}

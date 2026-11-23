@@ -51,12 +51,14 @@ func wbCtx() context.Context {
 }
 
 // newWhiteboxScope 映射解析存根（GP-202 scope 解析）：任意 spawn 游戏 id
-// → courier-game-a + dev。白盒测试注入使 resolveCourierScope 成功，
-// 以命中后续 Courier 调用臂。
+// → courier-game-a + dev，且 payment 能力开启（GP-002 能力门默认 false，
+// 下单臂必须显式开支付才不 403）。白盒测试注入使 resolveCourierScope
+// 成功，以命中后续 Courier 调用臂。
 func newWhiteboxScope(t *testing.T) *courierscope.Client {
 	t.Helper()
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"courierGameId":"courier-game-a","env":"dev"}`))
+		_, _ = w.Write([]byte(`{"courierGameId":"courier-game-a","env":"dev",
+			"capabilities":{"payment":true}}`))
 	}))
 	t.Cleanup(stub.Close)
 	return courierscope.NewClient(stub.URL, "tok", time.Second)
@@ -102,6 +104,32 @@ func TestCreateOrder_CourierError(t *testing.T) {
 	apiErr, ok := err.(*apiError)
 	if !ok || apiErr.StatusCode() != http.StatusBadGateway {
 		t.Fatalf("courier err = %v, want 502", err)
+	}
+}
+
+// CreateOrder：游戏未开通支付（payment 能力 false）→ 403，不调 Courier
+// （GP-002 能力门 fail-closed）。能力缺省 false 即拒绝，不虚构成功。
+func TestCreateOrder_PaymentCapabilityOff(t *testing.T) {
+	sc := &svc.ServiceContext{}
+	sc.ProductDB = newWhiteboxProductDB(t)
+	sc.Courier = courier.NewClient("http://127.0.0.1:1", time.Second) // 门先于 Courier，不应触达
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"courierGameId":"courier-game-a","env":"dev"}`)) // 无 capabilities → payment false
+	}))
+	t.Cleanup(stub.Close)
+	sc.ScopeRes = courierscope.NewClient(stub.URL, "tok", time.Second)
+	if _, err := sc.ProductDB.Create(&model.Product{
+		Id: "sku-nopay", ProductId: "p", Form: model.FormDirectPurchase,
+		AmountCents: 100, Currency: "CNY", GameId: "game-a", PartnerId: 2,
+	}); err != nil {
+		t.Fatalf("create product: %v", err)
+	}
+	_, err := NewOrderLogic(wbCtx(), sc).CreateOrder(&types.CreateOrderRequest{
+		GameId: "game-a", SkuId: "sku-nopay",
+	}, "Bearer t")
+	apiErr, ok := err.(*apiError)
+	if !ok || apiErr.StatusCode() != http.StatusForbidden {
+		t.Fatalf("payment off err = %v, want 403", err)
 	}
 }
 

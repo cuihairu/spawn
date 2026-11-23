@@ -40,6 +40,35 @@ func TestResolve_Success(t *testing.T) {
 	}
 }
 
+func TestResolve_Capabilities(t *testing.T) {
+	// GP-002 能力位解析：缺 capabilities 全 false（fail-closed），有则逐位透传。
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/internal/games/full/mapping" {
+			_, _ = w.Write([]byte(`{"courierGameId":"cg","env":"dev",
+				"capabilities":{"login":true,"payment":true,"download":false,"support":true}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"courierGameId":"cg","env":"dev"}`))
+	}))
+	defer stub.Close()
+
+	c := NewClient(stub.URL, "tok", time.Second)
+	full, err := c.Resolve("full")
+	if err != nil {
+		t.Fatalf("resolve full: %v", err)
+	}
+	if !full.Login || !full.Payment || full.Download || !full.Support {
+		t.Fatalf("capabilities = %+v, want login/payment/support true, download false", full)
+	}
+	bare, err := c.Resolve("bare")
+	if err != nil {
+		t.Fatalf("resolve bare: %v", err)
+	}
+	if bare.Login || bare.Payment || bare.Download || bare.Support {
+		t.Fatalf("bare capabilities = %+v, want all false（缺 capabilities 不虚构能力）", bare)
+	}
+}
+
 func TestResolve_NotFound(t *testing.T) {
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
