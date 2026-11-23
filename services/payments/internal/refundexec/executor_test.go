@@ -10,8 +10,10 @@ package refundexec
 //   - RunOnce 扫 PENDING 批量
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -32,6 +34,7 @@ const execAdminTok = "courier-admin-tok"
 type execEnv struct {
 	db         *model.OrderProjectionModel
 	couponDB   *model.CouponModel
+	rawDB      *sql.DB
 	scopeSrv   *httptest.Server
 	courierSrv *httptest.Server
 	// 记录 Courier 收到的管理退款请求
@@ -63,7 +66,7 @@ func newExecEnv(t *testing.T) *execEnv {
 		t.Fatalf("create coupon tables: %v", err)
 	}
 
-	e := &execEnv{db: m, couponDB: couponDB, refundStatus: http.StatusOK}
+	e := &execEnv{db: m, couponDB: couponDB, rawDB: db, refundStatus: http.StatusOK}
 
 	e.scopeSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 仅 game-a 有映射；其余 404（未接入）。
@@ -149,6 +152,20 @@ func (e *execEnv) seed(t *testing.T, orderID, gameID string, amount int64, actio
 		Reason: "重复扣款", Status: model.RefundStatusPending, CreatedBy: 1,
 	}); err != nil {
 		t.Fatalf("seed refund: %v", err)
+	}
+}
+
+// closeDB 关底层连接（SELECT/UPDATE 后续均失败；驱动 DB-error 失败臂）。
+func (e *execEnv) closeDB() {
+	_ = e.rawDB.Close()
+}
+
+// addTrigger 建触发器（RAISE(ABORT)）驱动对应 UPDATE 失败臂；ddl 为完整
+// CREATE TRIGGER 语句（WHEN 子句限定仅目标状态转移中止，其余写不受影响）。
+func (e *execEnv) addTrigger(t *testing.T, ddl string) {
+	t.Helper()
+	if _, err := e.rawDB.Exec(ddl); err != nil {
+		t.Fatalf("add trigger: %v", err)
 	}
 }
 
@@ -373,5 +390,157 @@ func TestRunOnce_NilExecutor(t *testing.T) {
 	var e *Executor
 	if a, x := e.RunOnce(); a != 0 || x != 0 {
 		t.Fatalf("RunOnce = %d/%d, want 0/0", a, x)
+	}
+}
+
+func TestRunOnce_ListRefundsDBError(t *testing.T) {
+	// ListRefunds SELECT 失败（关库）→ 0/0（扫描失败不误报）。
+	e := newExecEnv(t)
+	e.closeDB()
+	if a, x := e.executor().RunOnce(); a != 0 || x != 0 {
+		t.Fatalf("RunOnce = %d/%d, want 0/0（扫描失败）", a, x)
+	}
+}
+
+func TestExecuteOne_GetRefundDBError(t *testing.T) {
+	// GetRefund 非 NotFound 错误（关库）→ 留 PENDING 重试，不伪造成功。
+	e := newExecEnv(t)
+	e.closeDB()
+	if got := e.executor().ExecuteOne("order_1", "REFUND"); got != Pending {
+		t.Fatalf("execution = %q, want pending（读失败留 PENDING）", got)
+	}
+}
+
+func TestExecuteOne_RefundMissing(t *testing.T) {
+	// 意图不存在（非 DB 故障，GetRefund 返 ErrRefundRequestNotFound）→ 无操作留
+	// PENDING，不视为失败、不调 Courier。
+	e := newExecEnv(t)
+	if got := e.executor().ExecuteOne("order_no_such", "REFUND"); got != Pending {
+		t.Fatalf("execution = %q, want pending（意图不存在无操作）", got)
+	}
+	if e.refundCalls != 0 {
+		t.Fatalf("courier refund calls = %d, want 0（无意图不调 Courier）", e.refundCalls)
+	}
+}
+
+func TestExecuteOne_MarkRejectedDBError(t *testing.T) {
+	// 确定性拒绝但 MarkRefundRejected 写失败：仍返 Rejected（拒绝判定完成），
+	// 写失败仅记日志（best-effort），拒绝原因留痕失败不重试。
+	e := newExecEnv(t)
+	e.seed(t, "order_1", "game-a", 600, "REFUND")
+	e.refundStatus, e.refundCode = http.StatusConflict, "PAYMENT_ORDER_STATE"
+	e.addTrigger(t, `CREATE TRIGGER trg_rej BEFORE UPDATE ON refund_requests
+		WHEN NEW.status='REJECTED' BEGIN SELECT RAISE(ABORT,'boom'); END;`)
+	if got := e.executor().ExecuteOne("order_1", "REFUND"); got != Rejected {
+		t.Fatalf("execution = %q, want rejected（写失败不影响拒绝判定）", got)
+	}
+}
+
+func TestExecuteOne_MarkExecutedDBError(t *testing.T) {
+	// Courier 接受但 MarkRefundExecuted 写失败：仍返 Executed（接受判定完成），
+	// 写失败仅记日志（best-effort，不因写失败把已接受当失败）。
+	e := newExecEnv(t)
+	e.seed(t, "order_1", "game-a", 600, "REFUND")
+	e.addTrigger(t, `CREATE TRIGGER trg_exec BEFORE UPDATE ON refund_requests
+		WHEN NEW.status='EXECUTED' BEGIN SELECT RAISE(ABORT,'boom'); END;`)
+	if got := e.executor().ExecuteOne("order_1", "REFUND"); got != Executed {
+		t.Fatalf("execution = %q, want executed（写失败不影响接受判定）", got)
+	}
+}
+
+func TestExecuteOne_ReturnCouponsDBError(t *testing.T) {
+	// EXECUTED 后券返还写失败：仅记日志（GP-305 best-effort），执行结果仍
+	// EXECUTED——退款事实已定，券返还失败下轮/人工可复。
+	e := newExecEnv(t)
+	e.seed(t, "order_cp", "game-a", 600, "REFUND")
+	e.seedUsedCoupon(t, "order_cp")
+	e.addTrigger(t, `CREATE TRIGGER trg_coupon BEFORE UPDATE ON user_coupons
+		BEGIN SELECT RAISE(ABORT,'boom'); END;`)
+	if got := e.executor().ExecuteOne("order_cp", "REFUND"); got != Executed {
+		t.Fatalf("execution = %q, want executed（返还失败不影响执行结果）", got)
+	}
+}
+
+func TestRun_NilReceiver(t *testing.T) {
+	// nil 执行器（未接线）：Run 直接返回，不 panic。
+	var e *Executor
+	e.Run(context.Background())
+}
+
+func TestRun_CancelStops(t *testing.T) {
+	// ctx 取消即退出（进程信号面）。
+	e := newExecEnv(t).executor()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { e.Run(ctx); close(done) }()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not stop on ctx cancel")
+	}
+}
+
+func TestRun_TickExecutes(t *testing.T) {
+	// 周期 tick 执行 PENDING 退款（小间隔驱动），退出后已执行。
+	e := newExecEnv(t)
+	e.seed(t, "order_1", "game-a", 600, "REFUND")
+	exec := NewExecutor(e.db,
+		courier.NewClient(e.courierSrv.URL, time.Second),
+		courierscope.NewClient(e.scopeSrv.URL, "s2s-tok", time.Second),
+		e.couponDB, execAdminTok, 10*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { exec.Run(ctx); close(done) }()
+
+	var rf *model.RefundRequest
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var err error
+		rf, err = e.db.GetRefund("order_1", "REFUND")
+		if err == nil && rf != nil && rf.Status == model.RefundStatusExecuted {
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatalf("refund never executed, status=%v err=%v", rf, err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not stop on ctx cancel")
+	}
+}
+
+func TestPermanent_NonAPIError(t *testing.T) {
+	// 非 APIError（如网络/反序列化错误）不算确定性拒绝 → 瞬态留 PENDING。
+	if permanent(errors.New("plain network error")) {
+		t.Fatal("permanent(plain) = true, want false")
+	}
+}
+
+func TestRejectNote_NonAPIError(t *testing.T) {
+	// 非 APIError 时 note 用原始错误消息。
+	if got := rejectNote(errors.New("boom")); got != "courier 拒绝: boom" {
+		t.Fatalf("rejectNote = %q, want courier 拒绝: boom", got)
+	}
+}
+
+func TestStatusOf(t *testing.T) {
+	// 持久态 → 执行态映射（已终态幂等回传现态；其余一律 Pending）。
+	if got := statusOf(model.RefundStatusExecuted); got != Executed {
+		t.Fatalf("statusOf(EXECUTED) = %q, want executed", got)
+	}
+	if got := statusOf(model.RefundStatusRejected); got != Rejected {
+		t.Fatalf("statusOf(REJECTED) = %q, want rejected", got)
+	}
+	if got := statusOf(model.RefundStatusPending); got != Pending {
+		t.Fatalf("statusOf(PENDING) = %q, want pending", got)
+	}
+	if got := statusOf("UNKNOWN"); got != Pending {
+		t.Fatalf("statusOf(UNKNOWN) = %q, want pending", got)
 	}
 }
