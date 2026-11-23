@@ -130,7 +130,10 @@ COURIER_TELLER_SKUS='[{"id":"<payment_products.id>","productId":"<同左>",
 
 - 下单体带 `server_id` 指向该游戏的 **open** 区服（发货账本目标；关服未开
   → `区服不存在或未开放`），并在 payments `PUT /admin/games/:id/delivery`
-  配置该游戏发货接口，否则停 PAID 等对账。
+  配置该游戏发货接口，否则停 PAID 等对账。沙箱无真实游戏服时，该接口指任一
+  「POST 恒 200」的桩即可（宿主 python3 写几十行最小 handler；
+  `python3 -m http.server` 不行——POST 返 501）；桩返非 200 时 dispatcher
+  记账 failed 并按退避重投，账本状态在 `GET /admin/deliveries` 可查。
 - 网关 scope 中间件先于 auth 生效：`/v1/payments/*` **含 callback** 一律要
   `X-Courier-Game-Id` + `X-Courier-Env`，缺则 `COMMON_INVALID_ARGUMENT`。
 - 直连网关取 token/查单时 Courier 令牌走标准 `Authorization: Bearer` 头；
