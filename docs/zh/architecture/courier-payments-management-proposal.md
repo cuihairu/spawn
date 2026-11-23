@@ -1,6 +1,6 @@
 # Courier 支付管理适配提案（草稿，待拍板）
 
-> 状态：**草稿，待用户拍板是否向 courier 仓提交**（不触碰 Frozen 契约代码）。
+> 状态：**已提交 courier 仓待议**（2026-11-23；courier commit `ed12a1d`，落 courier `docs/zh/todo.md` 待议节 + `todo.md` 英文节；不触碰 Frozen 契约代码）。
 > 日期：2026-11-23。归属：GP-202 / GP-204 的剩余工作（todo.md 未勾项），接入设计 §3.1「管理适配作为 Courier 提案」的落点。
 > 前置事实（活走查 2026-11-23 实测）：courier gateway 二进制启动**不登记 SKU**（`teller.AddSku` 仅装配期 Go 方法，无 HTTP 管理端点），`GET /v1/payments/skus` 空表；Spawn payments 下单已达 teller 但返 404「sku 不可购」（`PAYMENT_SKU_NOT_FOUND`）——全链路 200 卡在价格表为空。
 
