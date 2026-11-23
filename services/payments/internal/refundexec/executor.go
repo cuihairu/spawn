@@ -37,6 +37,7 @@ type Executor struct {
 	db         *model.OrderProjectionModel
 	courier    *courier.Client
 	scope      *courierscope.Client
+	couponDB   *model.CouponModel
 	adminToken string
 	interval   time.Duration
 }
@@ -44,14 +45,15 @@ type Executor struct {
 // NewExecutor 构造执行器；adminToken 空或任一依赖缺失 = 管理面未接线，返回
 // nil（调用方不启动、CreateRefund 留 pending——fail-closed 不伪造成功，
 // 凭证补配后重启即执行）。与 AnalyticsRelay/NotifyRelay nil=no-op 同约定。
-func NewExecutor(db *model.OrderProjectionModel, c *courier.Client, scope *courierscope.Client, adminToken string, interval time.Duration) *Executor {
+// couponDB 供 GP-305 退款返还（EXECUTED 后回退订单关联券），可空=返还 no-op。
+func NewExecutor(db *model.OrderProjectionModel, c *courier.Client, scope *courierscope.Client, couponDB *model.CouponModel, adminToken string, interval time.Duration) *Executor {
 	if adminToken == "" || db == nil || c == nil || scope == nil {
 		return nil
 	}
 	if interval <= 0 {
 		interval = time.Minute
 	}
-	return &Executor{db: db, courier: c, scope: scope, adminToken: adminToken, interval: interval}
+	return &Executor{db: db, courier: c, scope: scope, couponDB: couponDB, adminToken: adminToken, interval: interval}
 }
 
 // ExecuteOne 执行单条 PENDING 退款意图；返回执行态。瞬态失败留 PENDING，
@@ -98,6 +100,13 @@ func (e *Executor) ExecuteOne(orderId, action string) string {
 	}
 	if err := e.db.MarkRefundExecuted(orderId, action); err != nil {
 		logx.Errorf("refund exec mark executed %s/%s: %v", orderId, action, err)
+	} else if e.couponDB != nil {
+		// GP-305 退款返还：EXECUTED 后把订单关联的 used/locked 券回退 claimed
+		//（幂等，同库单语句——MarkRefundExecuted 刚成功说明库可达，失败仅记
+		// 日志；与发货 MarkDelivered 回调同款 best-effort 口径）。
+		if err := e.couponDB.ReturnCouponsByOrder(orderId); err != nil {
+			logx.Errorf("refund exec return coupons order=%s: %v", orderId, err)
+		}
 	}
 	return Executed
 }

@@ -31,6 +31,7 @@ const execAdminTok = "courier-admin-tok"
 // execEnv 执行器测试环境：投影 DB + scope/courier 存根。
 type execEnv struct {
 	db         *model.OrderProjectionModel
+	couponDB   *model.CouponModel
 	scopeSrv   *httptest.Server
 	courierSrv *httptest.Server
 	// 记录 Courier 收到的管理退款请求
@@ -57,8 +58,12 @@ func newExecEnv(t *testing.T) *execEnv {
 	if err := m.CreateTables(); err != nil {
 		t.Fatalf("create tables: %v", err)
 	}
+	couponDB := model.NewCouponModel(db)
+	if err := couponDB.CreateTables(); err != nil {
+		t.Fatalf("create coupon tables: %v", err)
+	}
 
-	e := &execEnv{db: m, refundStatus: http.StatusOK}
+	e := &execEnv{db: m, couponDB: couponDB, refundStatus: http.StatusOK}
 
 	e.scopeSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 仅 game-a 有映射；其余 404（未接入）。
@@ -100,7 +105,33 @@ func (e *execEnv) executor() *Executor {
 	return NewExecutor(e.db,
 		courier.NewClient(e.courierSrv.URL, time.Second),
 		courierscope.NewClient(e.scopeSrv.URL, "s2s-tok", time.Second),
-		execAdminTok, time.Minute)
+		e.couponDB, execAdminTok, time.Minute)
+}
+
+// seedUsedCoupon 落一张已核销（used，关联 orderID）的券：定义 + 领取（claimed）
+// + 锁（locked, orderID）+ 核销（used, orderID），即退款前「券已用在该单」事实。
+func (e *execEnv) seedUsedCoupon(t *testing.T, orderID string) int64 {
+	t.Helper()
+	if err := e.couponDB.CreateCoupon(&model.Coupon{
+		Code: "refund-return-1", GameId: "game-a", DiscountType: model.CouponDiscountFixed,
+		DiscountValue: 100, ThresholdCents: 0, Status: model.CouponStatusPublished,
+		StartAt: "2026-01-01T00:00:00Z", EndAt: "2099-01-01T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("create coupon: %v", err)
+	}
+	uc, _, err := e.couponDB.ClaimCoupon(&model.UserCoupon{
+		CouponId: 1, UserId: 7, RequestId: "req-coupon-1",
+	})
+	if err != nil {
+		t.Fatalf("claim coupon: %v", err)
+	}
+	if err := e.couponDB.LockUserCoupon(uc.Id, orderID); err != nil {
+		t.Fatalf("lock coupon: %v", err)
+	}
+	if err := e.couponDB.MarkCouponUsedByOrder(orderID); err != nil {
+		t.Fatalf("mark coupon used: %v", err)
+	}
+	return uc.Id
 }
 
 // seed 落一笔已付款订单投影 + PENDING 退款意图。
@@ -144,6 +175,36 @@ func TestExecuteOne_Accepted(t *testing.T) {
 	}
 	if e.refundScope["auth"] != "Bearer "+execAdminTok {
 		t.Fatalf("auth = %q", e.refundScope["auth"])
+	}
+}
+
+// TestExecuteOne_ReturnsOrderCoupons GP-305 退款返还：EXECUTED 后把订单关联的
+// used 券回退 claimed（幂等）。确定性拒绝（REJECTED）不返券——券仍留 used，
+// 退款未发生不应回退。
+func TestExecuteOne_ReturnsOrderCoupons(t *testing.T) {
+	// 1. 接受 → EXECUTED → 券回退 claimed
+	e := newExecEnv(t)
+	e.seed(t, "order_coupon", "game-a", 600, "REFUND")
+	ucID := e.seedUsedCoupon(t, "order_coupon")
+	if got := e.executor().ExecuteOne("order_coupon", "REFUND"); got != Executed {
+		t.Fatalf("execution = %q, want executed", got)
+	}
+	uc, err := e.couponDB.GetUserCoupon(ucID)
+	if err != nil || uc.Status != model.UserCouponStatusClaimed {
+		t.Fatalf("coupon after executed refund = %+v err=%v, want claimed", uc, err)
+	}
+
+	// 2. 确定性拒绝 → REJECTED → 券保持 used（未退款不返券）
+	e2 := newExecEnv(t)
+	e2.seed(t, "order_rej_coupon", "game-a", 600, "REFUND")
+	ucID2 := e2.seedUsedCoupon(t, "order_rej_coupon")
+	e2.refundStatus, e2.refundCode = http.StatusConflict, "PAYMENT_ORDER_STATE"
+	if got := e2.executor().ExecuteOne("order_rej_coupon", "REFUND"); got != Rejected {
+		t.Fatalf("execution = %q, want rejected", got)
+	}
+	uc2, err := e2.couponDB.GetUserCoupon(ucID2)
+	if err != nil || uc2.Status != model.UserCouponStatusUsed {
+		t.Fatalf("coupon after rejected refund = %+v err=%v, want used", uc2, err)
 	}
 }
 
@@ -272,16 +333,16 @@ func TestNewExecutor_NilCases(t *testing.T) {
 		{"nil scope", env.db, c, nil, execAdminTok},
 	}
 	for _, tc := range cases {
-		if got := NewExecutor(tc.db, tc.c, tc.sc, tc.tok, time.Minute); got != nil {
+		if got := NewExecutor(tc.db, tc.c, tc.sc, env.couponDB, tc.tok, time.Minute); got != nil {
 			t.Fatalf("%s: NewExecutor = %v, want nil", tc.name, got)
 		}
 	}
 	// 全依赖在 → 非 nil。
-	if got := NewExecutor(env.db, c, sc, execAdminTok, time.Minute); got == nil {
+	if got := NewExecutor(env.db, c, sc, env.couponDB, execAdminTok, time.Minute); got == nil {
 		t.Fatal("full deps: NewExecutor = nil, want non-nil")
 	}
 	// interval <=0 回退 1 分钟（不 panic）。
-	if got := NewExecutor(env.db, c, sc, execAdminTok, 0); got == nil {
+	if got := NewExecutor(env.db, c, sc, env.couponDB, execAdminTok, 0); got == nil {
 		t.Fatal("interval<=0: NewExecutor = nil, want non-nil")
 	}
 }

@@ -141,7 +141,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		func(orderID string) { _ = projectionDB.MarkDelivered(orderID, time.Now().UTC().Format(time.RFC3339)) })
 	// GP-204 退款执行器（PENDING → Courier 管理面退款端点；AdminToken 空 =
 	// nil no-op，退款保持 PENDING 不伪造成功）。
-	refundExec := refundexec.NewExecutor(projectionDB, courierClient, scopeClient,
+	refundExec := refundexec.NewExecutor(projectionDB, courierClient, scopeClient, couponDB,
 		c.Courier.AdminToken, time.Second*time.Duration(c.Courier.RefundExecIntervalSeconds))
 
 	return &ServiceContext{
