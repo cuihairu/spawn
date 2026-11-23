@@ -6,10 +6,12 @@ package playeract
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -70,6 +72,40 @@ func aoDB(t *testing.T) *model.ActivityOutboxModel {
 		t.Fatalf("create outbox tables: %v", err)
 	}
 	return m
+}
+
+// aoEnv 活跃 outbox 测试环境：模型 + 原始连接（关库/触发器驱动 DB 失败臂）。
+type aoEnv struct {
+	m   *model.ActivityOutboxModel
+	raw *sql.DB
+}
+
+func newAOEnv(t *testing.T) *aoEnv {
+	t.Helper()
+	db, err := model.Open("file:" + t.TempDir() + "/playeract-env.db")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	m := model.NewActivityOutboxModel(db)
+	if err := m.CreateTables(); err != nil {
+		t.Fatalf("create outbox tables: %v", err)
+	}
+	return &aoEnv{m: m, raw: db}
+}
+
+// closeDB 关底层连接（后续读/写均失败；驱动 DB-error 失败臂）。
+func (e *aoEnv) closeDB() {
+	_ = e.raw.Close()
+}
+
+// addTrigger 建触发器（RAISE(ABORT)）驱动对应 UPDATE 失败臂；ddl 为完整
+// CREATE TRIGGER 语句（WHEN 子句限定仅目标状态转移中止，其余写不受影响）。
+func (e *aoEnv) addTrigger(t *testing.T, ddl string) {
+	t.Helper()
+	if _, err := e.raw.Exec(ddl); err != nil {
+		t.Fatalf("add trigger: %v", err)
+	}
 }
 
 func TestNewClientAndReporterDisabledWhenUnset(t *testing.T) {
@@ -202,5 +238,89 @@ func TestRelay_RecoversAndExhausts(t *testing.T) {
 	rows, _ = outbox.ListRetry(time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano), 100)
 	if len(rows) != 0 {
 		t.Fatalf("耗尽后仍出现在重投队列: %+v", rows)
+	}
+}
+
+func TestNewClient_DefaultTimeout(t *testing.T) {
+	// timeoutMs<=0 回退 3 秒（不 panic），客户端仍装配（超时默认值臂）。
+	if c := NewClient("http://127.0.0.1:1", "tok", 0); c == nil {
+		t.Fatal("NewClient(url, tok, 0) = nil, want 已装配（超时回退）")
+	}
+	if c := NewClient("http://127.0.0.1:1", "tok", -5); c == nil {
+		t.Fatal("NewClient(url, tok, -5) = nil, want 已装配（负值回退）")
+	}
+}
+
+func TestClient_Report_TransportError(t *testing.T) {
+	// 连接拒绝 → 不可达错误（同步首投失败臂）。
+	c := NewClient("http://127.0.0.1:1", "tok", 50)
+	if err := c.Report(context.Background(), []byte(`{}`)); err == nil {
+		t.Fatal("err = nil, want 传输错误")
+	}
+}
+
+func TestClient_Report_BadBaseURL(t *testing.T) {
+	// NewRequest 失败臂：baseURL 含 URL 非法控制字符（NewClient 不校验 URL，
+	// 非法字面由 http.NewRequest 构造时拒绝）。白盒直构客户端注入非法 URL。
+	c := &Client{baseURL: "http://a\x01b/", token: "tok", hc: &http.Client{}}
+	if err := c.Report(context.Background(), []byte(`{}`)); err == nil {
+		t.Fatal("err = nil, want NewRequest 失败")
+	}
+}
+
+func TestReporter_EnqueueDBError(t *testing.T) {
+	// outbox 不可写（关库）：入队失败仅记日志，不 panic、不阻断（会话主流程口径）。
+	stub := &promotionsStub{}
+	srv := httptest.NewServer(stub.handler())
+	t.Cleanup(srv.Close)
+	env := newAOEnv(t)
+	env.closeDB()
+	r := NewReporter(srv.URL, "tok", 2000, env.m)
+	if r == nil {
+		t.Fatal("NewReporter = nil")
+	}
+	r.Report(context.Background(), "u1", "g1", "2026-11-22T08:00:00.000000000Z")
+}
+
+func TestReporter_MarkFailedDBError(t *testing.T) {
+	// 同步首投失败但 MarkFailed 写失败：仅记日志（best-effort），不 panic、
+	// 不阻断——活跃事实仍留 pending，Relay 后续可再投。
+	stub := &promotionsStub{}
+	srv := httptest.NewServer(stub.handler())
+	t.Cleanup(srv.Close)
+	setFail(stub, true)
+	env := newAOEnv(t)
+	env.addTrigger(t, `CREATE TRIGGER trg_mf BEFORE UPDATE ON player_activity_outbox
+		WHEN NEW.status='pending' BEGIN SELECT RAISE(ABORT,'boom'); END;`)
+	r := NewReporter(srv.URL, "tok", 2000, env.m)
+	if r == nil {
+		t.Fatal("NewReporter = nil")
+	}
+	r.Report(context.Background(), "u1", "g1", "2026-11-22T08:00:00.000000000Z")
+}
+
+func TestReporter_MarkDeliveredDBError(t *testing.T) {
+	// 首投受理但 MarkDelivered 写失败：仅记日志（best-effort），不 panic。
+	stub := &promotionsStub{}
+	srv := httptest.NewServer(stub.handler())
+	t.Cleanup(srv.Close)
+	env := newAOEnv(t)
+	env.addTrigger(t, `CREATE TRIGGER trg_md BEFORE UPDATE ON player_activity_outbox
+		WHEN NEW.status='delivered' BEGIN SELECT RAISE(ABORT,'boom'); END;`)
+	r := NewReporter(srv.URL, "tok", 2000, env.m)
+	if r == nil {
+		t.Fatal("NewReporter = nil")
+	}
+	r.Report(context.Background(), "u1", "g1", "2026-11-22T08:00:00.000000000Z")
+}
+
+func TestTruncate_Long(t *testing.T) {
+	// 长错误截断到 n（last_error 有界，不因超长错误撑爆列）；短串原样返回。
+	long := strings.Repeat("x", 600)
+	if got := truncate(long, 500); len(got) != 500 {
+		t.Fatalf("truncate(len=%d) = len %d, want 500", len(long), len(got))
+	}
+	if got := truncate("short", 500); got != "short" {
+		t.Fatalf("truncate(short) = %q, want 原样", got)
 	}
 }
