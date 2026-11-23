@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/tappi/tappi/services/payments/internal/analytics"
@@ -57,8 +58,16 @@ func (l *CallbackLogic) Handle(channelName string, rawBody []byte, signature str
 	}
 	// 构造 Courier 期望的 HMAC（沙箱 = 传入签名本身；真实渠道用共享密钥重算）
 	expected := l.hmacCourier(rawBody)
-	// 转发 Courier 回调（scope 由订单归属在 Courier 侧解析，此处无需 header）
-	if err := l.svcCtx.Courier.ForwardCallback(rawBody, expected); err != nil {
+	// 转发 Courier 回调：网关 scope 中间件对 /v1/payments/* 含 callback 一律
+	// 要求 X-Courier-Game-Id / X-Courier-Env（缺失即 COMMON_INVALID_ARGUMENT），
+	// 而 callback 无 Bearer，归属只能由本服务按订单投影解析映射后提供
+	// （订单创建期已用同一解析校验，投影 game_id 为权威归属）。
+	gameID, env, err := l.resolveCourierScope(rawBody)
+	if err != nil {
+		l.Errorf("resolve courier scope for callback failed: %v", err)
+		return newAPIError(http.StatusBadGateway, "支付回调归属解析失败")
+	}
+	if err := l.svcCtx.Courier.ForwardCallback(rawBody, expected, gameID, env); err != nil {
 		l.Errorf("forward callback to courier failed: %v", err)
 		return newAPIError(http.StatusBadGateway, "转发支付回调失败")
 	}
@@ -71,6 +80,31 @@ func (l *CallbackLogic) Handle(channelName string, rawBody []byte, signature str
 	// GP-302 活动奖励评估入队（促销服务未部署时行为不变）
 	l.enqueueRewardEvaluation(rawBody, channelName)
 	return nil
+}
+
+// resolveCourierScope 解析回调订单归属的 Courier scope：orderId → 订单投影
+// game_id → 映射（courier_game_id + env）。三处任一取不到即无法确定转发目标
+// scope，fail-closed 不转发——网关无 scope 恒 400，而推到错误游戏 scope 比
+// 拒收更糟。订单创建期已用同一解析校验过映射，故正常链路此处必成。
+func (l *CallbackLogic) resolveCourierScope(rawBody []byte) (string, string, error) {
+	if l.svcCtx.ProjectionDB == nil || l.svcCtx.ScopeRes == nil {
+		return "", "", errors.New("回调归属解析未初始化")
+	}
+	var body struct {
+		OrderId string `json:"orderId"`
+	}
+	if err := json.Unmarshal(rawBody, &body); err != nil || body.OrderId == "" {
+		return "", "", errors.New("回调体缺 orderId")
+	}
+	proj, err := l.svcCtx.ProjectionDB.Get(body.OrderId)
+	if err != nil {
+		return "", "", fmt.Errorf("查订单投影 %s: %w", body.OrderId, err)
+	}
+	scope, err := l.svcCtx.ScopeRes.Resolve(proj.GameId)
+	if err != nil {
+		return "", "", fmt.Errorf("查映射 game=%s: %w", proj.GameId, err)
+	}
+	return scope.CourierGameId, scope.Env, nil
 }
 
 // redeemOrderCoupons 从回调体解析 orderId 并核销关联券（locked → used）。

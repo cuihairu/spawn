@@ -124,13 +124,24 @@ func (c *Client) ListOrders(gameID, env, bearer string) ([]Order, error) {
 // ForwardCallback POST /v1/payments/callback（S2S，无 Bearer）：以 X-Payment-
 // Signature（HMAC-SHA256 十六进制）转发渠道回调 raw body。验签由本服务
 // 先做（原生渠道签名），这里构造 Courier 期望的 HMAC。
-func (c *Client) ForwardCallback(rawBody []byte, hmacHex string) error {
+//
+// gatewayID/gatewayEnv 是订单归属的 Courier scope（映射解析结果）：网关
+// scope 中间件先于 auth 生效，对 /v1/payments/* 含 callback 一律要求
+// X-Courier-Game-Id / X-Courier-Env，缺失即 COMMON_INVALID_ARGUMENT。
+// 两者必须非空（调用方按订单投影解析后提供；空即本层拒绝，防静默回退
+// 成必 400 的转发）。
+func (c *Client) ForwardCallback(rawBody []byte, hmacHex, gatewayID, gatewayEnv string) error {
+	if gatewayID == "" || gatewayEnv == "" {
+		return errors.New("courier 回调转发缺 scope（X-Courier-Game-Id/Env）")
+	}
 	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/v1/payments/callback", bytes.NewReader(rawBody))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Payment-Signature", hmacHex)
+	req.Header.Set("X-Courier-Game-Id", gatewayID)
+	req.Header.Set("X-Courier-Env", gatewayEnv)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err

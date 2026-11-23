@@ -14,7 +14,7 @@ import (
 func TestClientNewRequestArms(t *testing.T) {
 	// baseURL 非法 → ForwardCallback 的 NewRequest 失败臂（130）
 	c := NewClient("://bad", time.Second)
-	if err := c.ForwardCallback([]byte(`{}`), "x"); err == nil {
+	if err := c.ForwardCallback([]byte(`{}`), "x", "cg", "dev"); err == nil {
 		t.Fatal("forward bad url = nil, want error")
 	}
 	// 同一非法 baseURL → call 的 NewRequest 失败臂（167）

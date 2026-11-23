@@ -81,7 +81,7 @@ func TestForwardCallbackErrorArms(t *testing.T) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"error":{"code":"PAYMENT_INVALID_SIGNATURE","message":"bad"}}`))
 	})
-	err := c.ForwardCallback([]byte(`{}`), "deadbeef")
+	err := c.ForwardCallback([]byte(`{}`), "deadbeef", "cg", "dev")
 	apiErr, ok := err.(*APIError)
 	if !ok || !apiErr.IsCode("PAYMENT_INVALID_SIGNATURE") {
 		t.Fatalf("forward envelope err = %v", err)
@@ -92,7 +92,7 @@ func TestForwardCallbackErrorArms(t *testing.T) {
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = w.Write([]byte(`{"data":{}}`))
 	})
-	if err := c2.ForwardCallback([]byte(`{}`), "x"); err == nil {
+	if err := c2.ForwardCallback([]byte(`{}`), "x", "cg", "dev"); err == nil {
 		t.Fatal("forward http err = nil, want error")
 	}
 
@@ -100,7 +100,7 @@ func TestForwardCallbackErrorArms(t *testing.T) {
 	c3 := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`not-json`))
 	})
-	if err := c3.ForwardCallback([]byte(`{}`), "x"); err == nil {
+	if err := c3.ForwardCallback([]byte(`{}`), "x", "cg", "dev"); err == nil {
 		t.Fatal("forward non-envelope = nil, want error")
 	}
 }
