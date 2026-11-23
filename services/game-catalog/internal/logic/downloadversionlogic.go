@@ -50,6 +50,20 @@ func (l *DownloadVersionLogic) Download(gameId, versionId, channel string) (*Dow
 	if l.svcCtx.PackageStore == nil {
 		return nil, newAPIError(http.StatusInternalServerError, "包体存储未配置")
 	}
+	// GP-002 能力门：game-catalog 未接线 courier-adapter（CourierDownload nil）
+	// = 不门控（no-op，部署面未接线不打断既有下载）；接线后该游戏未开通
+	// 平台包体下载能力 → 403 拒下载（fail-closed，缺映射/查询失败亦拒，
+	// 与 login/payment/support 能力门同口径）。
+	if l.svcCtx.CourierDownload != nil {
+		enabled, err := l.svcCtx.CourierDownload.DownloadEnabled(gameId)
+		if err != nil {
+			l.Errorf("resolve download capability for game %s failed: %v", gameId, err)
+			return nil, newAPIError(http.StatusBadGateway, "下载能力解析失败")
+		}
+		if !enabled {
+			return nil, newAPIError(http.StatusForbidden, "该游戏未开通包体下载")
+		}
+	}
 	v, err := l.svcCtx.AdminRepository.GetVersion(versionId)
 	if errors.Is(err, model.ErrVersionNotFound) {
 		return nil, newAPIError(http.StatusNotFound, "版本不存在或未发布")

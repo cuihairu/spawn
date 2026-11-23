@@ -61,6 +61,16 @@ type Config struct {
 		Token string `json:",env=INTERNAL_TOKEN,optional"`
 	}
 
+	// CourierAdapter GP-002 映射 download 能力查询（受控包体下载门）：
+	// 指向 courier-adapter /internal/games/:id/mapping。BaseURL 未配置 =
+	// 不门控（no-op，保持既有下载行为，部署面未接线不打断下载）；配置后
+	// 该游戏未开通 download 能力即 403 拒下载（fail-closed）。Token 复用
+	// Internal.Token（共享 INTERNAL_TOKEN，与 payments→courier-adapter 同款）。
+	CourierAdapter struct {
+		BaseURL string `json:",env=COURIER_ADAPTER_URL,optional"`
+		Timeout int64  `json:",default=3000,env=COURIER_ADAPTER_TIMEOUT"`
+	}
+
 	// GP-402 经营分析事实投递（F24）：download 事实事件 → data-panel
 	// /internal/events（X-Internal-Token）。BaseURL 未配置 = no-op，
 	// 部署面未带数据面板时行为不变；fire-and-forget 不影响下载主流程。

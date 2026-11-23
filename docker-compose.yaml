@@ -63,6 +63,10 @@ services:
       # 侧 INTERNAL_TOKEN 同值。
       DATA_PANEL_URL: http://data-panel:8896
       DATA_PANEL_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
+      # GP-002 download 能力门（受控包体下载）：courier-adapter 映射端点，
+      # 未配置 = 不门控（no-op）。令牌复用 INTERNAL_TOKEN（与 courier-adapter
+      # 侧同值）。
+      COURIER_ADAPTER_URL: http://courier-adapter:8897
     volumes:
       - game-packages:/app/data/packages
       # GP-005 沙箱目录主库：/app/data/games.db 挂命名卷（partner/role/game/

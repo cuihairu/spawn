@@ -14,6 +14,7 @@ import (
 
 	"github.com/tappi/tappi/services/game-catalog/internal/analytics"
 	"github.com/tappi/tappi/services/game-catalog/internal/config"
+	"github.com/tappi/tappi/services/game-catalog/internal/courierdownload"
 	"github.com/tappi/tappi/services/game-catalog/internal/notify"
 	"github.com/tappi/tappi/services/game-catalog/internal/store"
 	"github.com/tappi/tappi/services/game-catalog/model"
@@ -46,6 +47,9 @@ type ServiceContext struct {
 	NotifyRelay *notify.Relay
 	// NotifyOutbox GP-306/401 业务通知本地补偿队列（始终建表；未启用时不写行）。
 	NotifyOutbox *model.NotifyOutboxModel
+	// CourierDownload GP-002 download 能力查询（受控包体下载门）；
+	// nil = COURIER_ADAPTER_URL 未配置（no-op，不门控）。
+	CourierDownload *courierdownload.Client
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -148,6 +152,11 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		int(c.Notify.OutboxMaxAttempts),
 		time.Hour*time.Duration(c.Notify.OutboxRetentionHours))
 
+	// GP-002 download 能力查询（COURIER_ADAPTER_URL 未配置 = nil no-op）。
+	// Token 复用 Internal.Token（共享 INTERNAL_TOKEN，与 payments 同款）。
+	courierDownload := courierdownload.NewClient(c.CourierAdapter.BaseURL, c.Internal.Token,
+		time.Millisecond*time.Duration(c.CourierAdapter.Timeout))
+
 	return &ServiceContext{
 		Config:          c,
 		GameRepository:  gameModel,
@@ -160,6 +169,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		AnalyticsOutbox: analyticsOutbox,
 		NotifyRelay:     notifyRelay,
 		NotifyOutbox:    notifyOutbox,
+		CourierDownload: courierDownload,
 	}
 }
 
