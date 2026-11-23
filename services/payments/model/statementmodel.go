@@ -6,8 +6,9 @@ package model
 //
 // 事实源仍是 Courier teller（设计 §3.1 交易唯一事实源），本服务不旁路
 // 契约：投影由回调/投递上报驱动（无主动拉取，可能滞后于 Courier 事实，
-// 对账走查归 GP-206）。优惠承担暂为 0（优惠券子系统未接，GP-305）；
-// 退款冲减只计 EXECUTED（执行器待 Courier 退款端点提案，接入前为 0）。
+// 对账走查归 GP-206）。优惠承担已接（GP-305 券折让账本 coupon_order_links，
+// 1dab81a）；退款冲减只计 EXECUTED（执行器已接线 6176ea1，Courier 退款
+// 端点部署激活前退款停 PENDING，冲减为 0）。
 
 import (
 	"database/sql"

@@ -5,8 +5,9 @@ package logic
 //
 // 事实源仍为 Courier teller（设计 §3.1），本服务仅聚合事实副本；无全局
 // 订单/结算 HTTP API（边界 6），对账单由本服务按商户维度生成快照。优惠
-// 承担暂 0（优惠券子系统未接，GP-305）；退款冲减只计 EXECUTED（执行器待
-// Courier 退款端点提案）。
+// 承担已接（GP-305 券折让账本 coupon_order_links ⋈ order_projection，1dab81a）；
+// 退款冲减只计 EXECUTED（执行器已接线 6176ea1，Courier 退款端点部署激活
+// 前退款停 PENDING，冲减为 0）。
 
 import (
 	"context"
