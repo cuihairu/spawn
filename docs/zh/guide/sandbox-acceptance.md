@@ -58,11 +58,11 @@ compose 网络前以 502 呈现——沙箱钉住的是接口契约，不是活�
 
 ## 验收清单
 
-`seed-example-game.sh` 跑通后，在全新沙箱上逐项核验。1/2 由 seed 脚本内置断言（草稿期上传包体，网关可见性、匿名 401、Bearer 下载内容一致）；1/2/3/5 已于 2026-11-21 本机沙箱实测（3：单人第 3 次 409、全量领完 409、同 request_id 重放返回同领取 id；5：无 croupier 时会话端点 502）。4/6 需活的 croupier 实例——下单经 Courier `POST /v1/payments/orders`——归 GP-206 外部资产 ①。
+`seed-example-game.sh` 跑通后，在全新沙箱上逐项核验。1/2 由 seed 脚本内置断言（草稿期上传包体，网关可见性、匿名 401、Bearer 下载内容一致）；1/2/3/5 已于 2026-11-21 本机沙箱实测（3：单人第 3 次 409、全量领完 409、同 request_id 重放返回同领取 id；5：无 croupier 时会话端点 502）；4/6 于 2026-11-23 用 courier-gateway-integrator 活走查（下单经 Courier `POST /v1/payments/orders`，回调经 spawn `/callback/sandbox` 验签转发）。
 
 - [x] 示例游戏玩家可见（经网关 8800 `GET /games/:id`）
 - [x] 已发布版本可经网关流式路由下载（需 Bearer）
 - [x] 礼包领取遵守单人/全量上限（领完 409，幂等重放优先）
-- [ ] 支付订单触发活动奖励评估（payments → promotions S2S）——需活的 croupier
+- [x] 支付订单触发活动奖励评估（payments → promotions S2S）——2026-11-23 活走查（courier-gateway-integrator）：PAID 后 facts 入队 `promotion_evaluations` done → `POST /internal/reward-evaluations` 200 → `reward_grants` granted（rate_bp 15000 倍率，extra 50）
 - [x] Courier 会话端点：无 croupier 时 502；有 croupier 时票据链路走通归 GP-206
-- [ ] 沙箱支付回调（`POST /callback/sandbox/...`）以合法 HMAC 将订单推至 PAID——需活的 croupier
+- [x] 沙箱支付回调（`POST /callback/sandbox/...`）以合法 HMAC 将订单推至 PAID——2026-11-23 活走查：HMAC 验签后按订单投影解析 scope 转发（order_01a2064c… CREATED → PAID → 发货账本 DELIVERED）

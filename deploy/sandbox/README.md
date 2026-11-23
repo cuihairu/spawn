@@ -147,7 +147,11 @@ COURIER_TELLER_SKUS='[{"id":"<payment_products.id>","productId":"<同左>",
   未配置 = 分发 fail-closed 全 403）。沙箱联调发货必须显式给值。
   出站向游戏服发货则用 `X-Game-Delivery-Signature`（配置接口自带的密钥）。
 - 沙箱渠道支付回调：`POST /callback/sandbox/...`（payments，HMAC
-  `PAYMENTS_SANDBOX_SECRET`，仅开发/沙箱）。
+  `PAYMENTS_SANDBOX_SECRET`，仅开发/沙箱）。payments 验签后转发 Courier
+  callback 时**按订单投影解析 scope 并带头**（orderId → 投影 game_id →
+  映射 courierGameId/env）：网关 scope 中间件对 callback 同样强制要求
+  这两个头，裸转发必 400（spawn 侧表现 502「转发支付回调失败」）。
+  解析不到（投影缺失/映射未配）即 502 fail-closed，绝不推到错误 scope。
 - 订单事实 S2S：payments `GET /internal/orders/:id`，`X-Internal-Token`
   （`INTERNAL_TOKEN`，与 courier-adapter 同值，供售后工单归属校验）。
 
