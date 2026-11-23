@@ -85,6 +85,9 @@ func (r *Relay) RelayOnce(ctx context.Context) (attempted, delivered int) {
 
 // Run 周期重投循环，ctx 取消即退出（进程信号面）；每轮顺带清理已终态行。
 func (r *Relay) Run(ctx context.Context) {
+	if r == nil {
+		return
+	}
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
 	for {
