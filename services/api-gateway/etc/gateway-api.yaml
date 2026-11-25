@@ -2,6 +2,20 @@ Name: api-gateway
 Host: 0.0.0.0
 Port: 8800
 
+# 全局超时：go-zero rest 默认 3 s 会经请求 context 掐断 GP-105 流式包体
+# 通道（StreamingHandler 继承 r.Context()，上游 streamClient 本身无整体
+# 超时）——2026-11-26 模拟器走查实测 200 MiB 下载稳定在 3301 ms 被切
+# （okhttp unexpected end of stream），宿主机 curl 0.6 s 完成故未暴露。
+# 放大到 5 min 与 game-catalog 侧口径一致；JSON 请求按实际处理时长提前
+# 返回，不受影响。
+Timeout: 300000
+
+# 请求体上限：go-zero rest 默认 10 MiB 会在框架层 413 掐掉 GP-105 合作方
+# 包体上传（POST /partner/games/:id/versions/:versionId/package 流式透传；
+# 2026-11-26 走查 30 MiB 实测 413）。放开到与 game-catalog 包体存储上限
+# 对齐（2 GiB）；JSON 反代路由另有 1 MiB maxProxyBody 自身兜底。
+MaxBytes: 2147483648
+
 # 上传入口的 JWT 本地校验：secret 与 user-service 的 Auth.JWTSecret 保持一致，
 # 部署面可用 JWT_SECRET 环境变量覆盖（compose 里两端同步传值）。
 Auth:
