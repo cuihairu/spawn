@@ -8,6 +8,11 @@ Port: 8890
 # 请求体远小于此值，网关侧另有流式通道与限流（api-gateway）兜底。
 MaxBytes: 2147483648
 
+# 全局超时：go-zero rest 默认 3 s，200 MiB 级包体过 docker bridge 写盘
+# + 流式 SHA-256 超过该窗（实测 2.4 s 被掐 i/o timeout）——2026-11-26
+# 走查实测。放大到 5 min，小请求仍按实际处理时长提前返回，不受影响。
+Timeout: 300000
+
 # 游戏目录数据库：DSN 含 file:/.db 走 SQLite（默认本地文件，零配置），
 # 生产用 MySQL 连接串 + DATASOURCE 环境变量覆盖。空表启动时自动写入内嵌种子。
 MySQL:

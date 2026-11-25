@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1.9
 
 FROM golang:1.26 AS builder
+# GOPROXY 构建期可配（go 模块拉取走 proxy.golang.org 在部分网络下超时，
+# 传 --build-arg GOPROXY=https://goproxy.cn,direct 走国内镜像）。
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
