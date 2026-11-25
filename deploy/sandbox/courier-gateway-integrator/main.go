@@ -58,6 +58,7 @@ import (
 	"github.com/cuihairu/courier/gateway/providers/account"
 	"github.com/cuihairu/courier/gateway/providers/teller"
 	"github.com/cuihairu/courier/gateway/routing"
+	"github.com/cuihairu/courier/gateway/scope"
 )
 
 // deliveryPayload 对齐 spawn payments delivery.Instruction 的 camelCase
@@ -102,6 +103,11 @@ func main() {
 // assemble 组装 handler（account+teller 两域）。抽出以便测试：装配
 // 读环境变量注入 SKUs/Deliver，其余全部组合 courier 导出包。
 func assemble(skus []skuSpec) (http.Handler, error) {
+	// 沙箱映射 env=sandbox（seed-example-game.sh 写 courier_game_mapping 的
+	// 口径），网关 scope env 注册表默认只含 dev/staging/prod——契约是注册表
+	// 制（scope.md 可扩展），装配期显式注册，不静默回落 dev。
+	scope.RegisterEnv("sandbox")
+
 	reg := providers.NewRegistry()
 
 	// identity 域：account（代登录/会话/注销的冻结 /v1/identity/* 契约承载）。

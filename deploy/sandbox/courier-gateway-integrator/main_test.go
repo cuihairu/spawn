@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/cuihairu/courier/gateway/providers/teller"
@@ -165,6 +166,47 @@ func TestAssemble_AuthFailClosed(t *testing.T) {
 	if resp.StatusCode != http.StatusUnauthorized {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status = %d body=%s, want 401", resp.StatusCode, body)
+	}
+}
+
+// TestAssemble_ScopeEnvSandboxRegistered 沙箱映射 env=sandbox 须经装配注册：
+// 未注册时 scope 中间件 400（注册表默认仅 dev/staging/prod），注册后 guest
+// 登录 200 且令牌落地（GP-204 活走查暴露的装配缺口，注册表制契约的可扩展面）。
+func TestAssemble_ScopeEnvSandboxRegistered(t *testing.T) {
+	h, err := assemble(nil)
+	if err != nil {
+		t.Fatalf("assemble() error = %v", err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	t.Setenv("COURIER_TELLER_SKUS", "")
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/v1/identity/guest", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("X-Courier-Game-Id", "courier-sandbox-x")
+	req.Header.Set("X-Courier-Env", "sandbox")
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = io.NopCloser(strings.NewReader(`{"deviceId":"walkthrough-gp204","platform":"web"}`))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("guest: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d body=%s, want 200", resp.StatusCode, body)
+	}
+	var payload struct {
+		Data struct {
+			AccessToken string `json:"accessToken"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(payload.Data.AccessToken) != 64 { // opaque 令牌 = 64-hex
+		t.Fatalf("accessToken len = %d, want 64-hex opaque token", len(payload.Data.AccessToken))
 	}
 }
 
