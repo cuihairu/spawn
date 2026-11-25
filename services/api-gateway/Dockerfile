@@ -4,6 +4,11 @@
 # ../../pkg/resilience 要求镜像内目录结构与仓库一致
 # （/src/pkg/resilience、/src/services/api-gateway），单服务上下文装不下。
 FROM golang:1.26-alpine AS builder
+# GOPROXY 构建期可配（proxy.golang.org 在部分网络下超时，传
+# --build-arg GOPROXY=https://goproxy.cn,direct 走国内镜像；与 game-catalog
+# Dockerfile 同口径）。
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 WORKDIR /src
 COPY pkg/resilience/go.mod pkg/resilience/go.mod
 COPY services/api-gateway/go.mod services/api-gateway/go.sum services/api-gateway/
