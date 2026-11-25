@@ -197,6 +197,9 @@
 
 ## 漏洞扫描遗留（2026-11-03 全舰队扫描，源 scratch/vuln-scan-*.md）
 
+- [x] VULN-SPAWN-002 dependabot 15 项全清（2026-11-25；2 high grpc / 10 moderate / 3 low）：64ac572。
+  - 完成：promotions/go.mod 间接 pin 由 grpc v1.83.0 → v1.85.0、otel 全家桶 → v1.47.0（go.work 下 MVS 本已解析到新版本，dependabot 只看单模块 manifest pin 故告警滞留；显式 bump 后清零，promotions -race/vet/build 全绿）；根 package.json pnpm overrides 改 node-forge ≤1.4.2→1.4.3、vite <6.4.5→6.4.5（原 6.4.3/6.4.4 两条旧规则合并去重，apps/web-client vite ^8.3.4 本已安全不碰）、minimatch 7..11→11.0.1、glob 9..14→14.0.2，pnpm install 重建 lockfile；删 apps/web-client/package-lock.json（pnpm 是唯一权威，npm 双轨致 minimatch 告警重复）+ README 前端命令同步改 pnpm。门禁：web tsc/eslint/vitest 14/build 绿、docs build 绿、mobile tsc/eslint 绿、promotions gofmt/vet/race 绿；pnpm audit --audit-level=high 余 1 moderate→GH dependabot 全 15 项清零（含 2 high）。
+
 - [x] VULN-SPAWN-001 [高危·GHSA-mrhx-c7xc-m3w5] zod 3.25.76（另有 4.4.3 实例）→≥4.6.6【跨大版本需改代码】：@expo/cli 依赖 zod3（终扫残留 1）；验收：pnpm audit --audit-level=high 中 zod 不再命中；该仓无 test 脚本，audit-only
   - 完成：根 package.json overrides 合并为 `zod@<4.6.6: 4.6.6`（覆盖 @expo/cli 的 zod3 传递依赖；漏洞区间 <4.6.6 无干净 3.x）；pnpm install 重建 lockfile（zod@3.25.76 清零）；pnpm audit --audit-level=high zod 不再命中（余 2 low | 7 moderate 均低于门槛）；门禁：mobile tsc/eslint + web tsc/eslint 绿，expo export --platform android 成功（@expo/cli 在 zod4 下运行时验证）。
 
