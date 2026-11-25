@@ -77,13 +77,15 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	}
 
 	return &ServiceContext{
-		Config:         c,
-		Auth:           utils.NewAuth(c.Auth.JWTSecret),
-		Courier:        courierClient,
-		Mappings:       model.NewMappingModel(db),
-		Bindings:       model.NewBindingModel(db),
-		Audits:         model.NewAuditModel(db),
-		Tickets:        ticket.NewStore(msDuration(c.Ticket.TTLSeconds)),
+		Config:   c,
+		Auth:     utils.NewAuth(c.Auth.JWTSecret),
+		Courier:  courierClient,
+		Mappings: model.NewMappingModel(db),
+		Bindings: model.NewBindingModel(db),
+		Audits:   model.NewAuditModel(db),
+		// TTLSeconds 是秒（配置注释同口径）——曾误走 msDuration 把 120s
+		// 当 120ms，票据出票即过期、兑票恒 404（2026-11-26 活走查实测）。
+		Tickets:        ticket.NewStore(time.Second * time.Duration(c.Ticket.TTLSeconds)),
 		DB:             db,
 		ActivityReport: activityReporter,
 		ActivityRelay:  activityRelay,
