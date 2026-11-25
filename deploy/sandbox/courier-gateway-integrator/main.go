@@ -33,6 +33,10 @@
 //	                                  http://payments:8898/internal/deliveries；空 = 不接线）
 //	COURIER_PAYMENTS_DELIVER_SECRET   发货 webhook HMAC（同 payments
 //	                                  PAYMENTS_DELIVERY_SECRET；webhook 非空而密钥空 = 不接线）
+//	COURIER_PAYMENTS_ADMIN_TOKEN      管理面 S2S 凭证（Bearer；v1.2 管理端点
+//	                                  /v1/payments/admin/*；与 spawn payments
+//	                                  容器 COURIER_PAYMENTS_ADMIN_TOKEN 同值；
+//	                                  空 = fail-closed，管理端点一律 401）
 package main
 
 import (
@@ -107,12 +111,14 @@ func assemble(skus []skuSpec) (http.Handler, error) {
 	})
 	reqAuth := auth.RequireAuth(acc.Verifier())
 
-	// payments 域：teller（SKU 价格表 + 订单状态机 + 回调验签 + Deliver）。
+	// payments 域：teller（SKU 价格表 + 订单状态机 + 回调验签 + Deliver +
+	// 管理面凭证（v1.2 退款/重发/检索；GP-204 部署激活）。
 	tellerP := teller.New(teller.Options{
 		RequireAuth:   reqAuth,
 		ChannelSecret: os.Getenv("COURIER_PAYMENTS_CHANNEL_SECRET"),
 		StateFile:     os.Getenv("COURIER_PAYMENTS_STATE"),
 		Deliver:       deliverHook(),
+		AdminToken:    os.Getenv("COURIER_PAYMENTS_ADMIN_TOKEN"),
 	})
 	for _, s := range skus {
 		tellerP.AddSku(s.ID, s.ProductId, s.Form, s.AmountCents, s.Currency)

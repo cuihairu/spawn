@@ -167,3 +167,77 @@ func TestAssemble_AuthFailClosed(t *testing.T) {
 		t.Fatalf("status = %d body=%s, want 401", resp.StatusCode, body)
 	}
 }
+
+// adminGet 向装配发起管理面检索（GET /v1/payments/admin/orders，可带 Bearer）。
+func adminGet(t *testing.T, srvURL, bearer string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, srvURL+"/v1/payments/admin/orders", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	// 管理面 S2S 仍过 scope 中间件（先于管理凭证校验）：补合法 scope 头，
+	// 与 spawn payments courier 客户端同口径（经映射解析后的 scope）。
+	req.Header.Set("X-Courier-Game-Id", "game_demo")
+	req.Header.Set("X-Courier-Env", "dev")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET admin orders: %v", err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	return resp
+}
+
+// TestAssemble_AdminFailClosed 管理凭证未配置：管理端点一律 401（忘注入
+// 不能变成开放管理面，GP-204 部署激活的 fail-closed 口径）。
+func TestAssemble_AdminFailClosed(t *testing.T) {
+	t.Setenv("COURIER_PAYMENTS_ADMIN_TOKEN", "")
+	h, err := assemble(nil)
+	if err != nil {
+		t.Fatalf("assemble() error = %v", err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	if resp := adminGet(t, srv.URL, ""); resp.StatusCode != http.StatusUnauthorized {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("no token: status = %d body=%s, want 401", resp.StatusCode, body)
+	}
+	if resp := adminGet(t, srv.URL, "guess"); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong token: status = %d, want 401", resp.StatusCode)
+	}
+}
+
+// TestAssemble_AdminTokenWired 管理凭证接线生效：对 token 检索 200（空表
+// 信封 data.items），错 token 仍 401。
+func TestAssemble_AdminTokenWired(t *testing.T) {
+	t.Setenv("COURIER_PAYMENTS_ADMIN_TOKEN", "admin-tok")
+	h, err := assemble(nil)
+	if err != nil {
+		t.Fatalf("assemble() error = %v", err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	resp := adminGet(t, srv.URL, "admin-tok")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d body=%s, want 200", resp.StatusCode, body)
+	}
+	var payload struct {
+		Data struct {
+			Items []any `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload.Data.Items == nil {
+		t.Fatalf("items = null, want 空数组信封")
+	}
+	if resp2 := adminGet(t, srv.URL, "wrong"); resp2.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong token: status = %d, want 401", resp2.StatusCode)
+	}
+}
