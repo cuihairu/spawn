@@ -246,7 +246,7 @@ go run services/realtime-hub/realtime-hub.go -f services/realtime-hub/etc/realti
 go run services/api-gateway/gateway.go -f services/api-gateway/etc/gateway-api.yaml
 
 # Frontend
-cd apps/web-client && npm install && npm run dev
+pnpm --dir apps/web-client install && pnpm --dir apps/web-client run dev
 ```
 
 ### Service Port Map
