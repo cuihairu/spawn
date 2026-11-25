@@ -44,20 +44,26 @@ func NewBindingModel(db *sql.DB) *BindingModel {
 	return &BindingModel{db: db}
 }
 
+// GetByUser 读取有效绑定。UNBOUND（注销终态）行保留仅为审计可追踪，
+// 语义上视同未绑定：否则已注销用户会被挡在 autoBind 重建之外，
+// 对着已删除的 Courier 账号代登录永久 502（2026-11-26 活走查实复现）。
 func (m *BindingModel) GetByUser(userID int64) (*Binding, error) {
 	row := m.db.QueryRow(
 		`SELECT spawn_user_id, courier_account_id, courier_email, courier_secret_enc,
 		        status, bind_method, bound_at, unbound_at, created_at, updated_at
-		 FROM platform_courier_binding WHERE spawn_user_id = ?`, userID)
+		 FROM platform_courier_binding WHERE spawn_user_id = ? AND status <> ?`,
+		userID, BindingUnbound)
 	return scanBinding(row)
 }
 
-// GetByCourierAccount 以 Courier 账号反查（唯一键约束的保护性读取）。
+// GetByCourierAccount 以 Courier 账号反查（唯一键约束的保护性读取）；
+// 与 GetByUser 同口径：UNBOUND 终态不算绑定。
 func (m *BindingModel) GetByCourierAccount(accountID string) (*Binding, error) {
 	row := m.db.QueryRow(
 		`SELECT spawn_user_id, courier_account_id, courier_email, courier_secret_enc,
 		        status, bind_method, bound_at, unbound_at, created_at, updated_at
-		 FROM platform_courier_binding WHERE courier_account_id = ?`, accountID)
+		 FROM platform_courier_binding WHERE courier_account_id = ? AND status <> ?`,
+		accountID, BindingUnbound)
 	return scanBinding(row)
 }
 
@@ -91,6 +97,35 @@ func (m *BindingModel) Create(b *Binding) error {
 		b.SpawnUserID, b.CourierAccountID, b.CourierEmail, b.SecretEnc,
 		b.Status, b.BindMethod, b.BoundAt, b.CreatedAt, b.UpdatedAt)
 	return err
+}
+
+// Save 绑定落库：首绑 INSERT；已有 UNBOUND 终态行（注销后重进游戏）
+// 原位重生为新绑定——spawn_user_id 是主键，直接 Create 会撞主键，
+// 该槽位必须复用（历史轨迹由 adapter_audit_logs 承载，行表只存当前态）。
+// created_at 保留首绑时刻（行生日），bound_at/unbound_at 按本次绑定刷新。
+func (m *BindingModel) Save(b *Binding) error {
+	now := nowStr()
+	if b.Status == "" {
+		b.Status = BindingActive
+	}
+	if b.BindMethod == "" {
+		b.BindMethod = "auto"
+	}
+	res, err := m.db.Exec(
+		`UPDATE platform_courier_binding
+		 SET courier_account_id = ?, courier_email = ?, courier_secret_enc = ?,
+		     status = ?, bind_method = ?, bound_at = ?, unbound_at = '', updated_at = ?
+		 WHERE spawn_user_id = ? AND status = ?`,
+		b.CourierAccountID, b.CourierEmail, b.SecretEnc,
+		b.Status, b.BindMethod, now, now, b.SpawnUserID, BindingUnbound)
+	if err != nil {
+		return err
+	}
+	if n, rerr := res.RowsAffected(); rerr == nil && n > 0 {
+		b.BoundAt, b.UpdatedAt = now, now
+		return nil
+	}
+	return m.Create(b)
 }
 
 // UpdateStatus 状态流转（注销受理 → PENDING_DELETE；撤销 → ACTIVE；

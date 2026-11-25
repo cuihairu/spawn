@@ -112,7 +112,8 @@ func (l *SessionLogic) autoBind(mapping *model.GameMapping, authHeader string, u
 		Status:           model.BindingActive,
 		BindMethod:       "auto",
 	}
-	if err := l.svcCtx.Bindings.Create(binding); err != nil {
+	// Save：首绑 INSERT；注销重进（UNBOUND 终态行）原位复用主键槽位。
+	if err := l.svcCtx.Bindings.Save(binding); err != nil {
 		l.Errorf("save binding failed (user %d): %v", userID, err)
 		return nil, nil, newAPIError(http.StatusInternalServerError, "保存绑定失败")
 	}

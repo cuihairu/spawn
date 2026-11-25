@@ -97,26 +97,63 @@ func TestBindingLifecycle(t *testing.T) {
 
 	for _, step := range []struct {
 		status      string
-		wantUnbound bool
+		wantVisible bool
 	}{
-		{BindingPendingDelete, false},
-		{BindingActive, false},
-		{BindingUnbound, true},
+		{BindingPendingDelete, true},
+		{BindingActive, true},
+		{BindingUnbound, false}, // 终态行保留审计，但语义视同未绑定
 	} {
 		if err := m.UpdateStatus(1, step.status); err != nil {
 			t.Fatalf("update %s: %v", step.status, err)
 		}
-		got, _ = m.GetByUser(1)
-		if got.Status != step.status {
-			t.Fatalf("status = %s, want %s", got.Status, step.status)
+		got, err = m.GetByUser(1)
+		if step.wantVisible {
+			if err != nil {
+				t.Fatalf("get visible %s: %v", step.status, err)
+			}
+			if got.Status != step.status {
+				t.Fatalf("status = %s, want %s", got.Status, step.status)
+			}
+			continue
 		}
-		if step.wantUnbound && got.UnboundAt == "" {
-			t.Fatal("unbound_at should be set on UNBOUND")
+		if !errors.Is(err, ErrBindingNotFound) {
+			t.Fatalf("get after UNBOUND err = %v, want ErrBindingNotFound", err)
+		}
+		if _, err := m.GetByCourierAccount("acc_1"); !errors.Is(err, ErrBindingNotFound) {
+			t.Fatalf("get by account after UNBOUND err = %v, want ErrBindingNotFound", err)
 		}
 	}
 
 	if err := m.UpdateStatus(99, BindingActive); !errors.Is(err, ErrBindingNotFound) {
 		t.Fatalf("update missing binding err = %v", err)
+	}
+
+	// 注销重进：UNBOUND 槽位原位重生（PK 不得撞，GetByUser 可见新绑定）。
+	reb := &Binding{SpawnUserID: 1, CourierAccountID: "acc_9", CourierEmail: "reb@x.invalid",
+		SecretEnc: enc, Status: BindingActive, BindMethod: "auto"}
+	if err := m.Save(reb); err != nil {
+		t.Fatalf("save rebind: %v", err)
+	}
+	got, err = m.GetByUser(1)
+	if err != nil {
+		t.Fatalf("get after rebind: %v", err)
+	}
+	if got.CourierAccountID != "acc_9" || got.Status != BindingActive || got.UnboundAt != "" {
+		t.Fatalf("rebind row mismatch: %+v", got)
+	}
+	if got.CreatedAt == "" {
+		t.Fatal("created_at should be preserved across rebind")
+	}
+
+	// 首绑用户 Save 走 INSERT 路径（无既有行）。
+	first := &Binding{SpawnUserID: 2, CourierAccountID: "acc_2", CourierEmail: "p2@x.invalid",
+		SecretEnc: enc, Status: BindingActive, BindMethod: "auto"}
+	if err := m.Save(first); err != nil {
+		t.Fatalf("save first: %v", err)
+	}
+	got, _ = m.GetByUser(2)
+	if got.CourierAccountID != "acc_2" {
+		t.Fatalf("first save row mismatch: %+v", got)
 	}
 }
 
