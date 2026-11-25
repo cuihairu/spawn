@@ -1,5 +1,5 @@
 // 游戏目录域：列表/详情/最新版本/精选（game-catalog，经网关反代）。
-import { ApiError, request, requestEnvelope, GAME_SERVICE_URL } from './http';
+import { ApiError, request, GAME_SERVICE_URL } from './http';
 
 export interface Game {
   id: string;
@@ -70,7 +70,10 @@ export interface LatestGameVersion {
 
 export async function fetchLatestGameVersion(gameId: string): Promise<LatestGameVersion | null> {
   try {
-    const payload = await requestEnvelope<{ version: LatestGameVersion }>(
+    // 契约是裸对象 { version }（同 fetchGameById 的 { game, rating }，games
+    // 服务不走 code/data 业务信封）——曾误用 requestEnvelope 导致 code 恒
+    // undefined 抛错、下载区静默消失（2026-11-26 模拟器走查发现）。
+    const payload = await request<{ version: LatestGameVersion }>(
       `${GAME_SERVICE_URL}/games/${encodeURIComponent(gameId)}/versions/latest`,
     );
     return payload.version;
