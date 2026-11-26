@@ -163,7 +163,7 @@ export default function StatsScreen() {
             </Text>
           </View>
           {games.length === 0 ? (
-            <Pressable onPress={() => router.push('/(tabs)/index')}>
+            <Pressable onPress={() => router.push('/')}>
               <Text style={styles.emptyLink}>还没有战绩记录，去游戏库挑一款开玩 ›</Text>
             </Pressable>
           ) : (

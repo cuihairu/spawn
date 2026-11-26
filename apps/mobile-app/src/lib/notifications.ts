@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
+import type { Href } from 'expo-router';
 
 // M3 本地推送：社区新帖每日提醒 + 通知点击深链。全链路本地调度
 // （expo-notifications 本地通知），不依赖任何推送后端，也无需服务端配置。
@@ -99,7 +100,9 @@ export function useNotificationTapRedirect(): null {
       return;
     }
     handled.current = key;
-    router.push(url);
+    // 通知 data.url 来自服务端/本地调度，运行时才可知；typedRoutes 下编译期
+    // Href union 无法覆盖任意字符串，收窄为 Href 后仍保持 router 原生跳转。
+    router.push(url as Href);
   }, [response, router]);
 
   return null;
