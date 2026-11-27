@@ -137,6 +137,15 @@ COURIER_TELLER_SKUS='[{"id":"<payment_products.id>","productId":"<同左>",
 重启后下单报 `PAYMENT_SKU_NOT_FOUND` 时重跑 sync 幂等恢复即可，不必重建
 容器；订单事实不可再生，跨仓对账依赖 integrator 容器不被重建。
 
+**SKU scope 隔离（courier v1.3，`ffca371`；2026-11-27 接入）**：本模块冻结
+钉版已升 `v0.0.0-20261127083713-ffca3718aa05`——teller SKU 价格表按
+`(gameId, env)` scope 键控（空 scope = 全局历史行为零变化）。payments 的
+`/admin/games/:gameId/products/sync` 会把 GP-002 映射解析出的 scope 写进
+管理面登记体（`courier.AdminSkuReq` 的 `gameId`/`env`），故 sync 登记的 SKU
+只对本游戏 scope 可见可购，跨游戏下单 404 `PAYMENT_SKU_NOT_FOUND`。注意
+`COURIER_TELLER_SKUS` env（如上示例）登记的是**全局** SKU（无 scope 字段），
+启动装配后对所有 scope 可见——沙箱多游戏若需隔离，用管理面 sync 而非 env。
+
 **已验证链路（2026-11-23 活栈走查）**：guest 登录取 Courier opaque token →
 玩家下单（平台 JWT + `X-Courier-Authorization` 双带）→ CREATED →
 渠道回调 `/v1/payments/callback`（`X-Payment-Signature`）→ PAID → Deliver
