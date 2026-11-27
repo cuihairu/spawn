@@ -220,6 +220,11 @@ services:
       COMMUNITY_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
       # 沙箱渠道 HMAC 密钥（仅开发/沙箱；真实渠道不得使用且须覆盖）
       PAYMENTS_SANDBOX_SECRET: "${PAYMENTS_SANDBOX_SECRET:-tappi-payments-sandbox-channel-secret-2026}"
+      # GP-202 真实渠道转发 Courier 的渠道密钥（与 courier-gateway 容器
+      # COURIER_PAYMENTS_CHANNEL_SECRET 同值）。空 = 真实渠道回调验签通过后
+      # 转发 fail-closed 503（绝不以沙箱密钥代发）；沙箱转发腿用
+      # PAYMENTS_SANDBOX_SECRET 不受影响。
+      COURIER_PAYMENTS_CHANNEL_SECRET: "${COURIER_PAYMENTS_CHANNEL_SECRET:-}"
       # GP-203 发货接缝密钥：teller Deliver 钩子（进程内）的签名 webhook
       # 落地面。未配置 = 分发 fail-closed（全部 403）；生产必须注入。
       PAYMENTS_DELIVERY_SECRET: "${PAYMENTS_DELIVERY_SECRET:-}"

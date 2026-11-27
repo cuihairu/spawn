@@ -2,7 +2,8 @@ package handler
 
 // GP-202 原生验签 HTTP 接缝集成：已注入验签材料（自签测试证书）的真实渠道
 // 回调走 POST /callback/:channel 全链——微信原生头提取（Wechatpay-Signature/
-// -Timestamp/-Nonce/-Serial）→ 平台证书验签 → 重算 Courier HMAC 转发；
+// -Timestamp/-Nonce/-Serial）→ 平台证书验签 → 以独立 Courier 渠道密钥重算
+// HMAC 转发（绝非沙箱密钥；未配置 fail-closed 503）；
 // 支付宝表单 sign 放行分支（无签名头、适配器解析 body）→ RSA2 验签 → 转发；
 // 篡改/缺元数据 403、未接入渠道仍 501（注册表隔离，绝不回退沙箱 HMAC）。
 //
@@ -10,13 +11,16 @@ package handler
 // 真实渠道商户凭据注入后的正式链路验收仍归 GP-206（GP-202 保持未勾）。
 
 import (
+	"bytes"
 	"crypto"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/pem"
 	"math/big"
 	"net/http"
@@ -78,6 +82,9 @@ func TestRoutes_CallbackNativeChannels(t *testing.T) {
 	env := newPaymentsServer(t, func(c *config.Config) {
 		c.Channel.WechatPlatformCert = certPEM
 		c.Channel.AlipayPublicKey = nativePubPem(t, key)
+		// GP-202 密钥分离：真实渠道转发腿必须用独立 Courier 渠道密钥
+		// （与沙箱密钥不同值），存根记录命中方供断言。
+		c.Channel.CourierSecret = testCourierChannelSecret
 	})
 	seed := func(orderID string) {
 		t.Helper()
@@ -113,6 +120,9 @@ func TestRoutes_CallbackNativeChannels(t *testing.T) {
 	}
 	if env.callbackSeen != 1 {
 		t.Fatalf("courier callback seen = %d, want 1（微信验签过必转发）", env.callbackSeen)
+	}
+	if len(env.callbackSigSecretSeen) != 1 || env.callbackSigSecretSeen[0] != "courier" {
+		t.Fatalf("wechat forward signed with %v, want [courier]（绝不以沙箱密钥代发）", env.callbackSigSecretSeen)
 	}
 
 	// 2. 微信回调体被篡改（合法签名配改动后的 body）→ RSA 验签不匹配 403，
@@ -182,6 +192,9 @@ func TestRoutes_CallbackNativeChannels(t *testing.T) {
 	if env.callbackSeen != 2 {
 		t.Fatalf("courier callback seen = %d, want 2（支付宝验签过必转发）", env.callbackSeen)
 	}
+	if len(env.callbackSigSecretSeen) != 2 || env.callbackSigSecretSeen[1] != "courier" {
+		t.Fatalf("alipay forward signed with %v, want [courier courier]（绝不以沙箱密钥代发）", env.callbackSigSecretSeen)
+	}
 
 	// 6. 支付宝签名与规范串不符（sign 对错误参数串签）→ 403。
 	wrongCanonical := "orderId=o_ali_native_1&paidAt=WRONG&"
@@ -213,5 +226,66 @@ func TestRoutes_CallbackNativeChannels(t *testing.T) {
 	resp7.Body.Close()
 	if resp7.StatusCode != http.StatusNotImplemented {
 		t.Fatalf("unknown channel with materials injected = %d, want 501", resp7.StatusCode)
+	}
+}
+
+// TestRoutes_CallbackNativeCourierSecretMissing GP-202 密钥分离 fail-closed
+// 回归：已注入验签材料但 Courier 渠道密钥未配置时，真实渠道回调验签通过也
+// 必须拒绝转发（503、存根零触达）——绝不以沙箱密钥代发；同环境沙箱渠道
+// 转发腿不受影响（沙箱共享密钥照常转发）。
+func TestRoutes_CallbackNativeCourierSecretMissing(t *testing.T) {
+	certPEM, key := genNativeCertPem(t)
+	env := newPaymentsServer(t, func(c *config.Config) {
+		c.Channel.WechatPlatformCert = certPEM
+		c.Channel.AlipayPublicKey = nativePubPem(t, key)
+		// Channel.CourierSecret 刻意留空 = 真实渠道转发腿未配置。
+	})
+	if err := env.svcCtx.ProjectionDB.UpsertFromOrder(&model.OrderProjection{
+		OrderId: "o_wx_native_nc", GameId: "game-a", AccountId: "7", SkuId: "sku-native-nc",
+		ProductId: "native-nc", Form: "DIRECT_PURCHASE", AmountCents: 1000,
+		Currency: "CNY", Status: "CREATED",
+	}); err != nil {
+		t.Fatalf("seed projection: %v", err)
+	}
+
+	// 1. 微信合法回调（验签必过）→ 503 Courier 渠道密钥未配置，不转发。
+	wxBody := `{"orderId":"o_wx_native_nc","paidAt":"2026-11-27T00:00:00Z"}`
+	wxTs, wxNonce := "1764184800", "native-nc-nonce"
+	wxSig := signNativeB64(t, key, []byte(wxTs+"\n"+wxNonce+"\n"+wxBody+"\n"))
+	req, _ := http.NewRequest(http.MethodPost, env.base+"/callback/wechat-pay-v3", strings.NewReader(wxBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Wechatpay-Signature", wxSig)
+	req.Header.Set("Wechatpay-Timestamp", wxTs)
+	req.Header.Set("Wechatpay-Nonce", wxNonce)
+	req.Header.Set("Wechatpay-Serial", "PUB_TEST_001")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("wechat callback without courier secret: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("wechat callback without courier secret = %d, want 503", resp.StatusCode)
+	}
+	if env.callbackSeen != 0 {
+		t.Fatalf("courier callback seen = %d, want 0（密钥未配置绝不转发）", env.callbackSeen)
+	}
+
+	// 2. 同环境沙箱渠道照常转发（沙箱共享密钥，存根命中 sandbox）。
+	cbBody := `{"orderId":"o_wx_native_nc","paidAt":"2026-11-27T00:00:01Z"}`
+	mac := hmac.New(sha256.New, []byte(testSandboxSecret))
+	mac.Write([]byte(cbBody))
+	goodSig := hex.EncodeToString(mac.Sum(nil))
+	req2, _ := http.NewRequest(http.MethodPost, env.base+"/callback/sandbox", bytes.NewReader([]byte(cbBody)))
+	req2.Header.Set("X-Payment-Signature", goodSig)
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatalf("sandbox callback: %v", err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("sandbox callback without courier secret = %d, want 200（沙箱腿不受影响）", resp2.StatusCode)
+	}
+	if env.callbackSeen != 1 || len(env.callbackSigSecretSeen) != 1 || env.callbackSigSecretSeen[0] != "sandbox" {
+		t.Fatalf("sandbox forward = seen %d secrets %v, want 1 [sandbox]", env.callbackSeen, env.callbackSigSecretSeen)
 	}
 }

@@ -55,6 +55,12 @@ type Config struct {
 		// 任一为空 = 该渠道未接入，验签恒失败并回 501（绝不回退沙箱 HMAC）。
 		WechatPlatformCert string `json:",env=PAYMENTS_WECHAT_PLATFORM_CERT,optional"`
 		AlipayPublicKey    string `json:",env=PAYMENTS_ALIPAY_PUBLIC_KEY,optional"`
+		// CourierSecret 渠道转发密钥（真实渠道转发腿，GP-202）：原生验签通过
+		// 的真实渠道回调以 HMAC-SHA256(该密钥, body) 转发 Courier teller，与
+		// 网关 COURIER_PAYMENTS_CHANNEL_SECRET 同值。空 = 真实渠道转发
+		// fail-closed 503（绝不以沙箱密钥代发）；沙箱渠道转发腿仍用
+		// SandboxSecret（沙箱 teller 同值装配，既有沙箱链路零改动）。
+		CourierSecret string `json:",env=COURIER_PAYMENTS_CHANNEL_SECRET,optional"`
 	}
 
 	// Delivery 发货接缝（GP-203）：teller Deliver 钩子（进程内）的生产落地

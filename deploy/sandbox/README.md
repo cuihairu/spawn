@@ -167,6 +167,11 @@ COURIER_TELLER_SKUS='[{"id":"<payment_products.id>","productId":"<同左>",
   映射 courierGameId/env）：网关 scope 中间件对 callback 同样强制要求
   这两个头，裸转发必 400（spawn 侧表现 502「转发支付回调失败」）。
   解析不到（投影缺失/映射未配）即 502 fail-closed，绝不推到错误 scope。
+  转发签名密钥按渠道分离（GP-202）：沙箱渠道转发腿用
+  `PAYMENTS_SANDBOX_SECRET`（即网关侧同值的
+  `COURIER_PAYMENTS_CHANNEL_SECRET`）；**真实渠道**（微信 v3/支付宝原生
+  验签）转发腿必须另配 payments 的 `COURIER_PAYMENTS_CHANNEL_SECRET`
+  （与网关同值），未配置 = 转发 fail-closed 503，绝不以沙箱密钥代发。
 - 订单事实 S2S：payments `GET /internal/orders/:id`，`X-Internal-Token`
   （`INTERNAL_TOKEN`，与 courier-adapter 同值，供售后工单归属校验）。
 - 商品商户归属核验 S2S：payments 建商品前调 game-catalog

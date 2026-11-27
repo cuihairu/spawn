@@ -38,6 +38,10 @@ const (
 	// scope 解析：payments 下单/查询前经 /internal/games/:id/mapping 取
 	// courier_game_id+env，绝不用 spawn 游戏 id 当 Courier scope）。
 	testInternalToken = "payments-mapping-s2s-token"
+	// testCourierChannelSecret 真实渠道转发腿的 Courier 渠道密钥（GP-202：
+	// 与沙箱密钥刻意不同值，供存根记录命中方，断言真实渠道绝不以沙箱密钥
+	// 代发 HMAC）。
+	testCourierChannelSecret = "payments-courier-channel-test"
 	// testCourierGameEnv 映射存根返回的 courier 侧 scope（spawn game-a → 该值）。
 	testCourierGameEnv = "courier-game-a|dev"
 )
@@ -50,6 +54,9 @@ type testEnv struct {
 	// courierAmounts 供 Courier 存根按 skuId 返回金额（默认 1000）
 	courierAmounts map[string]int64
 	callbackSeen   int
+	// callbackSigSecretSeen 记录回调转发存根按哪个密钥验签通过（GP-202
+	// 密钥分离回归：沙箱=sandbox、真实渠道=courier）。
+	callbackSigSecretSeen []string
 	// callbackScopeSeen 记录回调转发时 Courier 存根收到的 scope 头
 	// （8dbb2a6：必须是映射后的 courier-<id>+env，绝不透传 spawn 游戏 id）。
 	callbackScopeSeen []string
@@ -138,14 +145,27 @@ func newPaymentsServer(t *testing.T, opts ...func(*config.Config)) *testEnv {
 			}})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/payments/callback":
 			raw, _ := io.ReadAll(r.Body)
-			mac := hmac.New(sha256.New, []byte(testSandboxSecret))
-			mac.Write(raw)
-			want := hex.EncodeToString(mac.Sum(nil))
-			if r.Header.Get("X-Payment-Signature") != want {
+			// GP-202 转发腿密钥分离回归：存根按沙箱/Courier 渠道两把密钥
+			// 逐一试算，记录命中方供用例断言（真实渠道必须命中 courier）。
+			got := r.Header.Get("X-Payment-Signature")
+			matched := ""
+			for _, k := range []struct{ name, secret string }{
+				{"sandbox", testSandboxSecret},
+				{"courier", testCourierChannelSecret},
+			} {
+				mac := hmac.New(sha256.New, []byte(k.secret))
+				mac.Write(raw)
+				if got == hex.EncodeToString(mac.Sum(nil)) {
+					matched = k.name
+					break
+				}
+			}
+			if matched == "" {
 				w.WriteHeader(http.StatusForbidden)
 				_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": "PAYMENT_INVALID_SIGNATURE", "message": "bad"}})
 				return
 			}
+			env.callbackSigSecretSeen = append(env.callbackSigSecretSeen, matched)
 			env.callbackSeen++
 			env.callbackScopeSeen = append(env.callbackScopeSeen,
 				r.Header.Get("X-Courier-Game-Id")+"|"+r.Header.Get("X-Courier-Env"))

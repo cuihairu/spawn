@@ -57,8 +57,13 @@ func (l *CallbackLogic) Handle(channelName string, rawBody []byte, signature str
 		}
 		return newAPIError(http.StatusForbidden, "回调签名无效")
 	}
-	// 构造 Courier 期望的 HMAC（沙箱 = 传入签名本身；真实渠道用共享密钥重算）
-	expected := l.hmacCourier(rawBody)
+	// 构造 Courier 期望的 HMAC（沙箱 = 沙箱共享密钥；真实渠道 = 独立 Courier
+	// 渠道密钥重算，未配置即 fail-closed 绝不代发）
+	expected, err := l.hmacCourier(channelName, rawBody)
+	if err != nil {
+		l.Errorf("courier channel secret not configured for %s: %v", channelName, err)
+		return newAPIError(http.StatusServiceUnavailable, "Courier 渠道密钥未配置")
+	}
 	// 转发 Courier 回调：网关 scope 中间件对 /v1/payments/* 含 callback 一律
 	// 要求 X-Courier-Game-Id / X-Courier-Env（缺失即 COMMON_INVALID_ARGUMENT），
 	// 而 callback 无 Bearer，归属只能由本服务按订单投影解析映射后提供
@@ -234,9 +239,24 @@ func (l *CallbackLogic) enqueueRewardEvaluation(rawBody []byte, channelName stri
 	}
 }
 
-// hmacCourier 计算 Courier 渠道密钥的 HMAC-SHA256（沙箱共享密钥）。
-func (l *CallbackLogic) hmacCourier(rawBody []byte) string {
-	mac := hmac.New(sha256.New, []byte(l.svcCtx.Config.Channel.SandboxSecret))
+// errCourierSecretMissing 真实渠道转发腿的 Courier 渠道密钥未配置（空）。
+// fail-closed：拒绝转发而非以沙箱密钥代发（F15 红线——沙箱密钥只属于
+// 沙箱渠道，真实渠道转发绝不用它签 HMAC）。
+var errCourierSecretMissing = errors.New("courier channel secret not configured")
+
+// hmacCourier 计算转发 Courier 的渠道 HMAC-SHA256：沙箱渠道用沙箱共享密钥
+// （沙箱 teller 同值装配）；真实渠道必须用独立 Courier 渠道密钥（与网关
+// COURIER_PAYMENTS_CHANNEL_SECRET 同值）——未配置即报错，由调用方
+// fail-closed 拒绝转发。
+func (l *CallbackLogic) hmacCourier(channelName string, rawBody []byte) (string, error) {
+	secret := l.svcCtx.Config.Channel.SandboxSecret
+	if channelName != "sandbox" {
+		secret = l.svcCtx.Config.Channel.CourierSecret
+		if secret == "" {
+			return "", errCourierSecretMissing
+		}
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(rawBody)
-	return hex.EncodeToString(mac.Sum(nil))
+	return hex.EncodeToString(mac.Sum(nil)), nil
 }
