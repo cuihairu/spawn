@@ -107,7 +107,7 @@ func TestCallback_ScopeUnresolvableArms(t *testing.T) {
 	sc := cbSandboxSvc(t)
 	sc.Courier = courier.NewClient(stub.URL, 2*time.Second)
 
-	// 跳一：回调体缺 orderId
+	// 跳一：回调体缺 orderId（投影/映射未装配，nil 守卫先挡）。
 	body := []byte(`{}`)
 	if err := NewCallbackLogic(wbCtx(), sc).Handle("sandbox", body, cbSig(body), nil); err == nil {
 		t.Fatal("no orderId = nil error, want 502")
@@ -131,6 +131,17 @@ func TestCallback_ScopeUnresolvableArms(t *testing.T) {
 		t.Fatal("mapping missing = nil error, want 502")
 	}
 
+	// 跳四（解析已装配后仍取不到 orderId）：表单体缺 orderId 与完全不可解析
+	// 体（callbackOrderFields JSON 失败回退表单，两处皆空即 fail-closed）。
+	formNoOrder := []byte(`paidAt=20261127T000000Z&sign_type=RSA2`)
+	if err := NewCallbackLogic(wbCtx(), sc).Handle("sandbox", formNoOrder, cbSig(formNoOrder), nil); err == nil {
+		t.Fatal("form body without orderId = nil error, want 502")
+	}
+	garbage := []byte("not-json and not-form %zz")
+	if err := NewCallbackLogic(wbCtx(), sc).Handle("sandbox", garbage, cbSig(garbage), nil); err == nil {
+		t.Fatal("unparseable body = nil error, want 502")
+	}
+
 	if forwarded != 0 {
 		t.Fatalf("forward calls = %d, want 0 (scope 解析失败不应转发)", forwarded)
 	}
@@ -150,6 +161,12 @@ func TestCallback_BackendErrorArms(t *testing.T) {
 	body := []byte(`{"orderId":"o1","paidAt":"2026-11-22T00:00:00Z"}`)
 	if err := NewCallbackLogic(wbCtx(), sc).Handle("sandbox", body, cbSig(body), nil); err != nil {
 		t.Fatalf("backend down = %v, want nil", err)
+	}
+	// 表单体回退臂（GP-202）：支付宝异步通知为表单承载，orderId/paidAt 经
+	// callbackOrderFields 表单解析取出，下游链路（归属解析/投影/核销/入队）同链可过。
+	formBody := []byte(`orderId=o1&paidAt=20261122T000000Z&sign_type=RSA2`)
+	if err := NewCallbackLogic(wbCtx(), sc).Handle("sandbox", formBody, cbSig(formBody), nil); err != nil {
+		t.Fatalf("form body = %v, want nil", err)
 	}
 }
 
