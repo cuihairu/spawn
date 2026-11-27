@@ -50,6 +50,9 @@ type testEnv struct {
 	// courierAmounts 供 Courier 存根按 skuId 返回金额（默认 1000）
 	courierAmounts map[string]int64
 	callbackSeen   int
+	// callbackScopeSeen 记录回调转发时 Courier 存根收到的 scope 头
+	// （8dbb2a6：必须是映射后的 courier-<id>+env，绝不透传 spawn 游戏 id）。
+	callbackScopeSeen []string
 	// courierAuthSeen 记录 Courier 存根在 /v1/payments/orders 收到的
 	// Authorization 头（GP-202 断言：必须是 Courier 令牌，非平台 JWT）。
 	courierAuthSeen []string
@@ -119,6 +122,8 @@ func newPaymentsServer(t *testing.T, opts ...func(*config.Config)) *testEnv {
 				return
 			}
 			env.callbackSeen++
+			env.callbackScopeSeen = append(env.callbackScopeSeen,
+				r.Header.Get("X-Courier-Game-Id")+"|"+r.Header.Get("X-Courier-Env"))
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{}})
 		default:
 			http.NotFound(w, r)
@@ -366,6 +371,9 @@ func TestRoutes_PaymentsFlow(t *testing.T) {
 	}
 	if env.callbackSeen != 1 {
 		t.Fatalf("courier callback seen = %d, want 1", env.callbackSeen)
+	}
+	if len(env.callbackScopeSeen) != 1 || env.callbackScopeSeen[0] != "courier-game-a|dev" {
+		t.Fatalf("callback forward scope = %v, want [courier-game-a|dev]（映射后 scope，非 spawn id）", env.callbackScopeSeen)
 	}
 
 	// 7. 真实渠道未接入 → 501（绝不拿沙箱 HMAC 冒充）；签名存在但不被接受
