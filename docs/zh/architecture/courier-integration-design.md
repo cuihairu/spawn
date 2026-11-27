@@ -105,7 +105,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_mapping_scope ON courier_game_mapping (cour
 
 ### 3.2 多游戏隔离用例清单（写清边界，由 GP-206 联合沙箱执行）
 
-1. **跨游戏 SKU 越权**：A 游戏 scope 下单 B 游戏 SKU → 拒绝（`PAYMENT_SKU_NOT_FOUND` 或 scope 校验）。
+1. **跨游戏 SKU 越权**：A 游戏 scope 下单 B 游戏 SKU → 拒绝（`PAYMENT_SKU_NOT_FOUND` 或 scope 校验）。**现状缺口（2026-11-27 活栈走查）**：teller 价格表为单张全局表（`teller.AddSku` 无 scope 维度），该拒绝当前不成立——已回 courier 仓登记 **F81**（courier `93a02b3`）待用户拍板修复（① 表按 (game_id,env) 键控（breaking）/ ② 下单校验注册 scope / ③ 契约明示全局共享由登记纪律承担）。GP-003 的「多游戏隔离」是 spawn 验收预期，非 courier 冻结契约承诺。
 2. **跨厂商订单越权**：合作方 A 账号读合作方 B 订单 → 404（订单归属校验，不泄露存在性）。
 3. **回调密钥隔离**：A 渠道密钥伪造回调推进 B 订单 → 403 `PAYMENT_INVALID_SIGNATURE`。
 4. **存储实例隔离**：每 scope 独立 Store/StateFile 或隔离键，重启恢复不串单。
