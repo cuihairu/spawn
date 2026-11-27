@@ -20,6 +20,12 @@ docker compose --env-file sandbox.env up -d --build
 #    另一个坑：镜像重建后若环境变量未变，up -d 只会报 "Container Running"，
 #    不会把新镜像换进容器，路由依旧 404。改了服务代码后必须：
 #    docker compose --env-file sandbox.env up -d --force-recreate <服务>
+#
+#    注意：目前只有 game-catalog / payments 的主库挂命名卷（catalog-data /
+#    payments-data）；community / content-service / courier-adapter /
+#    data-panel / promotions / user-service 的 sqlite 主库仍在容器可写层，
+#    --force-recreate 会静默清库——表现为链路突然 404「合作方不存在」、
+#    活动/奖励账本全空、courier 映射丢失，须重跑 seed / 补映射后再验收。
 
 # 3. 装配示例游戏（注册管理员/合作方/玩家并打通全链路）
 ./deploy/sandbox/seed-example-game.sh
