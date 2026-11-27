@@ -11,6 +11,7 @@ package svc
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -148,4 +149,26 @@ func assertPanic(t *testing.T, fn func(), want string) {
 		}
 	}()
 	fn()
+}
+
+// GP-202 验签材料装载：file: 前缀从挂载文件读 PEM（env 注入会在首个换行
+// 截断）；其余原样透传，file: 文件缺失 fail-loud panic。
+func TestLoadChannelMaterial(t *testing.T) {
+	if got := loadChannelMaterial(""); got != "" {
+		t.Fatalf("empty = %q, want \"\"（渠道未接入）", got)
+	}
+	const pem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+	if got := loadChannelMaterial(pem); got != pem {
+		t.Fatalf("inline passthrough = %q, want original PEM", got)
+	}
+	path := t.TempDir() + "/platform-cert.pem"
+	if err := os.WriteFile(path, []byte(pem), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	if got := loadChannelMaterial("file:" + path); got != pem {
+		t.Fatalf("file load = %q, want full file content", got)
+	}
+	assertPanic(t, func() {
+		loadChannelMaterial("file:" + t.TempDir() + "/missing.pem")
+	}, "load channel material")
 }

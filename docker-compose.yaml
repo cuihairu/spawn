@@ -226,9 +226,10 @@ services:
       # PAYMENTS_SANDBOX_SECRET 不受影响。
       COURIER_PAYMENTS_CHANNEL_SECRET: "${COURIER_PAYMENTS_CHANNEL_SECRET:-}"
       # GP-202 真实渠道原生验签**公开**材料注入（渠道下发的平台证书/公钥，
-      # 无商户私钥）。空 = 对应渠道未接入（回调恒 501）。PEM 含换行，.env
-      # 文件装不下——以导出环境变量注入：export PAYMENTS_WECHAT_PLATFORM_CERT=
-      # "$(cat platform_cert.pem)" 后 compose up；多段 PEM 即微信 serial 轮换。
+      # 无商户私钥）。空 = 对应渠道未接入（回调恒 501）。PEM 含换行，经
+      # env 注入会在首个换行截断——**必须用 file: 前缀从挂载文件读**（
+      # docker secrets 同款）：PAYMENTS_WECHAT_PLATFORM_CERT=file:/run/secrets/
+      # wechat-platform-cert.pem，多段 PEM 即微信 serial 轮换。
       PAYMENTS_WECHAT_PLATFORM_CERT: "${PAYMENTS_WECHAT_PLATFORM_CERT:-}"
       PAYMENTS_ALIPAY_PUBLIC_KEY: "${PAYMENTS_ALIPAY_PUBLIC_KEY:-}"
       # GP-203 发货接缝密钥：teller Deliver 钩子（进程内）的签名 webhook

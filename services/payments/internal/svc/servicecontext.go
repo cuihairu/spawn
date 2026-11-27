@@ -2,6 +2,8 @@ package svc
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/tappi/tappi/services/payments/courier"
@@ -135,6 +137,10 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	// 内部端点）；BaseURL 未配置 = 订单面 fail-closed（不静默回退 spawn id）。
 	scopeClient := courierscope.NewClient(c.CourierAdapter.BaseURL, c.Internal.Token,
 		time.Millisecond*time.Duration(c.CourierAdapter.Timeout))
+	// GP-202 验签材料装载：PEM 含换行，经 compose/编排面 env 注入会在首个
+	// 换行处截断——支持 file: 前缀从挂载文件读（docker secrets 同款）。
+	c.Channel.WechatPlatformCert = loadChannelMaterial(c.Channel.WechatPlatformCert)
+	c.Channel.AlipayPublicKey = loadChannelMaterial(c.Channel.AlipayPublicKey)
 	// 投递成功 → 订单投影 DELIVERED（只读事实副本，状态值来自投递面）
 	dispatcher := delivery.NewDispatcher(deliveryDB, productDB, c.Delivery.TimeoutMs,
 		time.Second*time.Duration(c.Delivery.RetryIntervalSeconds),
@@ -172,4 +178,20 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		NotifyOutbox:    notifyOutbox,
 		RefundExec:      refundExec,
 	}
+}
+
+// loadChannelMaterial 装载渠道验签材料：`file:<path>` 前缀从挂载文件读 PEM
+// （docker secrets 同款）；其余值原样视为 PEM 内容，空串原样返回（渠道未
+// 接入）。file: 指定的文件读不了即 panic——材料配置了却装载失败属部署
+// 错误，fail-loud 不静默降级成渠道未接入。
+func loadChannelMaterial(v string) string {
+	if !strings.HasPrefix(v, "file:") {
+		return v
+	}
+	path := strings.TrimPrefix(v, "file:")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		panic(fmt.Sprintf("load channel material from %s: %v", path, err))
+	}
+	return string(raw)
 }
