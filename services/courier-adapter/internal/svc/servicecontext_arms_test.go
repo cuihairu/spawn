@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tappi/tappi/services/courier-adapter/courier"
 	"github.com/tappi/tappi/services/courier-adapter/internal/config"
 	"github.com/tappi/tappi/services/courier-adapter/model"
 	"github.com/tappi/tappi/services/courier-adapter/utils"
@@ -45,6 +46,26 @@ func TestNewServiceContext_Success(t *testing.T) {
 	if sc.Auth == nil || sc.Courier == nil || sc.Mappings == nil ||
 		sc.Bindings == nil || sc.Audits == nil || sc.Tickets == nil || sc.DB == nil {
 		t.Fatal("service context 装配不完整（存在空依赖）")
+	}
+}
+
+func TestNewServiceContext_TicketTTLIsSeconds(t *testing.T) {
+	// 0a986b5 回归：Ticket.TTLSeconds 是秒，装配后票据有效期必须约等于
+	// TTLSeconds×1s（曾误按毫秒装配，票据出票即过期、兑票恒 404）。
+	c, _ := svcCfg(t)
+	sc := NewServiceContext(c)
+	defer func() { _ = sc.DB.Close() }()
+	tk, err := sc.Tickets.Issue(7, "courier-game-a", "dev", &courier.Session{})
+	if err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+	want := 120 * time.Second
+	delta := tk.ExpiresAt.Sub(time.Now())
+	if delta < want-time.Minute || delta > want+time.Minute {
+		t.Fatalf("ticket TTL = %v, want ~%v（TTLSeconds 装配口径回归）", delta, want)
+	}
+	if _, err := sc.Tickets.Redeem(tk.Token); err != nil {
+		t.Fatalf("redeem within TTL failed: %v（票据出票即过期 = 毫秒误用回归）", err)
 	}
 }
 
