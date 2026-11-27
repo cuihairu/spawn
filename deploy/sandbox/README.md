@@ -130,6 +130,13 @@ COURIER_TELLER_SKUS='[{"id":"<payment_products.id>","productId":"<同左>",
 `spawn_default`。模块钉 courier/gateway 的 commit 伪版本（冻结契约），
 不入 spawn go.work（toolchain 隔离），CI 不构建此沙箱工具。
 
+状态持久化（2026-11-27 走查）：`COURIER_PAYMENTS_STATE` 落容器可写层且该容器
+无卷，`docker start` 保订单史、`docker rm`/recreate 即丢；状态文件只保订单，
+**运行期经 `/admin/games/:gameId/products/sync` 登记的 SKU 不进状态文件**
+（courier F77 裁决「SKU 价格表不快照，管理面启动登记」属既定策略），容器
+重启后下单报 `PAYMENT_SKU_NOT_FOUND` 时重跑 sync 幂等恢复即可，不必重建
+容器；订单事实不可再生，跨仓对账依赖 integrator 容器不被重建。
+
 **已验证链路（2026-11-23 活栈走查）**：guest 登录取 Courier opaque token →
 玩家下单（平台 JWT + `X-Courier-Authorization` 双带）→ CREATED →
 渠道回调 `/v1/payments/callback`（`X-Payment-Signature`）→ PAID → Deliver
