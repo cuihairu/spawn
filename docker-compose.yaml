@@ -52,8 +52,10 @@ services:
       # platform_admin（运营后台首个入口）。逗号分隔可多个（如 "1,2"）；
       # 沙箱取 1 = 首个注册用户；生产必须改为真实运营账号 id（或留空禁用引导）。
       ADMIN_USER_IDS: "${ADMIN_USER_IDS:-1}"
-      # GP-403 渠道归因 S2S 守卫（/internal/promo/clicks/:id/resolve）：
-      # 与 user-service 的 GAMECATALOG_INTERNAL_TOKEN 同值；空 = 恒 403。
+      # GP-403 渠道归因 S2S 守卫（/internal/promo/clicks/:id/resolve）+
+      # GP-202 游戏归属查询（/internal/games/:id/ownership，payments 商品
+      # 配置商户归属核验）：与 user-service 的 GAMECATALOG_INTERNAL_TOKEN
+      # 同值；空 = 恒 403。
       INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
       # GP-306/401 通知扇出目标（community /internal/notifications）；未配置时
       # 通知通路 no-op（开服提醒/版本通知/上线通知/举报处置结果都不落库）。
@@ -230,8 +232,10 @@ services:
       # 侧 INTERNAL_TOKEN 同值。
       DATA_PANEL_URL: http://data-panel:8896
       DATA_PANEL_INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
-      # GP-307 S2S 订单事实查询（courier-adapter 售后工单归属校验的事实源）。
-      # 未配置 = 恒 403（fail-closed）；与 courier-adapter 侧同值。
+      # GP-307 S2S 订单事实查询（courier-adapter 售后工单归属校验的事实源）+
+      # GP-202 F15 商户归属核验出站令牌（game-catalog
+      # /internal/games/:id/ownership）。未配置 = 恒 403（fail-closed）；
+      # 与 courier-adapter/game-catalog 侧同值。
       INTERNAL_TOKEN: "${INTERNAL_TOKEN:-tappi-internal-s2s-token-2024}"
       # GP-202 映射解析：下单/订单查询前把 spawn 游戏 id 解析为 courier 侧
       # scope（courier_adapter /internal/games/:id/mapping，X-Internal-Token）。

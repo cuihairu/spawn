@@ -74,8 +74,33 @@ func newPaymentsServer(t *testing.T, opts ...func(*config.Config)) *testEnv {
 
 	env := &testEnv{courierAmounts: map[string]int64{}}
 
-	// game-catalog 存根：/me 解码 JWT 判定角色（user 1 → platform_admin）
+	// game-catalog 存根：/me 解码 JWT 判定角色（user 1 → platform_admin）；
+	// /internal/games/:id/ownership 为商品创建提供权威商户归属（F15）。
 	catalog := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/internal/games/") && strings.HasSuffix(r.URL.Path, "/ownership") {
+			if r.Header.Get("X-Internal-Token") != testInternalToken {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/internal/games/"), "/ownership")
+			// F15 归属存根：默认全部游戏归属 partner 2（active）；noowner* 无
+			// 归属记录（404）、revoked* 归属已吊销、err500* 归属服务故障
+			//（500）——供商品创建核验负臂用。
+			if strings.HasPrefix(id, "noowner") {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			if strings.HasPrefix(id, "err500") {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			status := "active"
+			if strings.HasPrefix(id, "revoked") {
+				status = "revoked"
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"partner_id": 2, "status": status})
+			return
+		}
 		role, partner := "player", int64(0)
 		if claims, ok := decodeJWT(r.Header.Get("Authorization")); ok {
 			if claims.UserId == 1 {

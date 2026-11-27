@@ -30,6 +30,7 @@ type failingAdminStore struct {
 	getPromoClickErr  error
 	listMyReservErr   error
 	listResUsersErr   error
+	getOwnershipErr   error
 }
 
 var _ model.AdminStore = (*failingAdminStore)(nil)
@@ -123,6 +124,13 @@ func (s *failingAdminStore) ListReservationUsersByGame(gameId string, limit int)
 		return nil, s.listResUsersErr
 	}
 	return s.AdminStore.ListReservationUsersByGame(gameId, limit)
+}
+
+func (s *failingAdminStore) GetOwnership(gameId string) (*model.GameOwnership, error) {
+	if s.getOwnershipErr != nil {
+		return nil, s.getOwnershipErr
+	}
+	return s.AdminStore.GetOwnership(gameId)
 }
 
 // failingGameStore 内嵌真实 GameStore，仅 Get 可注入失败（visibleGame 路径）。

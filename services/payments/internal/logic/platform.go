@@ -3,6 +3,7 @@ package logic
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,52 @@ import (
 )
 
 // 平台侧辅助：角色权威在 game-catalog（/me），适配服务不复制角色数据。
+
+// errGameOwnershipMissing 游戏无 active 归属记录（无记录或已吊销）：
+// 平台自营商品按 partner 0 落库；管理面显式声明 partner 时与该错误互斥。
+var errGameOwnershipMissing = errors.New("game ownership missing or revoked")
+
+// catalogGameOwnership S2S 查询游戏权威归属（GP-202 F15 商户归属核验）：
+// 商品 partner_id 是对账分成的归属键，不信任管理面入参，以 game-catalog
+// game_ownership 为准（GET /internal/games/:id/ownership，X-Internal-Token
+// 与各服务 INTERNAL_TOKEN 同值）。404 = 无归属记录；非 active（吊销）同样
+// 视为无归属；其余非 200 / 网络失败 = fail-closed（无法核验就不该让归属
+// 落库）。
+func catalogGameOwnership(ctx context.Context, svcCtx *svc.ServiceContext, gameID string) (int64, error) {
+	c := catalogClient(svcCtx)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.base+"/internal/games/"+url.PathEscape(gameID)+"/ownership", nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("X-Internal-Token", svcCtx.Config.Internal.Token)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("game-catalog unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return 0, errGameOwnershipMissing
+	}
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("game-catalog ownership status %d: %s", resp.StatusCode, string(raw))
+	}
+	var o struct {
+		PartnerId int64  `json:"partner_id"`
+		Status    string `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &o); err != nil {
+		return 0, fmt.Errorf("decode ownership: %w", err)
+	}
+	if o.Status != "active" {
+		return 0, errGameOwnershipMissing
+	}
+	return o.PartnerId, nil
+}
 
 type platformClient struct {
 	base string

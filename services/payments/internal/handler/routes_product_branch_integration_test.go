@@ -61,11 +61,11 @@ func TestRoutes_ProductValidationArms(t *testing.T) {
 	if code != http.StatusBadRequest {
 		t.Fatalf("bad currency = %d, want 400", code)
 	}
-	// 重复商品 id → 409
+	// 重复商品 id → 409（partner_id 与存根归属一致，过 F15 核验到落库）
 	do(t, http.MethodPost, env.base+"/admin/products/sku-dup", admin,
-		`{"product_id":"p1","form":"DIRECT_PURCHASE","amount_cents":1,"currency":"CNY","game_id":"game-a"}`)
+		`{"product_id":"p1","form":"DIRECT_PURCHASE","amount_cents":1,"currency":"CNY","game_id":"game-a","partner_id":2}`)
 	code, _ = do(t, http.MethodPost, env.base+"/admin/products/sku-dup", admin,
-		`{"product_id":"p1","form":"DIRECT_PURCHASE","amount_cents":1,"currency":"CNY","game_id":"game-a"}`)
+		`{"product_id":"p1","form":"DIRECT_PURCHASE","amount_cents":1,"currency":"CNY","game_id":"game-a","partner_id":2}`)
 	if code != http.StatusConflict {
 		t.Fatalf("duplicate id = %d, want 409", code)
 	}
@@ -89,7 +89,7 @@ func TestRoutes_ProductDBErrorArms(t *testing.T) {
 
 	// Create 落库失败 → 500
 	code, _ := do(t, http.MethodPost, env.base+"/admin/products/sku-500", admin,
-		`{"product_id":"x","form":"DIRECT_PURCHASE","amount_cents":1,"currency":"CNY","game_id":"game-a"}`)
+		`{"product_id":"x","form":"DIRECT_PURCHASE","amount_cents":1,"currency":"CNY","game_id":"game-a","partner_id":2}`)
 	if code != http.StatusInternalServerError {
 		t.Fatalf("create db error = %d, want 500", code)
 	}

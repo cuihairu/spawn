@@ -110,6 +110,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		{Method: http.MethodGet, Path: "/internal/games/:id/reservation-users", Handler: InternalReservationUsersHandler(serverCtx)},
 	})
 
+	// GP-202 S2S：游戏归属查询（payments 商品配置的商户归属核验，F15）。
+	// 同一 X-Internal-Token 守卫（缺/错恒 403 fail-closed）；S2S 专用不进网关。
+	server.AddRoutes([]rest.Route{
+		{Method: http.MethodGet, Path: "/internal/games/:id/ownership", Handler: InternalGameOwnershipHandler(serverCtx)},
+	})
+
 	// GP-403 单层渠道推广（F22）：推广链接落地解析与渠道包下载登记公开
 	// 免登录（落地页通常在登录前打开，链接参数即归因输入）；渠道登记、
 	// 变更历史与效果计数走管理面。渠道表无上级字段——多级代理不在本任务。

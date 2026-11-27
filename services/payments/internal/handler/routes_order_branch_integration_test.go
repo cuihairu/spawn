@@ -44,7 +44,7 @@ func TestRoutes_OrderCourierAuthForwarding(t *testing.T) {
 	admin := env.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
 	player := env.sign(utils.JWTClaims{UserId: 7, Username: "bob"})
 	do(t, http.MethodPost, env.base+"/admin/products/sku-fwd", admin,
-		`{"product_id":"fwd","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"game-a"}`)
+		`{"product_id":"fwd","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"game-a","partner_id":2}`)
 
 	// 1. 带 Courier 令牌（Bearer 前缀）→ 200，且 Courier 存根收到的是
 	//    Courier 令牌而非平台 JWT；scope 头是映射后的 courier_game_id+env
@@ -77,7 +77,7 @@ func TestRoutes_OrderCourierAuthForwarding(t *testing.T) {
 	}
 	// 3b. 游戏无 Courier 映射 → 502（不静默用 spawn id 透传 scope）
 	do(t, http.MethodPost, env.base+"/admin/products/sku-nomap", admin,
-		`{"product_id":"nomap","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"nomap-game"}`)
+		`{"product_id":"nomap","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"nomap-game","partner_id":2}`)
 	code, body = do(t, http.MethodPost, env.base+"/games/nomap-game/orders", player, `{"sku_id":"sku-nomap"}`)
 	if code != http.StatusBadGateway {
 		t.Fatalf("create order unmapped game = %d body=%s, want 502", code, body)
@@ -108,7 +108,7 @@ func TestRoutes_OrderServerNotOpen(t *testing.T) {
 	player := env.sign(utils.JWTClaims{UserId: 7, Username: "bob"})
 
 	do(t, http.MethodPost, env.base+"/admin/products/sku-server", admin,
-		`{"product_id":"server-sku","form":"DIRECT_PURCHASE","amount_cents":100,"currency":"CNY","game_id":"game-a"}`)
+		`{"product_id":"server-sku","form":"DIRECT_PURCHASE","amount_cents":100,"currency":"CNY","game_id":"game-a","partner_id":2}`)
 	// 游戏目录存根对 /games/*/servers 无 items → 区服不存在/未开放 → 404
 	code, _ := do(t, http.MethodPost, env.base+"/games/game-a/orders", player, `{"sku_id":"sku-server","server_id":5}`)
 	if code != http.StatusNotFound {
@@ -122,7 +122,7 @@ func TestRoutes_OrderProductQueryError(t *testing.T) {
 	admin := env.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
 	player := env.sign(utils.JWTClaims{UserId: 7, Username: "bob"})
 	do(t, http.MethodPost, env.base+"/admin/products/sku-qerr", admin,
-		`{"product_id":"p","form":"DIRECT_PURCHASE","amount_cents":100,"currency":"CNY","game_id":"game-a"}`)
+		`{"product_id":"p","form":"DIRECT_PURCHASE","amount_cents":100,"currency":"CNY","game_id":"game-a","partner_id":2}`)
 
 	env.svcCtx.ProductDB = model.NewProductModel(closedDB(t))
 	code, _ := do(t, http.MethodPost, env.base+"/games/game-a/orders", player, `{"sku_id":"sku-qerr"}`)
@@ -137,7 +137,7 @@ func TestRoutes_OrderCreateTargetError(t *testing.T) {
 	admin := env.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
 	player := env.sign(utils.JWTClaims{UserId: 7, Username: "bob"})
 	do(t, http.MethodPost, env.base+"/admin/products/sku-cterr", admin,
-		`{"product_id":"p","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"game-a"}`)
+		`{"product_id":"p","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"game-a","partner_id":2}`)
 
 	env.svcCtx.DeliveryDB = model.NewDeliveryModel(closedDB(t))
 	code, _ := do(t, http.MethodPost, env.base+"/games/game-a/orders", player, `{"sku_id":"sku-cterr"}`)
@@ -152,7 +152,7 @@ func TestRoutes_OrderProjectionError(t *testing.T) {
 	admin := env.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
 	player := env.sign(utils.JWTClaims{UserId: 7, Username: "bob"})
 	do(t, http.MethodPost, env.base+"/admin/products/sku-perr", admin,
-		`{"product_id":"p","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"game-a"}`)
+		`{"product_id":"p","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"game-a","partner_id":2}`)
 
 	env.svcCtx.ProjectionDB = model.NewOrderProjectionModel(closedDB(t))
 	code, _ := do(t, http.MethodPost, env.base+"/games/game-a/orders", player, `{"sku_id":"sku-perr"}`)

@@ -19,6 +19,8 @@ import (
 
 func TestRoutes_StatementDisputeNotifyOutboxRetry(t *testing.T) {
 	env := newDeliveryServer(t)
+	// 本用例商品归属 partner 5（F15 归属核验）：覆盖 game-catalog 存根默认值
+	env.catalogPartnerID = 5
 	admin := env.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
 	partner := env.sign(utils.JWTClaims{UserId: 2, Username: "studio-b"})
 

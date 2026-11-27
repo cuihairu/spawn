@@ -91,6 +91,31 @@ func SetPartnerStatusHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 
 // ---- 归属 ----
 
+// InternalGameOwnershipHandler GET /internal/games/:id/ownership（GP-202 F15
+// 商户归属核验）：payments 商品配置创建前经本端点核验 partner_id 与权威归属
+// 一致。X-Internal-Token 校验先于 body 解析；令牌未配置恒 403（fail-closed），
+// S2S 专用不进网关。
+func InternalGameOwnershipHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if svcCtx.Config.Internal.Token == "" || r.Header.Get("X-Internal-Token") != svcCtx.Config.Internal.Token {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"code":403,"message":"forbidden"}`))
+			return
+		}
+		var req types.GetGameDetailRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewAdminLogic(withClientIP(r), svcCtx).GetOwnershipInternal(req.Id)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
 func AssignOwnershipHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req types.AssignOwnershipRequest

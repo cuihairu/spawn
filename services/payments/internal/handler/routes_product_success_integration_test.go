@@ -19,7 +19,7 @@ func TestRoutes_ProductSuccessArms(t *testing.T) {
 
 	// 建一个商品（game-a），供 ListByGame 成功臂有 ≥1 行。
 	code, body := do(t, http.MethodPost, env.base+"/admin/products/sku-ok", admin,
-		`{"product_id":"ok","form":"DIRECT_PURCHASE","amount_cents":100,"currency":"CNY","game_id":"game-a"}`)
+		`{"product_id":"ok","form":"DIRECT_PURCHASE","amount_cents":100,"currency":"CNY","game_id":"game-a","partner_id":2}`)
 	if code != http.StatusOK {
 		t.Fatalf("create product = %d body=%s", code, body)
 	}

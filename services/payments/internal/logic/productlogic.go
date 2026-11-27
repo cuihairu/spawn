@@ -2,6 +2,7 @@ package logic
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -55,6 +56,20 @@ func (l *ProductLogic) Create(req *types.CreateProductRequest, authHeader string
 	}
 	if len(req.Currency) != 3 {
 		return nil, newAPIError(http.StatusBadRequest, "币种须为 ISO 4217 三字母")
+	}
+	// 商户归属核验（F15）：game-catalog 是 game→partner 权威源；商品上的
+	// partner_id 决定对账分成账本，绝不能信管理面入参。查询失败/归属缺失/
+	// 已吊销/声明不匹配一律拒绝落库（fail-closed）。
+	ownerPartnerID, err := catalogGameOwnership(l.ctx, l.svcCtx, req.GameId)
+	if errors.Is(err, errGameOwnershipMissing) {
+		return nil, newAPIError(http.StatusNotFound, "游戏未绑定有效合作方")
+	}
+	if err != nil {
+		l.Errorf("verify game ownership failed: %v", err)
+		return nil, newAPIError(http.StatusBadGateway, "归属服务不可用")
+	}
+	if req.PartnerId != ownerPartnerID {
+		return nil, newAPIError(http.StatusForbidden, "合作方与游戏归属不一致")
 	}
 	p, err := l.svcCtx.ProductDB.Create(&model.Product{
 		Id: req.Id, ProductId: req.ProductId, Form: req.Form,

@@ -169,6 +169,10 @@ COURIER_TELLER_SKUS='[{"id":"<payment_products.id>","productId":"<同左>",
   解析不到（投影缺失/映射未配）即 502 fail-closed，绝不推到错误 scope。
 - 订单事实 S2S：payments `GET /internal/orders/:id`，`X-Internal-Token`
   （`INTERNAL_TOKEN`，与 courier-adapter 同值，供售后工单归属校验）。
+- 商品商户归属核验 S2S：payments 建商品前调 game-catalog
+  `GET /internal/games/:id/ownership`（`X-Internal-Token` 同令牌）核验
+  `partner_id` 与权威归属一致——不一致/无归属/吊销/服务不可用一律拒绝落库
+  （GP-202 F15，对账分成的归属键）。
 
 ## 密钥与安全边界
 

@@ -45,8 +45,11 @@ type testDeliveryEnv struct {
 	promo      *promoStub
 	notify     *notifyStub
 	orderSeq   int64
-	orderMu    sync.Mutex
-	orders     []map[string]any
+	// catalogPartnerID game-catalog 归属存根返回的 partner（F15 归属核验）；
+	// 0 = 默认 2。合作方自助（partner 5）用例在起服务后、建商品前覆盖。
+	catalogPartnerID int64
+	orderMu          sync.Mutex
+	orders           []map[string]any
 	// GP-204 退款执行器接线：courierAdminToken 非空则注入
 	// COURIER_PAYMENTS_ADMIN_TOKEN（执行器非 nil）；refundAdminStatus/Code
 	// 控制 Courier 管理面退款端点响应（0=默认成功）。
@@ -164,6 +167,25 @@ func newDeliveryServerCfg(t *testing.T, before func(*testDeliveryEnv)) *testDeli
 	// GET /games/:id/servers 公开区服（s1 开放 / s2 维护 / s99 不存在）。
 	catalog := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.HasPrefix(r.URL.Path, "/internal/games/") && strings.HasSuffix(r.URL.Path, "/ownership"):
+			// F15 归属权威存根：game-a → partner 2/5 依测试声明（同一游戏可
+			// 在不同的独立服务实例里绑定不同 partner，故按请求 URL 无法区分；
+			// 这里统一返回 active 的 partner 2，合作方自助用例单独起服务时
+			// 通过 env.catalogPartnerID 覆盖为 5）。
+			if r.Header.Get("X-Internal-Token") != testInternalToken {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/internal/games/"), "/ownership")
+			partner := int64(2)
+			if env.catalogPartnerID != 0 {
+				partner = env.catalogPartnerID
+			}
+			if strings.HasPrefix(id, "noowner") {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"partner_id": partner, "status": "active"})
 		case r.URL.Path == "/me":
 			role, partnerID := "player", int64(1)
 			if claims, ok := decodeJWT(r.Header.Get("Authorization")); ok {

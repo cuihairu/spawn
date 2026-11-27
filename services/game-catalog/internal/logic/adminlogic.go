@@ -121,6 +121,20 @@ func (l *AdminLogic) SetPartnerStatus(req *types.SetPartnerStatusRequest) (*type
 	return toPartner(p), nil
 }
 
+// GetOwnershipInternal 供服务间核验商品商户归属（payments 商品配置）：
+// 读 game-catalog 权威归属记录，缺失/吊销一律返回错误，由调用方 fail-closed。
+func (l *AdminLogic) GetOwnershipInternal(gameID string) (*types.GameOwnership, error) {
+	o, err := l.svcCtx.AdminRepository.GetOwnership(gameID)
+	if err != nil {
+		if errors.Is(err, model.ErrOwnershipMissing) {
+			return nil, newAPIError(http.StatusNotFound, "游戏归属不存在")
+		}
+		l.Errorf("get ownership failed: %v", err)
+		return nil, newAPIError(http.StatusInternalServerError, "查询游戏归属失败")
+	}
+	return toOwnership(o), nil
+}
+
 func (l *AdminLogic) AssignOwnership(req *types.AssignOwnershipRequest) (*types.GameOwnership, error) {
 	if _, err := l.svcCtx.GameRepository.Get(req.Id); err != nil {
 		if errors.Is(err, model.ErrGameNotFound) {
