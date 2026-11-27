@@ -65,7 +65,7 @@ type testEnv struct {
 	analyticsDown atomic.Bool
 }
 
-func newPaymentsServer(t *testing.T) *testEnv {
+func newPaymentsServer(t *testing.T, opts ...func(*config.Config)) *testEnv {
 	t.Helper()
 	httpx.SetErrorHandlerCtx(logic.ErrorHandler)
 
@@ -165,6 +165,11 @@ func newPaymentsServer(t *testing.T) *testEnv {
 	c.Analytics.BaseURL = datapanel.URL
 	c.Analytics.Token = "gp402-payments-token"
 	env.analyticsBase = datapanel.URL
+	// 渠道验签材料注入（GP-202 原生验签集成面）：须在 NewServiceContext
+	// 构建 RealAdapter 前生效，未注入渠道保持 501 占位。
+	for _, opt := range opts {
+		opt(&c)
+	}
 
 	svcCtx := svc.NewServiceContext(c)
 	env.svcCtx = svcCtx

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/tappi/tappi/services/payments/internal/analytics"
 	"github.com/tappi/tappi/services/payments/internal/channel"
@@ -90,15 +91,13 @@ func (l *CallbackLogic) resolveCourierScope(rawBody []byte) (string, string, err
 	if l.svcCtx.ProjectionDB == nil || l.svcCtx.ScopeRes == nil {
 		return "", "", errors.New("回调归属解析未初始化")
 	}
-	var body struct {
-		OrderId string `json:"orderId"`
-	}
-	if err := json.Unmarshal(rawBody, &body); err != nil || body.OrderId == "" {
+	orderID, _ := callbackOrderFields(rawBody)
+	if orderID == "" {
 		return "", "", errors.New("回调体缺 orderId")
 	}
-	proj, err := l.svcCtx.ProjectionDB.Get(body.OrderId)
+	proj, err := l.svcCtx.ProjectionDB.Get(orderID)
 	if err != nil {
-		return "", "", fmt.Errorf("查订单投影 %s: %w", body.OrderId, err)
+		return "", "", fmt.Errorf("查订单投影 %s: %w", orderID, err)
 	}
 	scope, err := l.svcCtx.ScopeRes.Resolve(proj.GameId)
 	if err != nil {
@@ -107,33 +106,47 @@ func (l *CallbackLogic) resolveCourierScope(rawBody []byte) (string, string, err
 	return scope.CourierGameId, scope.Env, nil
 }
 
+// callbackOrderFields 从回调原始体提取订单号与支付时间：真实渠道回调体形状
+// 随渠道不同——sandbox/微信 v3 为 JSON（{"orderId","paidAt"}），支付宝异步
+// 通知为表单（orderId=...&paidAt=...）。JSON 解析失败回退表单解析（GP-202
+// 集成测试暴露：已接线的支付宝回调此前恒 502「回调体缺 orderId」）；两处
+// 都取不到即空串，由调用方按各自口径处理（fail-closed 或跳过）。
+func callbackOrderFields(rawBody []byte) (orderID, paidAt string) {
+	var body struct {
+		OrderId string `json:"orderId"`
+		PaidAt  string `json:"paidAt"`
+	}
+	if err := json.Unmarshal(rawBody, &body); err == nil {
+		return body.OrderId, body.PaidAt
+	}
+	if form, err := url.ParseQuery(string(rawBody)); err == nil {
+		return form.Get("orderId"), form.Get("paidAt")
+	}
+	return "", ""
+}
+
 // redeemOrderCoupons 从回调体解析 orderId 并核销关联券（locked → used）。
 // 解析失败仅记日志，不影响回调结果（券仍锁于订单，可经退款返还回收）。
 func (l *CallbackLogic) redeemOrderCoupons(rawBody []byte) {
-	var body struct {
-		OrderId string `json:"orderId"`
-	}
-	if err := json.Unmarshal(rawBody, &body); err != nil || body.OrderId == "" {
+	orderID, _ := callbackOrderFields(rawBody)
+	if orderID == "" {
 		return
 	}
-	if err := NewCouponLogic(l.ctx, l.svcCtx).RedeemOrderCoupons(body.OrderId); err != nil {
-		l.Errorf("redeem coupons for order=%s failed: %v", body.OrderId, err)
+	if err := NewCouponLogic(l.ctx, l.svcCtx).RedeemOrderCoupons(orderID); err != nil {
+		l.Errorf("redeem coupons for order=%s failed: %v", orderID, err)
 	}
 }
 
 // projectPaid 从回调体解析 orderId 并投影 PAID（解析失败仅记日志，不影响
 // 回调结果——回调已幂等接受）。
 func (l *CallbackLogic) projectPaid(rawBody []byte) {
-	var body struct {
-		OrderId string `json:"orderId"`
-		PaidAt  string `json:"paidAt"`
-	}
-	if err := json.Unmarshal(rawBody, &body); err != nil || body.OrderId == "" {
+	orderID, paidAt := callbackOrderFields(rawBody)
+	if orderID == "" {
 		l.Errorf("parse callback for projection failed: %s", rawBody)
 		return
 	}
-	if err := l.svcCtx.ProjectionDB.MarkPaid(body.OrderId, body.PaidAt); err != nil {
-		l.Errorf("project paid order=%s failed: %v", body.OrderId, err)
+	if err := l.svcCtx.ProjectionDB.MarkPaid(orderID, paidAt); err != nil {
+		l.Errorf("project paid order=%s failed: %v", orderID, err)
 	}
 }
 
@@ -145,15 +158,13 @@ func (l *CallbackLogic) emitOrderPaid(rawBody []byte) {
 	if !l.svcCtx.AnalyticsSvc.Enabled() {
 		return
 	}
-	var body struct {
-		OrderId string `json:"orderId"`
-	}
-	if err := json.Unmarshal(rawBody, &body); err != nil || body.OrderId == "" {
+	orderID, _ := callbackOrderFields(rawBody)
+	if orderID == "" {
 		return
 	}
-	proj, err := l.svcCtx.ProjectionDB.Get(body.OrderId)
+	proj, err := l.svcCtx.ProjectionDB.Get(orderID)
 	if err != nil {
-		l.Errorf("load projection for analytics order=%s failed: %v", body.OrderId, err)
+		l.Errorf("load projection for analytics order=%s failed: %v", orderID, err)
 		return
 	}
 	l.svcCtx.AnalyticsSvc.Emit(analytics.Event{
@@ -176,20 +187,17 @@ func (l *CallbackLogic) enqueueRewardEvaluation(rawBody []byte, channelName stri
 	if !l.svcCtx.PromotionBridge.Enabled() {
 		return
 	}
-	var body struct {
-		OrderId string `json:"orderId"`
-		PaidAt  string `json:"paidAt"`
-	}
-	if err := json.Unmarshal(rawBody, &body); err != nil || body.OrderId == "" {
+	orderID, _ := callbackOrderFields(rawBody)
+	if orderID == "" {
 		return
 	}
-	proj, err := l.svcCtx.ProjectionDB.Get(body.OrderId)
+	proj, err := l.svcCtx.ProjectionDB.Get(orderID)
 	if err != nil {
-		l.Errorf("load projection for reward eval order=%s failed: %v", body.OrderId, err)
+		l.Errorf("load projection for reward eval order=%s failed: %v", orderID, err)
 		return
 	}
 	serverID, roleID := int64(0), ""
-	if d, err := l.svcCtx.DeliveryDB.Get(body.OrderId); err == nil {
+	if d, err := l.svcCtx.DeliveryDB.Get(orderID); err == nil {
 		serverID, roleID = d.ServerId, d.RoleId
 	}
 	facts := promotion.Facts{
@@ -221,8 +229,8 @@ func (l *CallbackLogic) enqueueRewardEvaluation(rawBody []byte, channelName stri
 		return
 	}
 	facts.CumulativeCents = cumulative
-	if err := l.svcCtx.PromotionBridge.Enqueue(body.OrderId, channelName, facts); err != nil {
-		l.Errorf("enqueue reward eval order=%s failed: %v", body.OrderId, err)
+	if err := l.svcCtx.PromotionBridge.Enqueue(orderID, channelName, facts); err != nil {
+		l.Errorf("enqueue reward eval order=%s failed: %v", orderID, err)
 	}
 }
 
