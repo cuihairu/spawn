@@ -145,10 +145,14 @@ COURIER_TELLER_SKUS='[{"id":"<payment_products.id>","productId":"<同左>",
 
 - 下单体带 `server_id` 指向该游戏的 **open** 区服（发货账本目标；关服未开
   → `区服不存在或未开放`），并在 payments `PUT /admin/games/:id/delivery`
-  配置该游戏发货接口，否则停 PAID 等对账。沙箱无真实游戏服时，该接口指任一
-  「POST 恒 200」的桩即可（宿主 python3 写几十行最小 handler；
-  `python3 -m http.server` 不行——POST 返 501）；桩返非 200 时 dispatcher
-  记账 failed 并按退避重投，账本状态在 `GET /admin/deliveries` 可查。
+  配置该游戏发货接口，否则停 PAID 等对账。沙箱无真实游戏服时用本仓参考
+  实现 `deploy/sandbox/mock-game-server/`（契约参考：`X-Game-Delivery-Signature`
+  HMAC 验签先于解析、按 orderId 幂等重放 200 不重复发放、
+  `MOCK_GAME_SECRET` 空 = fail-closed 403；`go run .` 或任意方式跑起后把
+  endpoint 指到 `http://<宿主>:9020/deliver`，secret 与配置同值）——
+  真实游戏服团队按该文件逐条对照接入。`python3 -m http.server` 不行
+  （POST 返 501）；接口返非 200 时 dispatcher 记账 failed 并按退避重投，
+  账本状态在 `GET /admin/deliveries` 可查。
 - 网关 scope 中间件先于 auth 生效：`/v1/payments/*` **含 callback** 一律要
   `X-Courier-Game-Id` + `X-Courier-Env`，缺则 `COMMON_INVALID_ARGUMENT`。
 - 直连网关取 token/查单时 Courier 令牌走标准 `Authorization: Bearer` 头；
