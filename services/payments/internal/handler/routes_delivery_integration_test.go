@@ -285,6 +285,8 @@ func newDeliveryServerCfg(t *testing.T, before func(*testDeliveryEnv)) *testDeli
 				Form        string `json:"form"`
 				AmountCents int64  `json:"amountCents"`
 				Currency    string `json:"currency"`
+				GameID      string `json:"gameId"`
+				Env         string `json:"env"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			env.skuAdminMu.Lock()
@@ -297,6 +299,7 @@ func newDeliveryServerCfg(t *testing.T, before func(*testDeliveryEnv)) *testDeli
 			env.skuAdminBody = append(env.skuAdminBody, map[string]any{
 				"skuId": body.SkuId, "productId": body.ProductId, "form": body.Form,
 				"amountCents": body.AmountCents, "currency": body.Currency,
+				"gameId": body.GameID, "env": body.Env,
 			})
 			failSku := env.skuAdminFailSku
 			failStatus, failCode := env.skuAdminStatus, env.skuAdminCode

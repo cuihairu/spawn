@@ -5,7 +5,8 @@ package logic
 // 改价，已建订单不受影响）。显式管理面动作而非商品创建钩子——价格表对齐
 // 由运营在商品配置后主动推送，商品创建流程不隐式触网。管理面未接线
 //（AdminToken 未配置）fail-closed 503 不伪造登记成功；scope 经 GP-002 映射
-// 解析，绝不透传 spawn 游戏 id 当 Courier scope。
+// 解析，绝不透传 spawn 游戏 id 当 Courier scope；登记载荷带同值 scope
+//（契约 v1.3 SKU 隔离：SKU 只对本游戏 scope 可见可购）。
 
 import (
 	"context"
@@ -67,6 +68,10 @@ func (l *SkuSyncLogic) SyncGame(req *types.GamePathRequest, authHeader string) (
 			Form:        p.Form,
 			AmountCents: p.AmountCents,
 			Currency:    p.Currency,
+			// 契约 v1.3 SKU scope 隔离：登记带 scope，SKU 只对本游戏
+			// scope 可见可购（旧网关忽略未知字段，登记仍全局）。
+			GameID: gameID,
+			Env:    env,
 		})
 		item := types.SkuSyncItem{SkuId: p.Id, Synced: err == nil}
 		if err != nil {

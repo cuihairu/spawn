@@ -174,12 +174,17 @@ func (c *Client) ForwardCallback(rawBody []byte, hmacHex, gatewayID, gatewayEnv 
 // 管理凭证与玩家令牌不混用：adminToken 独立于 bearer。
 
 // AdminSkuReq 管理面 SKU 登记/改价请求（v1.2 管理端点；服务端定价事实）。
+// GameID/Env（契约 v1.3 SKU scope 隔离）让登记按 scope 隔离：带 gameId 的
+// SKU 只在其 scope 可见可购，跨 scope 按不存在处理；空 = 全局。旧网关把
+// 未知字段当缺省忽略，行为不变。
 type AdminSkuReq struct {
 	SkuId       string `json:"skuId"`
 	ProductId   string `json:"productId"`
 	Form        string `json:"form"`
 	AmountCents int64  `json:"amountCents"`
 	Currency    string `json:"currency"`
+	GameID      string `json:"gameId,omitempty"`
+	Env         string `json:"env,omitempty"`
 }
 
 // AdminOrder 管理面订单视图（v1.2；不下发 payToken，含断单态 PAID 标识与退款登记事实）。

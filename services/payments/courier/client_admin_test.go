@@ -26,6 +26,7 @@ func TestAdminSkuRegistersAndHeaders(t *testing.T) {
 	})
 	sku, err := c.AdminSku("game-a", "prod", adminTok, &AdminSkuReq{
 		SkuId: "s1", ProductId: "gem", Form: "DIRECT_PURCHASE", AmountCents: 600, Currency: "CNY",
+		GameID: "game-a", Env: "prod",
 	})
 	if err != nil {
 		t.Fatalf("AdminSku: %v", err)
@@ -36,7 +37,8 @@ func TestAdminSkuRegistersAndHeaders(t *testing.T) {
 	if !strings.HasPrefix(gotCT, "application/json") {
 		t.Fatalf("content-type = %q", gotCT)
 	}
-	if gotBody["skuId"] != "s1" || gotBody["amountCents"] != float64(600) {
+	if gotBody["skuId"] != "s1" || gotBody["amountCents"] != float64(600) ||
+		gotBody["gameId"] != "game-a" || gotBody["env"] != "prod" {
 		t.Fatalf("body = %v", gotBody)
 	}
 	if sku.Id != "s1" || sku.AmountCents != 600 || sku.Currency != "CNY" {

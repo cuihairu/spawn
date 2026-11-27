@@ -495,7 +495,8 @@ func TestRoutes_SkuSync(t *testing.T) {
 		}
 		loaded := env2.skuAdminBody[i]
 		if loaded["amountCents"] != int64(1000) || loaded["currency"] != "CNY" ||
-			loaded["form"] != "DIRECT_PURCHASE" {
+			loaded["form"] != "DIRECT_PURCHASE" ||
+			loaded["gameId"] != "courier-game-a" || loaded["env"] != "dev" {
 			t.Fatalf("sku sync payload[%d] = %v", i, loaded)
 		}
 	}
