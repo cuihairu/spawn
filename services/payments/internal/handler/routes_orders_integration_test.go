@@ -528,4 +528,16 @@ func TestRoutes_SkuSync(t *testing.T) {
 	if code != http.StatusForbidden {
 		t.Fatalf("player sku sync = %d, want 403", code)
 	}
+
+	// 6. disabled 商品仍登记（价格表=定价事实，含 disabled；可购门仍由本侧
+	//    enabled 位控制），避免将来误改成 enabledOnly=true 静默漏价。
+	env6, admin6 := setup(t, true)
+	code, _ = do(t, http.MethodPatch, env6.base+"/admin/products/sku-sync-b/enabled", admin6, `{"enabled":false}`)
+	if code != http.StatusOK {
+		t.Fatalf("disable product = %d", code)
+	}
+	code, body = do(t, http.MethodPost, env6.base+"/admin/games/game-a/products/sync", admin6, "")
+	if code != http.StatusOK || !strings.Contains(body, `"synced":2`) || env6.skuAdminCalls != 2 {
+		t.Fatalf("sku sync disabled product = %d body=%s calls=%d, want 200/2/2", code, body, env6.skuAdminCalls)
+	}
 }
