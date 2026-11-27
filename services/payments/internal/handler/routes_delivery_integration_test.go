@@ -63,6 +63,16 @@ type testDeliveryEnv struct {
 	redeliverAdminStatus int
 	redeliverAdminCode   string
 	redeliverAdminScope  map[string]string
+	// GP-202 部署面 SKU 登记（courier 管理面 /v1/payments/admin/skus）：计数
+	// + scope + 载荷断言；FailSku 非空 = 该 skuId 按指定 Status/Code 拒绝
+	//（其余成功，供部分失败断言）。
+	skuAdminCalls   int
+	skuAdminMu      sync.Mutex
+	skuAdminScope   []map[string]string
+	skuAdminBody    []map[string]any
+	skuAdminFailSku string
+	skuAdminStatus  int
+	skuAdminCode    string
 }
 
 // notifyStub GP-404 站内通知存根（community /internal/notifications）：记录
@@ -241,6 +251,45 @@ func newDeliveryServerCfg(t *testing.T, before func(*testDeliveryEnv)) *testDeli
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
 				"orderId": orderID,
 				"refund":  map[string]any{"action": "REFUND", "amountCents": 600, "at": "2026-11-23T00:00:00Z"},
+			}})
+			return
+		}
+		// GP-202 部署面 SKU 登记端点存根：默认成功登记回显 skuId；FailSku 非空
+		// 时该 skuId 按指定 Status/Code 拒绝（其余仍成功，供部分失败断言）。
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/payments/admin/skus" {
+			var body struct {
+				SkuId       string `json:"skuId"`
+				ProductId   string `json:"productId"`
+				Form        string `json:"form"`
+				AmountCents int64  `json:"amountCents"`
+				Currency    string `json:"currency"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			env.skuAdminMu.Lock()
+			env.skuAdminCalls++
+			env.skuAdminScope = append(env.skuAdminScope, map[string]string{
+				"gameId": r.Header.Get("X-Courier-Game-Id"),
+				"env":    r.Header.Get("X-Courier-Env"),
+				"auth":   r.Header.Get("Authorization"),
+			})
+			env.skuAdminBody = append(env.skuAdminBody, map[string]any{
+				"skuId": body.SkuId, "productId": body.ProductId, "form": body.Form,
+				"amountCents": body.AmountCents, "currency": body.Currency,
+			})
+			failSku := env.skuAdminFailSku
+			failStatus, failCode := env.skuAdminStatus, env.skuAdminCode
+			env.skuAdminMu.Unlock()
+			if failSku != "" && body.SkuId == failSku && failStatus != 0 {
+				w.WriteHeader(failStatus)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{
+					"code": failCode, "message": "courier 拒绝详情",
+				}})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+				"sku": map[string]any{
+					"id": body.SkuId, "amountCents": body.AmountCents, "currency": body.Currency,
+				},
 			}})
 			return
 		}

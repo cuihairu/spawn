@@ -44,6 +44,9 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodPost, Path: "/admin/products/:id", Handler: CreateProductHandler(svcCtx)},
 		{Method: http.MethodPatch, Path: "/admin/products/:id/enabled", Handler: SetProductEnabledHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/games/:gameId/products", Handler: ListProductsHandler(svcCtx)},
+		// GP-202 部署面 SKU 登记：把商品价格表经 Courier 管理面登记/改价到
+		// teller（未接线 503 在 payments 侧）
+		{Method: http.MethodPost, Path: "/admin/games/:gameId/products/sync", Handler: SyncSkusHandler(svcCtx)},
 		{Method: http.MethodPut, Path: "/admin/games/:gameId/delivery", Handler: SetDeliveryEndpointHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/games/:gameId/delivery", Handler: GetDeliveryEndpointHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/admin/deliveries", Handler: ListDeliveriesHandler(svcCtx)},
@@ -275,6 +278,24 @@ func ListProductsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 		resp, err := logic.NewProductLogic(r.Context(), svcCtx).ListByGame(req.GameId, authHeaderFrom(r))
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		httpx.OkJsonCtx(r.Context(), w, resp)
+	}
+}
+
+// SyncSkusHandler GP-202 部署面 SKU 登记：该游戏商品价格表经 Courier 管理面
+// AdminSku 登记/改价到 teller（部分失败逐条留痕）。
+func SyncSkusHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.GamePathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewSkuSyncLogic(r.Context(), svcCtx).SyncGame(&req, authHeaderFrom(r))
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return

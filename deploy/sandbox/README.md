@@ -101,9 +101,11 @@ support→croupier、cdk→voucher，可经 `COURIER_GATEWAY_CONFIG` 换主实�
 ### 支付链路装配（courier-gateway-integrator）
 
 冻结 stock 网关二进制（`gateway/cmd/gateway`）跑不通支付链路，缺两处只能
-**装配期**给的接线：teller 价格表只经 Go 方法 `AddSku` 登记（无 HTTP 管理端点，
-启动为空表 → 下单恒 `PAYMENT_SKU_NOT_FOUND`）；发货钩子 `teller.Options.Deliver`
-未接线 = 记账即发货成功（不通知 Spawn）。GP-203 注记的合法路径是「接入方构建
+**装配期**给的接线：teller 价格表只经 Go 方法 `AddSku` 登记（stock 启动为空表
+→ 下单恒 `PAYMENT_SKU_NOT_FOUND`；2026-11-26 起 courier v1.2 已补 HTTP 管理端点
+`/v1/payments/admin/skus`，Spawn 侧对应 `POST /admin/games/:gameId/products/sync`
+把 `payment_products` 运行期新建商品登记/改价到 teller，不必重排此 env）；发货钩子
+`teller.Options.Deliver` 未接线 = 记账即发货成功（不通知 Spawn）。GP-203 注记的合法路径是「接入方构建
 嵌入 teller 的二进制」，即本目录的独立 Go 模块
 `deploy/sandbox/courier-gateway-integrator/`：只组合 courier 的导出包
 （providers/account + providers/teller + auth/middleware/routing），不改 courier 仓。

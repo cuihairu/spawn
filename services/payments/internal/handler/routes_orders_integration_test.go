@@ -447,3 +447,85 @@ func TestRoutes_CreateOrderPaymentDisabled(t *testing.T) {
 		t.Fatalf("payment disabled order = %d body=%s, want 403", code, body)
 	}
 }
+
+// TestRoutes_SkuSync GP-202 部署面 SKU 登记管理适配：payment_products 服务端
+// 定价经 Courier 管理面 v1.2 /v1/payments/admin/skus 登记/改价到 teller 价格表。
+// 显式动作不挂商品创建钩子；管理面未接线（AdminToken 未配置）fail-closed 503
+// 不伪造登记成功；scope 取 GP-002 映射后 courier_game_id+env（绝不透传 spawn
+// 游戏 id），管理凭证走独立 Bearer 头；部分失败逐条留痕且审计落档。
+func TestRoutes_SkuSync(t *testing.T) {
+	setup := func(t *testing.T, withToken bool) (*testDeliveryEnv, string) {
+		var env *testDeliveryEnv
+		if withToken {
+			env = newDeliveryServerCfg(t, func(e *testDeliveryEnv) { e.courierAdminToken = "courier-admin-tok" })
+		} else {
+			env = newDeliveryServer(t)
+		}
+		admin := env.sign(utils.JWTClaims{UserId: 1, Username: "admin"})
+		for _, sku := range []string{"sku-sync-a", "sku-sync-b"} {
+			code, body := do(t, http.MethodPost, env.base+"/admin/products/"+sku, admin,
+				fmt.Sprintf(`{"product_id":"%s","form":"DIRECT_PURCHASE","amount_cents":1000,"currency":"CNY","game_id":"game-a","partner_id":2}`, sku))
+			if code != http.StatusOK {
+				t.Fatalf("create product %s = %d body=%s", sku, code, body)
+			}
+		}
+		return env, admin
+	}
+
+	// 1. 未接线（AdminToken 未配置）：503 且不触达 courier
+	env, admin := setup(t, false)
+	code, body := do(t, http.MethodPost, env.base+"/admin/games/game-a/products/sync", admin, "")
+	if code != http.StatusServiceUnavailable || env.skuAdminCalls != 0 {
+		t.Fatalf("sku sync unwired = %d body=%s calls=%d, want 503/0", code, body, env.skuAdminCalls)
+	}
+
+	// 2. 已接线：逐条登记 + scope/凭证断言 + 服务端定价载荷 + 成功计数 + 审计
+	env2, admin2 := setup(t, true)
+	code, body = do(t, http.MethodPost, env2.base+"/admin/games/game-a/products/sync", admin2, "")
+	if code != http.StatusOK || !strings.Contains(body, `"synced":2`) || !strings.Contains(body, `"failed":0`) {
+		t.Fatalf("sku sync ok = %d body=%s", code, body)
+	}
+	if env2.skuAdminCalls != 2 {
+		t.Fatalf("courier admin sku calls = %d, want 2", env2.skuAdminCalls)
+	}
+	for i, scope := range env2.skuAdminScope {
+		if scope["gameId"] != "courier-game-a" || scope["env"] != "dev" ||
+			scope["auth"] != "Bearer courier-admin-tok" {
+			t.Fatalf("sku sync scope/auth[%d] = %v", i, scope)
+		}
+		loaded := env2.skuAdminBody[i]
+		if loaded["amountCents"] != int64(1000) || loaded["currency"] != "CNY" ||
+			loaded["form"] != "DIRECT_PURCHASE" {
+			t.Fatalf("sku sync payload[%d] = %v", i, loaded)
+		}
+	}
+	code, body = do(t, http.MethodGet, env2.base+"/admin/audit", admin2, "")
+	if code != http.StatusOK || !strings.Contains(body, "courier_sku_sync") {
+		t.Fatalf("audit lacks courier_sku_sync: %s", body)
+	}
+
+	// 3. 部分失败：指定 sku 按 courier 400 COMMON_INVALID_ARGUMENT 拒绝 →
+	//    failed=1 逐条留痕错误码，其余仍登记成功（不整体回滚）。
+	env3, admin3 := setup(t, true)
+	env3.skuAdminFailSku = "sku-sync-b"
+	env3.skuAdminStatus, env3.skuAdminCode = http.StatusBadRequest, "COMMON_INVALID_ARGUMENT"
+	code, body = do(t, http.MethodPost, env3.base+"/admin/games/game-a/products/sync", admin3, "")
+	if code != http.StatusOK || !strings.Contains(body, `"synced":1`) || !strings.Contains(body, `"failed":1`) ||
+		!strings.Contains(body, "COMMON_INVALID_ARGUMENT") {
+		t.Fatalf("sku sync partial fail = %d body=%s", code, body)
+	}
+
+	// 4. 未映射游戏 → 502 且不触达 courier（GP-002 映射权威）
+	env4, admin4 := setup(t, true)
+	code, _ = do(t, http.MethodPost, env4.base+"/admin/games/nomap-game/products/sync", admin4, "")
+	if code != http.StatusBadGateway || env4.skuAdminCalls != 0 {
+		t.Fatalf("sku sync nomap = %d calls=%d, want 502/0", code, env4.skuAdminCalls)
+	}
+
+	// 5. 玩家越权 403
+	code, _ = do(t, http.MethodPost, env2.base+"/admin/games/game-a/products/sync",
+		env2.sign(utils.JWTClaims{UserId: 7, Username: "bob"}), "")
+	if code != http.StatusForbidden {
+		t.Fatalf("player sku sync = %d, want 403", code)
+	}
+}

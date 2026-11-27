@@ -62,6 +62,22 @@ type ProductListResponse struct {
 	Items []Product `json:"items"`
 }
 
+// SkuSyncItem 单个 SKU 登记结果（partial 失败逐条留痕，错误只报码不透传内部细节）。
+type SkuSyncItem struct {
+	SkuId  string `json:"skuId"`
+	Synced bool   `json:"synced"`
+	Error  string `json:"error,omitempty"`
+}
+
+// SkuSyncResponse 部署面 SKU 登记结果（GP-202）：payment_products 全量经
+// Courier 管理面 AdminSku 登记/改价到 teller 价格表；部分失败不影响其余。
+type SkuSyncResponse struct {
+	GameId string        `json:"gameId"`
+	Items  []SkuSyncItem `json:"items"`
+	Synced int64         `json:"synced"`
+	Failed int64         `json:"failed"`
+}
+
 // CreateOrderRequest 玩家下单：scope = path gameId；请求体仅 skuId + 可选
 // coupon_ids（服务端定价与券报价，payment.md 安全边界 1——客户端不下发
 // 可信金额）；env 缺省 prod。server_id/role_id 为充值目标（GP-201 区服目录；
